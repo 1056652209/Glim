@@ -5,6 +5,7 @@ use gpui_kit::{
 pub(super) struct CsvTable {
     rows: Vec<Vec<String>>,
     columns: usize,
+    format: &'static str,
     loaded: Option<String>,
     task: Option<Task<()>>,
     error: Option<String>,
@@ -15,6 +16,7 @@ impl CsvTable {
         Self {
             rows: Vec::new(),
             columns: 0,
+            format: "CSV",
             loaded: None,
             task: None,
             error: None,
@@ -25,6 +27,7 @@ impl CsvTable {
         if self.loaded.as_deref() == Some(&text) {
             return;
         }
+        self.format = if delimiter == b'\t' { "TSV" } else { "CSV" };
         self.loaded = Some(text.clone());
         self.error = None;
         self.rows.clear();
@@ -41,7 +44,9 @@ impl CsvTable {
                         view.columns = rows.iter().map(Vec::len).max().unwrap_or(0);
                         view.rows = rows;
                     }
-                    Err(error) => view.error = Some(format!("Cannot show CSV table: {error:#}")),
+                    Err(error) => {
+                        view.error = Some(format!("Cannot show {} table: {error:#}", view.format))
+                    }
                 }
                 cx.notify();
             });
@@ -60,7 +65,8 @@ impl Render for CsvTable {
             } else {
                 self.error.clone().unwrap_or_else(|| {
                     format!(
-                        "CSV · {} 行 × {} 列 · 只读表格，编辑请切换原文",
+                        "{} · {} 行 × {} 列 · 只读表格，编辑请切换原文",
+                        self.format,
                         self.rows.len(),
                         self.columns
                     )

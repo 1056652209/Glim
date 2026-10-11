@@ -308,6 +308,19 @@ impl Workspace {
                 |bar| {
                     let json = self.active_reader().is_some_and(|r| r.is_json());
                     let csv = self.active_reader().is_some_and(|r| r.is_csv());
+                    let tsv = self.active_reader().is_some_and(|r| {
+                        r.path
+                            .extension()
+                            .is_some_and(|e| e.eq_ignore_ascii_case("tsv"))
+                    });
+                    let preview_title = glim_services::locale::tr(if csv {
+                        "CSV table"
+                    } else if json {
+                        "JSON tree"
+                    } else {
+                        "Preview"
+                    })
+                    .replace("CSV", if tsv { "TSV" } else { "CSV" });
                     let preview = self
                         .active_reader()
                         .is_some_and(|r| r.toggle_label() == "Source");
@@ -324,20 +337,8 @@ impl Workspace {
                                         gpui_kit::assets::IconName::Eye
                                     }))
                                     .xsmall()
-                                    .accessibility_label(glim_services::locale::tr(if csv {
-                                        "CSV table"
-                                    } else if json {
-                                        "JSON tree"
-                                    } else {
-                                        "Preview"
-                                    }))
-                                    .tooltip(glim_services::locale::tr(if csv {
-                                        "CSV table"
-                                    } else if json {
-                                        "JSON tree"
-                                    } else {
-                                        "Preview"
-                                    }))
+                                    .accessibility_label(preview_title.clone())
+                                    .tooltip(preview_title)
                                     .selected(preview)
                                     .on_click(cx.listener(|view, _, window, cx| {
                                         view.set_reader_preview(true, window, cx);
