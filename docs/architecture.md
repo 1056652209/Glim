@@ -4,6 +4,8 @@ Glim 是原生桌面全能查看器。代码、文档、图片、Git 差异及�
 
 ## 目录与依赖
 
+工作空间目录列表由 services/preferences 原子保存到本地 `workspace.json`；窗口打开或追加目录时通过应用级串行后台任务更新。普通启动恢复最近修改的工作空间及其多个根目录，显式指定文件或目录时优先打开指定内容。恢复期间不改写保存列表，失效目录显示错误并保留记录；当前不恢复文件标签或编辑草稿。
+
 ```text
 crates/
   glim-core/src/       文档与 Git 数据模型、diff 解析、历史图布局；无 I/O 和 GPUI
@@ -38,9 +40,9 @@ SourceReader 持有长期 EditorState，支持基础输入、选择、撤销/重
 
 自动保存按文件串行排队，停止输入约 800 ms 后触发，保留 ⌘S。写入前比较磁盘基线，冲突保留草稿；原子替换使用同目录临时文件。关闭、退出或替换工作区时处理未保存内容。保存比较使用固定缓冲区，只读视图不保留编辑基线。
 
-`reader/markup` 通过 TextView 的 HTML / Markdown 解析器排版，预览与源码共享内容，处理相对图片和本地链接。HTML 预览用于静态文档阅读，不提供浏览器脚本运行环境。两种格式默认预览，用户的模式选择按格式独立保存到偏好目录；刷新保留标签模式，新打开文件读取当前偏好。偏好写入由应用共享任务串行执行，防止快速切换时旧值覆盖新值。JSON 树使用独立实体，切换时读取当前编辑器快照并后台解析；虚拟列表只投影展开节点，源码始终可访问。
+`reader/markup` 通过 TextView 的 HTML / Markdown 解析器排版，预览与源码共享内容，处理相对图片和本地链接。HTML 预览用于静态文档阅读，不提供浏览器脚本运行环境。两种格式默认预览，用户的模式选择按格式独立保存到偏好目录；刷新保留标签模式，新打开文件读取当前偏好。源码内容未改变时切回预览复用文本状态和图表任务／快照，避免重置解析和重启渲染。独立段落的 `\[ … \]` 公式通过原文范围识别，文档内容和定位偏移不改写。偏好写入由应用共享任务串行执行，防止快速切换时旧值覆盖新值。JSON 树使用独立实体，切换时读取当前编辑器快照并后台解析；虚拟列表只投影展开节点，源码始终可访问。
 
-`reader/diagrams` 持有 Markdown 图表的预览快照、扩展注册表和可取消任务。`services/markdown_preview` 在后台解析并去重图表／公式，调用当前应用的私有 `--render-markdown` 子进程入口，再将 SVG 转为有界 PNG；services 不依赖 UI。`app/diagram_engine` 在子进程主线程使用系统 WebView（macOS WebKit / Windows WebView2）加载内嵌离线引擎，接收 JSON 数据，通过 IPC 返回 SVG。该页面不加载 Markdown 原文 HTML，不允许网络连接、外部导航和下载；临时源文件及浏览器配置随请求清理。Mermaid、Graphviz、PlantUML（含 C4）、flowchart.js、WaveDrom 与 MathJax 资源均提交并内嵌，运行不依赖 Node、Java 或外部渲染服务。图表转换只在后台任务执行，render 使用已准备的图片或错误状态；更新内容和关闭标签取消旧任务，扩展解析版本随快照更新。GitHub Alerts 使用原生主题颜色和嵌套 TextView，复用图表快照、图片路径及链接处理；源码保持不变。引擎资源与更新入口见 `assets/markdown/README.md`。
+`reader/diagrams` 持有 Markdown 图表的预览快照、扩展注册表和可取消任务。`services/markdown_preview` 在后台解析并去重图表／公式，调用私有 `--render-markdown` 子进程入口，再将 SVG 转为有界 PNG；services 不依赖 UI。macOS 安装包内使用独立 `GlimRenderer.app` Helper（`LSUIElement=true`），启动时即作为无 Dock 图标的后台应用；未打包开发环境和 Windows 沿用当前可执行文件。渲染器同时禁止激活并隐藏 Dock，主应用的显示策略保持独立。`app/diagram_engine` 在子进程主线程使用系统 WebView（macOS WebKit / Windows WebView2）加载内嵌离线引擎，接收 JSON 数据，通过 IPC 返回 SVG。子进程将已完成块写入原子快照，services 增量转换新增块并发布结果；预览实体以 100ms 节流合并更新，已完成图表无需等待整页结束，超预算块立即回退。整页等待时间随有效块数增长，取消会终止子进程，异常退出和超时分别显示原因。该页面不加载 Markdown 原文 HTML，不允许网络连接、外部导航和下载；临时源文件及浏览器配置随请求清理。Mermaid、Graphviz、PlantUML（含 C4）、flowchart.js、WaveDrom 与 MathJax 资源均提交并内嵌，运行不依赖 Node、Java 或外部渲染服务。Mermaid 内置注册官方 ZenUML 插件，Journey 使用纯 SVG 文字模式；PlantUML Salt 的常用线框通过 `scripts/markdown/salt.js` 本地解析与布局为 SVG，DOT 封装交给已有 Graphviz 引擎；`scripts/markdown/chen.js` 将常用 Chen ER 的节点、属性和基数转换为 DOT，通过相同引擎布局，不执行源文档指令。PlantUML 已知错误说明 SVG 在资源层转为错误结果，保留源文档。避免其默认 HTML 标签影响原生图片转换。图表转换只在后台任务执行，render 使用已准备的图片或错误状态；更新内容和关闭标签取消旧任务，扩展解析版本随快照更新。GitHub Alerts 使用原生主题颜色和嵌套 TextView，复用图表快照、图片路径及链接处理；源码保持不变。引擎资源与更新入口见 `assets/markdown/README.md`。
 
 文本、图片、JSON 树及模型预览分别限制输入或展示规模；具体数值见[格式与限制](file-format-support.md)。分页替换旧页，不累计全文件；预算按标签计算。
 
@@ -92,4 +94,12 @@ Glim 菜单中的 Default File Types 打开独立设置辅助窗口，显示各�
 
 ## 平台边界
 
-主工作台使用 GPUI 的 macOS/Windows 后端，快捷键以 secondary 修饰键映射到 ⌘/Ctrl。Windows 偏好位于 `%APPDATA%/Glim`，Git 子进程隐藏控制台窗口；应用链接图标资源与静态 CRT。Swift 辅助程序仅在 macOS 编译，Windows 隐藏专属播放/默认类型管理入口。发布分别提供 macOS arm64、x86_64 DMG 与 Windows x64 ZIP。
+主工作台使用 GPUI 的 macOS/Windows 后端，快捷键以 secondary 修饰键映射到 ⌘/Ctrl。Windows 标题栏拖动区与交互工具栏分开，搜索、主题、换行和预览／源码按钮处于普通客户区，避免原生 non-client 命中测试截走点击。Windows 偏好位于 `%APPDATA%/Glim`，Git 子进程隐藏控制台窗口；应用链接图标资源与静态 CRT。Swift 辅助程序仅在 macOS 编译，Windows 隐藏专属播放/默认类型管理入口。发布分别提供 macOS arm64、x86_64 DMG 与 Windows x64 ZIP。
+
+Excel 的 macOS 辅助预览由 services/spreadsheet 使用 calamine 本地读取 XLS/XLSX，将转义后的单元格内容生成受限 HTML，交给 native/Preview.swift 的 WKWebView 显示。禁用 JavaScript、网络和外部资源；按工作表分组，支持滚动和换行，不重算公式或还原图表、原始样式。
+
+CSV 由 services/csv 在后台解析带引号、转义与跨行字段；reader/csv 提供只读虚拟行列表及横向滚动，与原有源码编辑器切换，不改写源文件。
+
+应用级快捷键由 app/mod 注册，工作空间动作在 workspace/render 接收。About 下的快捷键说明由 app/shortcuts 展示为独立滚动窗口；原生 macOS 预览通过 File 菜单的 Cmd+W 调用窗口关闭。
+
+界面语言由 services/locale 管理，首批 en/zh-CN 字典位于 assets/locales；系统语言通过 sys-locale 读取，手动选择在 preferences 中原子保存。app 负责更新菜单、控件语言及窗口刷新；macOS 辅助进程通过启动配置接收字典，新建预览使用当前语言。文档内容与技术诊断不翻译。

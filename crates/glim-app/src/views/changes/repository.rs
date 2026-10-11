@@ -41,7 +41,10 @@ pub(super) struct GitState {
 }
 impl GitState {
     pub fn new(window: &mut Window, cx: &mut Context<Changes>) -> Self {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Branch name / filter"));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(glim_services::locale::tr("Branch name / filter"))
+        });
         let subscription = cx.subscribe_in(&input, window, |v, _, event, window, cx| {
             if matches!(event, InputEvent::PressEnter { .. }) && v.git.form.is_some() {
                 v.submit_branch(window, cx);
@@ -316,8 +319,8 @@ impl Changes {
                     .ghost()
                     .xsmall()
                     .icon(Icon::new(IconName::GitBranch))
-                    .tooltip("Branches…")
-                    .accessibility_label("Branches")
+                    .tooltip(glim_services::locale::tr("Branches…"))
+                    .accessibility_label(glim_services::locale::tr("Branches"))
                     .disabled(blocked)
                     .on_click(cx.listener(|v, _, w, cx| {
                         cx.stop_propagation();
@@ -330,7 +333,7 @@ impl Changes {
                     .xsmall()
                     .icon(Icon::new(IconName::RefreshCw))
                     .tooltip(format!("Sync Changes · ↓{} ↑{}", state.behind, state.ahead))
-                    .accessibility_label("Sync Changes")
+                    .accessibility_label(glim_services::locale::tr("Sync Changes"))
                     .disabled(blocked || state.upstream.is_none())
                     .on_click(cx.listener(|v, _, w, cx| {
                         cx.stop_propagation();
@@ -342,8 +345,8 @@ impl Changes {
                     .ghost()
                     .xsmall()
                     .icon(Icon::new(IconName::Ellipsis))
-                    .tooltip("Repository actions…")
-                    .accessibility_label("Repository actions")
+                    .tooltip(glim_services::locale::tr("Repository actions…"))
+                    .accessibility_label(glim_services::locale::tr("Repository actions"))
                     .disabled(blocked)
                     .dropdown_menu(move |menu, _, cx| {
                         view.update(cx, |v, cx| {
@@ -549,7 +552,7 @@ impl Changes {
                                 Button::new("git-create")
                                     .ghost()
                                     .xsmall()
-                                    .label("Create Branch…")
+                                    .label(glim_services::locale::tr("Create Branch…"))
                                     .disabled(blocked)
                                     .on_click(cx.listener(|v, _, w, cx| {
                                         v.branch_form(
@@ -564,7 +567,7 @@ impl Changes {
                                 Button::new("git-rename")
                                     .ghost()
                                     .xsmall()
-                                    .label("Rename…")
+                                    .label(glim_services::locale::tr("Rename…"))
                                     .disabled(blocked || state.branch.is_none())
                                     .on_click(cx.listener(|v, _, w, cx| {
                                         let name = v
@@ -885,7 +888,7 @@ impl Changes {
                             .font_weight(FontWeight::BOLD)
                             .cursor_pointer()
                             .child(disclosure(self.git.graph_collapsed, cx))
-                            .child("Graph")
+                            .child(glim_services::locale::tr("Graph"))
                             .on_click(cx.listener(|v, _, w, cx| v.toggle_section(2, w, cx))),
                     )
                     .when(!self.git.graph_collapsed, |bar| {
@@ -894,7 +897,7 @@ impl Changes {
                                 .ghost()
                                 .xsmall()
                                 .label("↻")
-                                .tooltip("Refresh Graph")
+                                .tooltip(glim_services::locale::tr("Refresh Graph"))
                                 .disabled(self.git.graph_task.is_some())
                                 .on_click(cx.listener(|v, _, _, cx| v.reload_graph(cx))),
                         )
@@ -904,11 +907,25 @@ impl Changes {
                 panel
                     .when(
                         self.git.graph_task.is_some() && self.git.graph_rows.is_empty(),
-                        |panel| panel.child(div().px_3().text_xs().child("Loading…")),
+                        |panel| {
+                            panel.child(
+                                div()
+                                    .px_3()
+                                    .text_xs()
+                                    .child(glim_services::locale::tr("Loading…")),
+                            )
+                        },
                     )
                     .when(
                         self.git.graph_rows.is_empty() && self.git.graph_task.is_none(),
-                        |panel| panel.child(div().px_3().text_sm().child("No commits yet.")),
+                        |panel| {
+                            panel.child(
+                                div()
+                                    .px_3()
+                                    .text_sm()
+                                    .child(glim_services::locale::tr("No commits yet.")),
+                            )
+                        },
                     )
                     .child(
                         uniform_list(

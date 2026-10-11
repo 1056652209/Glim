@@ -13,9 +13,11 @@ pub(super) struct JsonTree {
     task: Option<Task<()>>,
     error: Option<String>,
     scroll: UniformListScrollHandle,
+    jsonc: bool,
+    loaded_text: Option<String>,
 }
 impl JsonTree {
-    pub fn new() -> Self {
+    pub fn new(jsonc: bool) -> Self {
         Self {
             nodes: Vec::new(),
             expanded: HashSet::new(),
@@ -23,24 +25,50 @@ impl JsonTree {
             task: None,
             error: None,
             scroll: UniformListScrollHandle::new(),
+            jsonc,
+            loaded_text: None,
         }
     }
     pub fn load(&mut self, text: String, cx: &mut Context<Self>) {
+        if self.loaded_text.as_deref() == Some(text.as_str()) {
+            return;
+        }
+        self.loaded_text = Some(text.clone());
+        let jsonc = self.jsonc;
         self.nodes.clear();
         self.rows.clear();
         self.expanded.clear();
         self.error = None;
         self.scroll = UniformListScrollHandle::new();
-        let work = cx
-            .background_executor()
-            .spawn(async move { glim_services::json::parse(&text) });
+        let work = cx.background_executor().spawn(async move {
+            if jsonc {
+                glim_services::json::parse_jsonc(&text)
+            } else {
+                glim_services::json::parse(&text)
+            }
+        });
         self.task = Some(cx.spawn(async move |view, cx| {
             let result = work.await;
             let _ = view.update(cx, |v, cx| {
                 v.task = None;
                 match result {
-                    Ok(nodes) => { v.nodes = nodes; v.expanded.insert(0); v.rebuild(); }
-                    Err(e) => v.error = Some(format!("Cannot show JSON tree: {e}. Switch to Source to view or edit. Tree view accepts standard JSON (no comments or JSONL).")),
+                    Ok(nodes) => {
+                        v.nodes = nodes;
+                        v.expanded.insert(0);
+                        if let Some(root) = v.nodes.first() {
+                            for &child in root.children.iter().take(16) {
+                                if v.nodes[child].children.len() <= 16 {
+                                    v.expanded.insert(child);
+                                }
+                            }
+                        }
+                        v.rebuild();
+                    }
+                    Err(e) => {
+                        v.error = Some(format!(
+                            "Cannot show JSON tree: {e}. Switch to Source to view or edit."
+                        ))
+                    }
                 }
                 cx.notify();
             });
@@ -73,7 +101,11 @@ impl Render for JsonTree {
             .size_full()
             .min_h_0()
             .when(self.task.is_some(), |v| {
-                v.child(div().p_4().child("Loading JSON tree…"))
+                v.child(
+                    div()
+                        .p_4()
+                        .child(glim_services::locale::tr("Loading JSON tree…")),
+                )
             })
             .when_some(self.error.clone(), |v, error| {
                 v.child(
@@ -106,7 +138,15 @@ impl Render for JsonTree {
                                     .flex()
                                     .items_center()
                                     .gap_2()
-                                    .h(px(28.))
+                                    .h(px(32.))
+                                    .font_family(if cfg!(target_os = "windows") {
+                                        "Consolas"
+                                    } else {
+                                        "Menlo"
+                                    })
+                                    .when(row % 2 == 1, |row| {
+                                        row.bg(cx.theme().foreground.opacity(0.025))
+                                    })
                                     .pl(px(12. + depth.min(20) as f32 * 16.))
                                     .pr_3()
                                     .text_sm()

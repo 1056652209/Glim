@@ -62,11 +62,27 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    pub(crate) fn refresh_language(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search.update(cx, |search, cx| {
+            search.set_placeholder(
+                glim_services::locale::tr("Search files in workspace…"),
+                window,
+                cx,
+            )
+        });
+        if let Some(changes) = &self.changes {
+            changes.update(cx, |view, cx| view.refresh_language(window, cx));
+        }
+        cx.notify();
+    }
+
     pub fn new(path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        let search =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search files in workspace…"));
+        let search = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(glim_services::locale::tr("Search files in workspace…"))
+        });
         let subscription = cx.subscribe_in(&search, window, |view, _, event, window, cx| {
             if matches!(event, InputEvent::Change) {
                 view.search_files(window, cx);

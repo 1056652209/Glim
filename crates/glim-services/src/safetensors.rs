@@ -11,8 +11,8 @@ pub fn read_preview(path: &Path) -> Result<BytePreview> {
         .context("Missing safetensors header length")?;
     let length = u64::from_le_bytes(prefix);
     ensure!(
-        length <= 8 * 1024 * 1024,
-        "Safetensors header exceeds the 8 MiB preview budget"
+        length <= 32 * 1024 * 1024,
+        "Safetensors header exceeds the 32 MiB preview budget"
     );
     ensure!(
         length <= size.saturating_sub(8),
@@ -61,7 +61,7 @@ pub fn read_preview(path: &Path) -> Result<BytePreview> {
         *types.entry(dtype).or_default() += 1;
         count += 1;
         // Bound the rendered report independently of header size and tensor count.
-        if count <= 2000 && rows.len() < 512 * 1024 {
+        if count <= 10000 && rows.len() < 2 * 1024 * 1024 {
             writeln!(
                 rows,
                 "{}  ·  {}  ·  {}  ·  {} bytes",
@@ -104,7 +104,7 @@ pub fn read_preview(path: &Path) -> Result<BytePreview> {
                 clipped(key, 100),
                 clipped(
                     value.as_str().context("Metadata values must be strings")?,
-                    2000
+                    10000
                 )
             )?;
         }
@@ -114,7 +114,7 @@ pub fn read_preview(path: &Path) -> Result<BytePreview> {
     }
     text.push_str("\nTENSORS · name / dtype / shape / storage\n");
     text.push_str(&rows);
-    if count > 2000 || rows.len() >= 512 * 1024 {
+    if count > 10000 || rows.len() >= 2 * 1024 * 1024 {
         text.push_str("… Tensor listing truncated to the preview budget.\n");
     }
     text.push_str("\nHeader inspection only; weights were not loaded. Offsets are range-checked; this is not full model validation.\n");

@@ -18,6 +18,10 @@ struct GitOutput {
 
 /// No shell, pager, optional index writes, external diff drivers, or textconv execution.
 fn run(root: &Path, args: &[&OsStr]) -> Result<GitOutput> {
+    run_with_limit(root, args, MAX_GIT_OUTPUT)
+}
+
+fn run_with_limit(root: &Path, args: &[&OsStr], limit: u64) -> Result<GitOutput> {
     let mut command = Command::new("git");
     command
         .arg("--no-pager")
@@ -58,14 +62,17 @@ fn run(root: &Path, args: &[&OsStr]) -> Result<GitOutput> {
         .stdout
         .take()
         .context("Missing Git stdout")?
-        .take(MAX_GIT_OUTPUT + 1)
+        .take(limit + 1)
         .read_to_end(&mut bytes);
-    if read.is_err() || bytes.len() as u64 > MAX_GIT_OUTPUT {
+    if read.is_err() || bytes.len() as u64 > limit {
         let _ = child.kill();
         let _ = child.wait();
         let _ = errors.join();
         read?;
-        bail!("Git output exceeds the 8 MiB viewer limit; select a smaller change");
+        bail!(
+            "Git output exceeds the {} MiB viewer limit",
+            limit / (1024 * 1024)
+        );
     }
     let status = child.wait()?;
     Ok(GitOutput {
@@ -223,7 +230,7 @@ pub fn read_diff(root: &Path, change: &GitChange) -> Result<DiffDocument> {
         }
     }
     let refs: Vec<_> = args.iter().map(OsString::as_os_str).collect();
-    let output = run(root, &refs)?;
+    let output = run_with_limit(root, &refs, 256 * 1024 * 1024)?;
     ensure!(
         output.code == Some(0) || (change.scope == DiffScope::Untracked && output.code == Some(1)),
         "{}",

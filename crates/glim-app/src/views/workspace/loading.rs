@@ -28,6 +28,40 @@ pub(super) enum Content {
     Unavailable(PathBuf, String),
 }
 impl Workspace {
+    pub(crate) fn restore_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.loading = true;
+        let work = cx.background_executor().spawn(async {
+            glim_services::preferences::workspace_folders().map(|paths| {
+                paths
+                    .into_iter()
+                    .map(|path| open_folder(&path))
+                    .collect::<Vec<_>>()
+            })
+        });
+        self.load_task = Some(cx.spawn_in(window, async move |view, cx| {
+            let result = work.await;
+            let _ = view.update_in(cx, |view, window, cx| {
+                let mut errors = Vec::new();
+                match result {
+                    Ok(folders) => {
+                        for folder in folders {
+                            match folder {
+                                Ok(folder) => view.add_folder(folder, window, cx),
+                                Err(error) => errors.push(format!("{error:#}")),
+                            }
+                        }
+                    }
+                    Err(error) => errors.push(format!("{error:#}")),
+                }
+                view.loading = false;
+                if !errors.is_empty() {
+                    view.error =
+                        Some(format!("Cannot restore workspace: {}", errors.join("; ")).into());
+                }
+                cx.notify();
+            });
+        }));
+    }
     pub(crate) fn reveal_native_path(&self, path: &std::path::Path, cx: &mut App) -> bool {
         self.tabs
             .iter()
@@ -126,6 +160,9 @@ impl Workspace {
         self.roots.retain(|root| !root.starts_with(&snapshot.root));
         self.roots.push(snapshot.root.clone());
         self.root = self.roots.first().cloned();
+        if !self.loading && cx.try_global::<crate::app::ReaderPreferences>().is_some() {
+            crate::app::remember_workspace(self.roots.clone(), cx);
+        }
         self.refresh_task = None;
         self.error = None;
         self.search_task = None;
@@ -445,13 +482,13 @@ pub(super) fn read_content(path: &std::path::Path) -> anyhow::Result<Content> {
         (|| {
             let first = glim_services::paged::read_page(path, 0, false)?;
             if first.total > glim_services::files::MAX_DOCUMENT_BYTES
-                || first.text.lines().any(|line| line.len() > 16 * 1024)
+                || first.text.lines().any(|line| line.len() > 64 * 1024)
             {
                 Ok(Content::Page(first))
             } else {
                 read_document(path).map(|d| {
-                    if d.text.lines().any(|line| line.len() > 16 * 1024)
-                        || d.text.bytes().filter(|b| *b == b'\n').take(100_001).count() > 100_000
+                    if d.text.lines().any(|line| line.len() > 64 * 1024)
+                        || d.text.bytes().filter(|b| *b == b'\n').take(400_001).count() > 400_000
                     {
                         Content::Page(first)
                     } else {

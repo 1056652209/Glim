@@ -1,4 +1,5 @@
 import Cocoa
+import WebKit
 import AVKit
 import PDFKit
 import Quartz
@@ -7,7 +8,16 @@ import UniformTypeIdentifiers
 import CoreServices
 import CoreText
 
-struct Playlist: Decodable { let files: [String]; let shuffle: Bool; let office: Bool?; let associations: String?; let font: Bool?; let sqlite: String?; let sqliteInfo: String? }
+struct Playlist: Decodable { let files: [String]; let shuffle: Bool; let office: Bool?; let associations: String?; let font: Bool?; let sqlite: String?; let sqliteInfo: String?; let spreadsheet: String?; let language: String?; let localizations: [String: String]? }
+
+var nativeTranslations: [String: String] = [:]
+func L(_ text: String) -> String { nativeTranslations[text] ?? text }
+func localizeMenu(_ menu: NSMenu) {
+    for item in menu.items {
+        item.title = L(item.title)
+        if let submenu = item.submenu { localizeMenu(submenu) }
+    }
+}
 
 // Default handlers change only after a selection and explicit confirmation.
 final class AssociationWindow: NSObject, NSWindowDelegate {
@@ -33,7 +43,7 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
     ]
     var checks: [NSButton] = []
     var currentLabels: [NSTextField] = []
-    let status = NSTextField(wrappingLabelWithString: "Select formats to change. Other file types keep their current defaults.")
+    let status = NSTextField(wrappingLabelWithString: L("Select formats to change. Other file types keep their current defaults."))
     init(bundleURL: URL) throws {
         self.bundleURL = bundleURL
         guard let bundle = Bundle(url: bundleURL), let identifier = bundle.bundleIdentifier,
@@ -45,8 +55,8 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12; stack.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(stack)
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 18), stack.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -18), stack.topAnchor.constraint(equalTo: host.topAnchor, constant: 18), stack.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -18)])
-        let heading = NSTextField(labelWithString: "Open these file types with Glim"); heading.font = .systemFont(ofSize: 17, weight: .semibold); stack.addArrangedSubview(heading)
-        let hint = NSTextField(wrappingLabelWithString: "macOS applies defaults to document types. Extensions belonging to the same type may change together.")
+        let heading = NSTextField(labelWithString: L("Open these file types with Glim")); heading.font = .systemFont(ofSize: 17, weight: .semibold); stack.addArrangedSubview(heading)
+        let hint = NSTextField(wrappingLabelWithString: L("macOS applies defaults to document types. Extensions belonging to the same type may change together."))
         hint.textColor = .secondaryLabelColor; stack.addArrangedSubview(hint)
         let list = NSStackView(); list.orientation = .vertical; list.alignment = .leading; list.spacing = 8; list.edgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 8)
         for (title, extensions) in groups {
@@ -79,19 +89,19 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
                 if id == identifier { return "Glim" }
                 return NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)?.deletingPathExtension().lastPathComponent ?? id
             })
-            currentLabels[index].stringValue = "Current: " + (names.isEmpty ? "System type unavailable" : names.sorted().joined(separator: ", "))
+            currentLabels[index].stringValue = L("Current: ") + (names.isEmpty ? "System type unavailable" : names.sorted().joined(separator: ", "))
         }
     }
     @objc func apply() { change(restore: false) }
     @objc func restore() { change(restore: true) }
     func change(restore: Bool) {
         let selected = groups.indices.filter { checks[$0].state == .on }
-        guard !selected.isEmpty else { status.stringValue = "Select at least one format first."; return }
+        guard !selected.isEmpty else { status.stringValue = L("Select at least one format first."); return }
         let alert = NSAlert(); alert.messageText = restore ? "Restore previous default applications?" : "Use Glim as the default application?"
         alert.informativeText = selected.map { groups[$0].0 }.joined(separator: ", ")
-        alert.addButton(withTitle: restore ? "Restore" : "Apply"); alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: restore ? "Restore" : "Apply"); alert.addButton(withTitle: L("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard LSRegisterURL(bundleURL as CFURL, true) == noErr else { status.stringValue = "macOS could not register Glim. Move it to Applications and retry."; return }
+        guard LSRegisterURL(bundleURL as CFURL, true) == noErr else { status.stringValue = L("macOS could not register Glim. Move it to Applications and retry."); return }
         var previous = preferences.dictionary(forKey: "previousHandlers") as? [String: String] ?? [:]
         let selectedTypes = Set(selected.flatMap { types($0) })
         var done = 0; var failures = 0
@@ -116,11 +126,52 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) { NSApp.terminate(nil) }
 }
 
+// Resource-fork fonts wrap ordinary sfnt data; Core Text may not enumerate
+// the container URL even though it can decode the embedded font data.
+func resourceFontDescriptors(_ url: URL) throws -> [CTFontDescriptor] {
+    let data = try Data(contentsOf: url, options: .mappedIfSafe)
+    guard data.count <= 128 * 1024 * 1024 else {
+        throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "Font exceeds 128 MiB"])
+    }
+    let bytes = [UInt8](data)
+    func integer(_ offset: Int, _ count: Int) throws -> Int {
+        guard offset >= 0, count > 0, offset <= bytes.count - count else {
+            throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "Truncated dfont resource map"])
+        }
+        return bytes[offset..<(offset + count)].reduce(0) { ($0 << 8) | Int($1) }
+    }
+    let dataOffset = try integer(0, 4)
+    let mapOffset = try integer(4, 4)
+    let typeList = mapOffset + (try integer(mapOffset + 24, 2))
+    let typeCount = (try integer(typeList, 2)) + 1
+    guard typeCount <= 4096 else { throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid dfont resource type count"]) }
+    var fonts: [CTFontDescriptor] = []
+    for index in 0..<typeCount {
+        let entry = typeList + 2 + index * 8
+        let type = try integer(entry, 4)
+        guard type == 0x73666e74 else { continue } // sfnt
+        let count = (try integer(entry + 4, 2)) + 1
+        let references = typeList + (try integer(entry + 6, 2))
+        guard count <= 256 else { throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "dfont exceeds 256 embedded fonts"]) }
+        for face in 0..<count {
+            let resource = dataOffset + (try integer(references + face * 12 + 5, 3))
+            let length = try integer(resource, 4)
+            let start = resource + 4
+            guard length > 0, start <= bytes.count, length <= bytes.count - start else {
+                throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "Truncated dfont sfnt resource"])
+            }
+            let fontData = Data(bytes[start..<(start + length)])
+            fonts += CTFontManagerCreateFontDescriptorsFromData(fontData as CFData) as? [CTFontDescriptor] ?? []
+        }
+    }
+    return fonts
+}
+
 final class FontPreview: NSObject, NSTextFieldDelegate {
     let view = NSView()
     let selector = NSPopUpButton()
     let input = NSTextField(string: "The quick brown fox jumps over the lazy dog. 0123456789 中文字体预览")
-    let metadata = NSTextField(wrappingLabelWithString: "Loading font…")
+    let metadata = NSTextField(wrappingLabelWithString: L("Loading font…"))
     var descriptors: [CTFontDescriptor] = []
     let sizes: [CGFloat] = [12, 18, 24, 36, 48, 72]
     var samples: [NSTextField] = []
@@ -132,7 +183,7 @@ final class FontPreview: NSObject, NSTextFieldDelegate {
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20), stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20), stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 16), stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16)])
         let title = NSTextField(labelWithString: url.lastPathComponent); title.font = .systemFont(ofSize: 17, weight: .semibold); stack.addArrangedSubview(title)
         selector.target = self; selector.action = #selector(changeFace); selector.isEnabled = false; stack.addArrangedSubview(selector)
-        input.delegate = self; input.placeholderString = "Type sample text…"; stack.addArrangedSubview(input)
+        input.delegate = self; input.placeholderString = L("Type sample text…"); stack.addArrangedSubview(input)
         input.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         metadata.textColor = .secondaryLabelColor; metadata.font = .systemFont(ofSize: 12); stack.addArrangedSubview(metadata)
         let rows = NSStackView(); rows.orientation = .vertical; rows.alignment = .leading; rows.spacing = 20; rows.edgeInsets = NSEdgeInsets(top: 16, left: 0, bottom: 16, right: 12)
@@ -147,14 +198,30 @@ final class FontPreview: NSObject, NSTextFieldDelegate {
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.documentView = rows
         rows.translatesAutoresizingMaskIntoConstraints = false; rows.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
         stack.addArrangedSubview(scroll); scroll.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        let note = NSTextField(wrappingLabelWithString: "Preview only — this font is not installed. Missing characters may use a system fallback."); note.font = .systemFont(ofSize: 11); note.textColor = .secondaryLabelColor; stack.addArrangedSubview(note)
+        let note = NSTextField(wrappingLabelWithString: L("Preview only — this font is not installed. Missing characters may use a system fallback.")); note.font = .systemFont(ofSize: 11); note.textColor = .secondaryLabelColor; stack.addArrangedSubview(note)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let fonts = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor] ?? []
+            var fonts = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor] ?? []
+            var failure = "This font could not be decoded. It may be damaged or unsupported."
+            if fonts.isEmpty && url.pathExtension.lowercased() == "dfont" {
+                do {
+                    fonts = try resourceFontDescriptors(url)
+                    if fonts.isEmpty { failure = "No supported sfnt font resources found in this dfont." }
+                } catch { failure = error.localizedDescription }
+            }
+            let loadedFonts = fonts
+            let failureMessage = failure
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                self.availableFaces = fonts.count
-                self.descriptors = Array(fonts.prefix(128))
-                guard !self.descriptors.isEmpty else { self.metadata.stringValue = "This font could not be decoded. It may be damaged or unsupported."; return }
+                self.availableFaces = loadedFonts.count
+                self.descriptors = Array(loadedFonts.prefix(256))
+                guard !self.descriptors.isEmpty else {
+                    self.metadata.stringValue = L(failureMessage)
+                    self.selector.isHidden = true
+                    self.input.isHidden = true
+                    scroll.isHidden = true
+                    note.isHidden = true
+                    return
+                }
                 for descriptor in self.descriptors {
                     let font = CTFontCreateWithFontDescriptor(descriptor, 16, nil)
                     self.selector.addItem(withTitle: CTFontCopyFullName(font) as String)
@@ -168,7 +235,7 @@ final class FontPreview: NSObject, NSTextFieldDelegate {
         let index = selector.indexOfSelectedItem
         guard descriptors.indices.contains(index) else { return }
         let font = CTFontCreateWithFontDescriptor(descriptors[index], 16, nil)
-        metadata.stringValue = "\(CTFontCopyFamilyName(font)) · \(CTFontCopyPostScriptName(font)) · \(CTFontGetGlyphCount(font)) glyphs · \(availableFaces) faces" + (availableFaces > 128 ? " (showing first 128)" : "")
+        metadata.stringValue = "\(CTFontCopyFamilyName(font)) · \(CTFontCopyPostScriptName(font)) · \(CTFontGetGlyphCount(font)) glyphs · \(availableFaces) faces" + (availableFaces > 256 ? " (showing first 256)" : "")
         updateSamples()
     }
     func controlTextDidChange(_ notification: Notification) { updateSamples() }
@@ -277,6 +344,7 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
     var token: NSKeyValueObservation?
     var pdf = false
     var officeView: QLPreviewView?
+    var spreadsheetView: WKWebView?
     var fontPreview: FontPreview?
     var sqlitePreview: SQLitePreview?
     var failed = Set<URL>()
@@ -288,6 +356,8 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
             let playlist = try JSONDecoder().decode(Playlist.self, from: data)
+            nativeTranslations = playlist.localizations ?? [:]
+            if let menu = NSApp.mainMenu { localizeMenu(menu) }
             if let path = playlist.associations {
                 associationWindow = try AssociationWindow(bundleURL: URL(fileURLWithPath: path))
                 window = associationWindow?.window
@@ -322,7 +392,7 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
                 return
             }
             if playlist.office == true {
-                showOffice(urls[0])
+                showOffice(urls[0], spreadsheet: playlist.spreadsheet)
                 window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
                 return
             }
@@ -340,14 +410,14 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
             detailLabel.textColor = .secondaryLabelColor
             let toolbar = NSStackView()
             toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
-            toolbar.addArrangedSubview(button("Previous", #selector(previous)))
-            toolbar.addArrangedSubview(button("Next", #selector(next)))
+            toolbar.addArrangedSubview(button(L("Previous"), #selector(previous)))
+            toolbar.addArrangedSubview(button(L("Next"), #selector(next)))
             if pdf {
                 toolbar.addArrangedSubview(button("−", #selector(zoomOut)))
                 toolbar.addArrangedSubview(button("+", #selector(zoomIn)))
-                toolbar.addArrangedSubview(button("Fit", #selector(fit)))
+                toolbar.addArrangedSubview(button(L("Fit"), #selector(fit)))
             } else {
-                toolbar.addArrangedSubview(button("Play / Pause", #selector(togglePlay)))
+                toolbar.addArrangedSubview(button(L("Play / Pause"), #selector(togglePlay)))
             }
             toolbar.addArrangedSubview(titleLabel)
             toolbar.addArrangedSubview(detailLabel)
@@ -356,7 +426,7 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
             if pdf {
                 guard let document = PDFDocument(url: urls[0]) else { throw NSError(domain: "Glim", code: 2, userInfo: [NSLocalizedDescriptionKey: "This PDF could not be opened."]) }
                 if document.isLocked {
-                    let alert = NSAlert(); alert.messageText = "PDF password"; alert.addButton(withTitle: "Open"); alert.addButton(withTitle: "Cancel")
+                    let alert = NSAlert(); alert.messageText = L("PDF password"); alert.addButton(withTitle: L("Open")); alert.addButton(withTitle: L("Cancel"))
                     let password = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24)); alert.accessoryView = password
                     guard alert.runModal() == .alertFirstButtonReturn && document.unlock(withPassword: password.stringValue) else { NSApp.terminate(nil); return }
                 }
@@ -412,7 +482,7 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
             let alert = NSAlert(error: error); alert.runModal(); NSApp.terminate(nil)
         }
     }
-    func showOffice(_ url: URL) {
+    func showOffice(_ url: URL, spreadsheet: String? = nil) {
         window.title = "\(url.lastPathComponent) — Glim"
         let host = window.contentView!
         let toolbar = NSStackView()
@@ -422,15 +492,31 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
         titleLabel.lineBreakMode = .byTruncatingMiddle
         titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         toolbar.addArrangedSubview(titleLabel)
-        toolbar.addArrangedSubview(button("Open in Default App", #selector(openOfficeExternally)))
+        toolbar.addArrangedSubview(button(L("Open in Default App"), #selector(openOfficeExternally)))
         host.addSubview(toolbar)
         NSLayoutConstraint.activate([
             toolbar.topAnchor.constraint(equalTo: host.topAnchor, constant: 10),
             toolbar.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: 12),
             toolbar.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -12)
         ])
+        if let html = spreadsheet {
+            let configuration = WKWebViewConfiguration()
+            configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+            let web = WKWebView(frame: .zero, configuration: configuration)
+            spreadsheetView = web
+            web.translatesAutoresizingMaskIntoConstraints = false
+            host.addSubview(web)
+            NSLayoutConstraint.activate([
+                web.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 10),
+                web.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+                web.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+                web.bottomAnchor.constraint(equalTo: host.bottomAnchor)
+            ])
+            web.loadHTMLString(html, baseURL: nil)
+            return
+        }
         guard let preview = QLPreviewView(frame: host.bounds, style: .normal) else {
-            let alert = NSAlert(); alert.messageText = "Document preview is unavailable"; alert.informativeText = "Open this document in its default app to view it."; alert.runModal(); return
+            let alert = NSAlert(); alert.messageText = L("Document preview is unavailable"); alert.informativeText = L("Open this document in its default app to view it."); alert.runModal(); return
         }
         officeView = preview
         preview.translatesAutoresizingMaskIntoConstraints = false
@@ -443,6 +529,11 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
             preview.trailingAnchor.constraint(equalTo: host.trailingAnchor),
             preview.bottomAnchor.constraint(equalTo: host.bottomAnchor)
         ])
+        // Quick Look creates its remote content when previewItem is assigned.
+        // Resolve the toolbar and preview bounds first, rather than loading
+        // against the initial full-window frame and resizing it afterwards.
+        host.layoutSubtreeIfNeeded()
+        preview.layoutSubtreeIfNeeded()
         preview.previewItem = url as NSURL
     }
     @objc func openOfficeExternally() { if let url = urls.first { NSWorkspace.shared.open(url) } }
@@ -508,7 +599,7 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
 
     func skipFailed(_ item: AVPlayerItem) {
         guard player.currentItem === item, failed.insert(urls[index]).inserted else { return }
-        detailLabel.stringValue = "Cannot play this format or codec"
+        detailLabel.stringValue = L("Cannot play this format or codec")
         if index + 1 < urls.count { play(index + 1) }
         else { player.pause() }
     }
@@ -556,10 +647,13 @@ FileHandle.standardInput.readabilityHandler = { [weak delegate] handle in
     }
 }
 let menu = NSMenu(); let appItem = NSMenuItem(); let appMenu = NSMenu()
-appMenu.addItem(withTitle: "Quit Glim Preview", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+appMenu.addItem(withTitle: L("Quit Glim Preview"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 appItem.submenu = appMenu; menu.addItem(appItem)
+let fileItem = NSMenuItem(); let fileMenu = NSMenu(title: "File")
+fileMenu.addItem(withTitle: L("Close Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+fileItem.submenu = fileMenu; menu.addItem(fileItem)
 let editItem = NSMenuItem(); let editMenu = NSMenu(title: "Edit")
-editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+editMenu.addItem(withTitle: L("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+editMenu.addItem(withTitle: L("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 editItem.submenu = editMenu; menu.addItem(editItem); app.mainMenu = menu
 app.run()

@@ -5,10 +5,30 @@ pub(super) struct DiffReader {
     pub source: SourceReader,
     pub split: Option<Entity<crate::views::split_diff::SplitDiff>>,
     pub side_by_side: bool,
+    pub(super) notice: Option<&'static str>,
 }
 impl DiffReader {
     pub fn new(document: &DiffDocument, window: &mut Window, cx: &mut App) -> Self {
-        let (mut text, spans) = diff_content(&document.patch);
+        let mut preview = String::new();
+        let mut shortened = false;
+        for (index, line) in document.patch.split_inclusive('\n').enumerate() {
+            if index >= 50_000 || preview.len() >= 16 * 1024 * 1024 {
+                shortened = true;
+                break;
+            }
+            if line.len() > 64 * 1024 {
+                let mut end = 64 * 1024;
+                while !line.is_char_boundary(end) {
+                    end -= 1;
+                }
+                preview.push_str(&line[..end]);
+                preview.push_str(" … [此行预览已截断]\n");
+                shortened = true;
+            } else {
+                preview.push_str(line);
+            }
+        }
+        let (mut text, spans) = diff_content(&preview);
         if text == "Binary file changed."
             && document
                 .change
@@ -20,7 +40,9 @@ impl DiffReader {
         }
         let source =
             SourceReader::new(&text, "plain", true, spans, ScrollHandle::new(), window, cx);
-        let split = split_patch(&document.patch)
+        let split = (!shortened)
+            .then(|| split_patch(&preview))
+            .flatten()
             .map(|patch| cx.new(|cx| crate::views::split_diff::SplitDiff::new(patch, window, cx)));
         Self {
             source,
@@ -30,6 +52,7 @@ impl DiffReader {
                     .and_then(|p| p.diff_side_by_side)
                     .unwrap_or(true),
             split,
+            notice: shortened.then_some("大型 diff 使用受限单栏预览：最多 16 MiB、50,000 行，每行 64 KiB。截断仅影响显示，文件及整文件暂存不变；完整内容可用 View file 查看。"),
         }
     }
     pub fn render(&mut self, cx: &mut App) -> AnyElement {
@@ -38,7 +61,21 @@ impl DiffReader {
         {
             split.clone().into_any_element()
         } else {
-            self.source.render(cx)
+            gpui_kit::component::v_flex()
+                .size_full()
+                .min_h_0()
+                .children(
+                    self.notice
+                        .map(|notice| div().p_3().text_sm().child(notice)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .size_full()
+                        .child(self.source.render(cx)),
+                )
+                .into_any_element()
         }
     }
 }

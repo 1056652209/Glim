@@ -308,7 +308,7 @@ impl Explorer {
             .h(px(ROW_HEIGHT))
             .w_full()
             .bg(if self.selected == Some(index) {
-                cx.theme().accent
+                cx.theme().foreground.opacity(0.14)
             } else {
                 cx.theme().sidebar
             })
@@ -492,7 +492,7 @@ impl Render for Explorer {
                         .p_4()
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
-                        .child("This folder is empty."),
+                        .child(glim_services::locale::tr("This folder is empty.")),
                 )
             })
             .child(

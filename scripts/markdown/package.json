@@ -1,7 +1,10 @@
 {
   "private": true,
-  "scripts": { "bundle": "node bundle.mjs" },
+  "scripts": {
+    "bundle": "node bundle.mjs"
+  },
   "dependencies": {
+    "@mermaid-js/mermaid-zenuml": "1.0.1",
     "@plantuml/core": "1.2026.8",
     "@viz-js/viz": "3.31.0",
     "flowchart.js": "1.18.0",
@@ -10,5 +13,7 @@
     "mermaid": "12.1.0",
     "wavedrom": "3.7.0"
   },
-  "devDependencies": { "esbuild": "0.25.12" }
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
 }

@@ -80,7 +80,8 @@ fn tokens(line: &str, language: &str) -> Vec<(Range<usize>, &'static str)> {
     while i < bytes.len() {
         let start = i;
         let mut kind = "";
-        if (i == first && (bytes[i] == b'#' || (language == "ini" && bytes[i] == b';')))
+        if ((i == first || language == "nix")
+            && (bytes[i] == b'#' || (language == "ini" && bytes[i] == b';')))
             || (language == "jinja" && line[i..].starts_with("{#"))
         {
             kind = "comment";
@@ -170,9 +171,12 @@ fn tokens(line: &str, language: &str) -> Vec<(Range<usize>, &'static str)> {
                 "true" | "false" | "null" | "none" | "True" | "False" | "None"
             ) {
                 kind = "constant";
-            } else if matches!(language, "ini" | "dotenv") && key_end.is_some_and(|end| start < end)
+            } else if matches!(language, "ini" | "dotenv" | "nix")
+                && key_end.is_some_and(|end| start < end)
             {
                 kind = "property";
+            } else if language == "nix" && line[i..].trim_start().starts_with(':') {
+                kind = "variable.parameter";
             } else if language == "jinja" && start > 0 && bytes[start - 1] == b'<' {
                 kind = "tag";
             }
@@ -183,6 +187,9 @@ fn tokens(line: &str, language: &str) -> Vec<(Range<usize>, &'static str)> {
                 i += 1;
             }
         } else {
+            if language == "nix" && b"+-*/!?=<>@".contains(&bytes[i]) {
+                kind = "operator";
+            }
             if b"={}[]():,|<>".contains(&bytes[i]) {
                 kind = "punctuation.delimiter";
             }

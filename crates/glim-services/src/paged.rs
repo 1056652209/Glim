@@ -6,8 +6,8 @@ use std::{
     path::{Path, PathBuf},
     time::SystemTime,
 };
-pub const PAGE_BYTES: u64 = 256 * 1024;
-pub const FULL_BYTES: u64 = 64 * 1024 * 1024;
+pub const PAGE_BYTES: u64 = 1024 * 1024;
+pub const FULL_BYTES: u64 = 256 * 1024 * 1024;
 pub struct TextPage {
     pub path: PathBuf,
     pub text: String,
@@ -23,7 +23,7 @@ pub fn read_page(path: &Path, start: u64, all: bool) -> Result<TextPage> {
     let total = metadata.len();
     ensure!(
         !all || total <= FULL_BYTES,
-        "Full view is limited to 64 MiB. Continue using pages for this file."
+        "Full view is limited to 256 MiB. Continue using pages for this file."
     );
     ensure!(start <= total, "File changed; reopen it to restart reading");
     file.seek(SeekFrom::Start(start))?;
@@ -51,8 +51,8 @@ pub fn read_page(path: &Path, start: u64, all: bool) -> Result<TextPage> {
     let end = start + bytes.len() as u64;
     let text = String::from_utf8(bytes)?;
     ensure!(
-        !all || text.bytes().filter(|b| *b == b'\n').count() <= 1_000_000,
-        "Full view exceeds one million rows. Continue using pages."
+        !all || text.bytes().filter(|b| *b == b'\n').count() <= 4_000_000,
+        "Full view exceeds four million rows. Continue using pages."
     );
     let after = file.metadata()?;
     ensure!(

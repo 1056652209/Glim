@@ -17,7 +17,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
     private var offset = 0
     private var more = false
     private var busy = false
-    private let pageSize = 200
+    private let pageSize = 500
 
     init(path: String?, information: String) {
         super.init()
@@ -43,19 +43,19 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
             let code = sqlite3_open_v2(path, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_PRIVATECACHE, nil)
             guard code == SQLITE_OK, let database = database else { fail("Cannot open SQLite snapshot."); return }
             sqlite3_busy_timeout(database, 1000)
-            sqlite3_limit(database, SQLITE_LIMIT_LENGTH, 8 * 1024 * 1024)
+            sqlite3_limit(database, SQLITE_LIMIT_LENGTH, 32 * 1024 * 1024)
             sqlite3_limit(database, SQLITE_LIMIT_COLUMN, 256)
             // macOS system SQLite omits the extension-loading API.
             sqlite3_exec(database, "PRAGMA trusted_schema=OFF; PRAGMA query_only=ON; PRAGMA cache_size=-8192; PRAGMA temp_store=FILE;", nil, nil, nil)
             do {
-                let result = try query("SELECT name, COALESCE(sql, '') FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name LIMIT 1001", limit: 1001, textLimit: 16384)
-                let values = result.rows.prefix(1000).map { (name: $0[0], sql: $0[1]) }
+                let result = try query("SELECT name, COALESCE(sql, '') FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name LIMIT 5001", limit: 5001, textLimit: 16384)
+                let values = result.rows.prefix(5000).map { (name: $0[0], sql: $0[1]) }
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
                     self.tables = values
                     self.picker.addItems(withTitles: values.map { $0.name })
                     self.status.stringValue = values.isEmpty ? "No user tables or views." : "\(values.count) tables / views"
-                    if result.rows.count > 1000 { self.status.stringValue += " (first 1,000 shown)" }
+                    if result.rows.count > 5000 { self.status.stringValue += " (first 5,000 shown)" }
                     self.controls()
                     if !values.isEmpty { self.loadPage() }
                 }
@@ -79,7 +79,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
             guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement = statement else { throw failure() }
             defer { sqlite3_finalize(statement) }
             guard sqlite3_stmt_readonly(statement) != 0 else { throw NSError(domain: "SQLite", code: 1, userInfo: [NSLocalizedDescriptionKey: "Only read-only queries are allowed."]) }
-            let count = min(Int(sqlite3_column_count(statement)), 64)
+            let count = min(Int(sqlite3_column_count(statement)), 256)
             let columns = (0..<count).map { String(cString: sqlite3_column_name(statement, Int32($0))) }
             var result: [[String]] = []
             while result.count < limit {
@@ -121,7 +121,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
         let name = tables[picker.indexOfSelectedItem].name.replacingOccurrences(of: "\"", with: "\"\"")
         let schema = structure.state == .on
         let queryText = schema ? "PRAGMA table_xinfo(\"\(name)\")" : "SELECT * FROM \"\(name)\" LIMIT \(pageSize + 1) OFFSET \(offset)"
-        busy = true; status.stringValue = "Loading…"; controls()
+        busy = true; status.stringValue = L("Loading…"); controls()
         queue.async { [self] in
             do {
                 let result = try query(queryText, limit: schema ? 256 : pageSize + 1)
@@ -134,7 +134,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
                         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(String(index))); column.title = name; column.width = 180; self.grid.addTableColumn(column)
                     }
                     self.grid.reloadData(); self.busy = false; self.controls()
-                    self.status.stringValue = schema ? "Table structure" : "\(self.rows.count) rows · offset \(self.offset) · up to 64 columns · long values shown as summaries"
+                    self.status.stringValue = schema ? "Table structure" : "\(self.rows.count) rows · offset \(self.offset) · up to 256 columns · long values shown as summaries"
                 }
             } catch { fail(error.localizedDescription) }
         }
@@ -144,7 +144,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
         let alert = NSAlert(); alert.messageText = "Table / View Definition"
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 240)); scroll.hasVerticalScroller = true
         let text = NSTextView(frame: scroll.bounds); text.isEditable = false; text.font = .monospacedSystemFont(ofSize: 12, weight: .regular); text.string = tables[picker.indexOfSelectedItem].sql
-        scroll.documentView = text; alert.accessoryView = scroll; alert.addButton(withTitle: "Close"); alert.runModal()
+        scroll.documentView = text; alert.accessoryView = scroll; alert.addButton(withTitle: L("Close")); alert.runModal()
     }
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {

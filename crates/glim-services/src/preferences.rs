@@ -17,6 +17,26 @@ fn wrap_path() -> Result<PathBuf> {
     wrap_path_for("Glim")
 }
 
+pub fn workspace_folders() -> Result<Vec<PathBuf>> {
+    let path = wrap_path()?.with_file_name("workspace.json");
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn save_workspace_folders(folders: &[PathBuf]) -> Result<()> {
+    let path = wrap_path()?.with_file_name("workspace.json");
+    let parent = path.parent().context("Invalid preferences path")?;
+    std::fs::create_dir_all(parent)?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    serde_json::to_writer(&mut file, folders)?;
+    file.as_file().sync_all()?;
+    file.persist(path)?;
+    Ok(())
+}
+
 pub fn word_wrap() -> bool {
     wrap_path()
         .ok()
@@ -105,6 +125,25 @@ pub fn save_diff_mode(side_by_side: bool) -> Result<()> {
             "inline"
         }
     )?;
+    file.persist(path)?;
+    Ok(())
+}
+
+pub fn language() -> Option<String> {
+    let path = wrap_path().ok()?.with_file_name("language");
+    let value = std::fs::read_to_string(path).ok()?;
+    matches!(value.trim(), "system" | "en" | "zh-CN").then(|| value.trim().to_owned())
+}
+pub fn save_language(language: &str) -> Result<()> {
+    anyhow::ensure!(
+        matches!(language, "system" | "en" | "zh-CN"),
+        "Unknown language"
+    );
+    let path = wrap_path()?.with_file_name("language");
+    let parent = path.parent().context("Invalid preferences path")?;
+    std::fs::create_dir_all(parent)?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    writeln!(file, "{language}")?;
     file.persist(path)?;
     Ok(())
 }

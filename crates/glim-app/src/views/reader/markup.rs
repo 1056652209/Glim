@@ -15,6 +15,7 @@ pub(super) struct MarkupReader {
     base: url::Url,
     headings: HashMap<String, Range<usize>>,
     pending_anchor: Option<String>,
+    preview_text: String,
     _subscription: Subscription,
     reveal_pending: Rc<Cell<bool>>,
     diagrams: Option<Entity<DiagramPreview>>,
@@ -75,10 +76,15 @@ impl MarkupReader {
             base: url::Url::from_file_path(path).expect("absolute document path"),
             headings: headings(text),
             pending_anchor: None,
+            preview_text: text.to_owned(),
         }
     }
     pub fn sync_preview(&mut self, cx: &mut App) {
         let text = self.source.state.read(cx).value().to_string();
+        if text == self.preview_text {
+            return;
+        }
+        self.preview_text.clone_from(&text);
         self.headings = headings(&text);
         self.state.update(cx, |s, cx| s.set_text(&text, cx));
         if let Some(diagrams) = &self.diagrams {

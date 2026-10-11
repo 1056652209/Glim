@@ -1,6 +1,10 @@
 use super::{Sidebar, Workspace};
 use crate::{
-    app::actions::{AddFolder, CloseWindow, OpenFile, OpenFolder, Refresh, SaveFile},
+    app::actions::{
+        AddFolder, CloseWindow, CloseWorkspace, NavigateBack, NavigateForward, NextTab, OpenFile,
+        OpenFolder, PreviousTab, Refresh, SaveFile, SearchWorkspace, TogglePreview, ToggleSidebar,
+        ToggleWordWrap,
+    },
     views::welcome::welcome,
 };
 use gpui_kit::{
@@ -179,7 +183,7 @@ impl Render for Workspace {
                     Button::new("empty-open-folder")
                         .primary()
                         .w_full()
-                        .label("Open Folder")
+                        .label(glim_services::locale::tr("Open Folder"))
                         .on_click(cx.listener(|v, _, w, cx| v.choose_path(true, w, cx))),
                 )
                 .into_any_element()
@@ -313,6 +317,37 @@ impl Render for Workspace {
                     cx.stop_propagation();
                 }),
             )
+            .on_action(cx.listener(|v, _: &SearchWorkspace, w, cx| {
+                v.search.update(cx, |search, cx| search.focus(w, cx))
+            }))
+            .on_action(cx.listener(|v, _: &ToggleSidebar, _, cx| {
+                v.sidebar_visible = !v.sidebar_visible;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|v, _: &TogglePreview, w, cx| {
+                if let Some(reader) = v.active_reader().filter(|reader| reader.can_preview()) {
+                    let preview = reader.toggle_label() != "Source";
+                    v.set_reader_preview(preview, w, cx);
+                }
+            }))
+            .on_action(cx.listener(|v, _: &ToggleWordWrap, w, cx| v.toggle_word_wrap(w, cx)))
+            .on_action(cx.listener(|v, _: &NextTab, w, cx| {
+                if !v.tabs.is_empty() {
+                    v.activate_tab((v.active.unwrap_or(0) + 1) % v.tabs.len(), w, cx);
+                }
+            }))
+            .on_action(cx.listener(|v, _: &PreviousTab, w, cx| {
+                if !v.tabs.is_empty() {
+                    v.activate_tab(
+                        (v.active.unwrap_or(0) + v.tabs.len() - 1) % v.tabs.len(),
+                        w,
+                        cx,
+                    );
+                }
+            }))
+            .on_action(cx.listener(|v, _: &NavigateBack, w, cx| v.navigate(false, w, cx)))
+            .on_action(cx.listener(|v, _: &NavigateForward, w, cx| v.navigate(true, w, cx)))
+            .on_action(cx.listener(|v, _: &CloseWorkspace, w, cx| v.request_close_window(w, cx)))
             .on_action(cx.listener(|v, _: &AddFolder, w, cx| v.choose_add_folder(w, cx)))
             .on_action(cx.listener(|v, _: &OpenFile, w, cx| v.choose_path(false, w, cx)))
             .on_action(cx.listener(|v, _: &OpenFolder, w, cx| v.choose_path(true, w, cx)))
@@ -366,16 +401,17 @@ impl Render for Workspace {
                                 h_flex()
                                     .justify_between()
                                     .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(cx.theme().danger)
-                                            .child("操作未完成"),
+                                        div().text_sm().text_color(cx.theme().danger).child(
+                                            glim_services::locale::tr("Operation incomplete"),
+                                        ),
                                     )
                                     .child(
                                         Button::new("dismiss-error")
                                             .ghost()
                                             .label("×")
-                                            .accessibility_label("关闭错误提示")
+                                            .accessibility_label(glim_services::locale::tr(
+                                                "Dismiss error",
+                                            ))
                                             .on_click(cx.listener(|v, _, _, cx| {
                                                 v.error = None;
                                                 cx.notify();

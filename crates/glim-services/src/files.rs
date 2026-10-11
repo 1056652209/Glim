@@ -4,7 +4,7 @@ use anyhow::{Context, Result, ensure};
 use glim_core::{Document, DocumentKind};
 
 /// Editable text budget; larger files use bounded, read-only windows.
-pub const MAX_DOCUMENT_BYTES: u64 = 8 * 1024 * 1024;
+pub const MAX_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
 
 pub fn read_document(path: &Path) -> Result<Document> {
     ensure!(path.is_file(), "Not a regular file: {}", path.display());
@@ -19,7 +19,7 @@ pub fn read_document(path: &Path) -> Result<Document> {
     file.take(MAX_DOCUMENT_BYTES + 1).read_to_end(&mut bytes)?;
     ensure!(
         bytes.len() as u64 <= MAX_DOCUMENT_BYTES,
-        "File exceeds the 8 MiB editing limit: {}",
+        "File exceeds the 32 MiB editing limit: {}",
         path.display()
     );
     ensure!(
@@ -46,7 +46,7 @@ pub fn save_document(path: &Path, expected: &str, text: &str) -> Result<()> {
         .map_err(|_| anyhow::anyhow!("Save lock unavailable"))?;
     ensure!(
         text.len() as u64 <= MAX_DOCUMENT_BYTES,
-        "File exceeds the 8 MiB editing limit"
+        "File exceeds the 32 MiB editing limit"
     );
     ensure!(
         !text.contains('\0'),

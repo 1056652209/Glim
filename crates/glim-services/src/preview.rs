@@ -91,8 +91,8 @@ fn playlist(path: &Path, folder: bool) -> Result<Vec<PathBuf>> {
         ensure!(can_open(path), "Unsupported or missing preview file");
         if is_font(path) {
             ensure!(
-                std::fs::metadata(path)?.len() <= 64 * 1024 * 1024,
-                "Font preview is limited to 64 MiB"
+                std::fs::metadata(path)?.len() <= 128 * 1024 * 1024,
+                "Font preview is limited to 128 MiB"
             );
         }
         return Ok(vec![path.to_path_buf()]);
@@ -133,10 +133,20 @@ pub fn open(
     } else {
         None
     };
+    let spreadsheet = if !folder
+        && path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("xls") || s.eq_ignore_ascii_case("xlsx"))
+    {
+        Some(crate::spreadsheet::preview(path)?)
+    } else {
+        None
+    };
     launch(
         serde_json::json!({"files": files, "shuffle": shuffle, "office": !folder && is_office(path), "font": !folder && is_font(path),
             "sqlite": sqlite.as_ref().and_then(|s| s.database.as_ref()).and_then(|p| p.to_str()),
-            "sqliteInfo": sqlite.as_ref().map(|s| &s.information)}),
+            "sqliteInfo": sqlite.as_ref().map(|s| &s.information), "spreadsheet": spreadsheet}),
         cancelled,
         show,
     )
@@ -162,10 +172,12 @@ pub fn open_associations(cancelled: std::sync::Arc<std::sync::atomic::AtomicBool
 }
 
 fn launch(
-    configuration: serde_json::Value,
+    mut configuration: serde_json::Value,
     cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
     show: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<()> {
+    configuration["language"] = serde_json::json!(crate::locale::code());
+    configuration["localizations"] = crate::locale::translations();
     #[cfg(target_os = "macos")]
     {
         use std::{

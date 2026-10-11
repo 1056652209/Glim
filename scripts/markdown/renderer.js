@@ -1,4 +1,7 @@
 import mermaid from 'mermaid';
+import zenuml from '@mermaid-js/mermaid-zenuml';
+import { renderSalt } from './salt.js';
+import { chenToDot } from './chen.js';
 import { instance } from '@viz-js/viz';
 import flowchart from 'flowchart.js';
 import WaveDrom from 'wavedrom';
@@ -18,10 +21,12 @@ mermaid.initialize({
   theme: 'default',
   fontFamily: 'Arial, sans-serif',
   flowchart: { htmlLabels: false },
+  journey: { textPlacement: 'svg' },
   htmlLabels: false,
-  maxTextSize: 65536,
+  maxTextSize: 262144,
   maxEdges: 1000,
 });
+const externalDiagramsReady = mermaid.registerExternalDiagrams([zenuml]);
 window.Viz = { instance };
 window.WaveSkin = WaveDrom.waveSkin;
 window.PLANTUML_STDLIB_BASE = './';
@@ -30,8 +35,10 @@ const adaptor = liteAdaptor();
 RegisterHTMLHandler(adaptor);
 const mathDocument = mathjax.document('', {
   InputJax: new TeX({
-    packages: AllPackages.filter(name => !['require', 'autoload', 'html'].includes(name)),
-    maxBuffer: 65536,
+    // noundefined paints unknown commands red instead of reporting a parse
+    // error, which would make malformed or disabled commands look successful.
+    packages: AllPackages.filter(name => !['require', 'autoload', 'html', 'noundefined'].includes(name)),
+    maxBuffer: 262144,
     maxMacros: 1000,
   }),
   OutputJax: new SVG({ fontCache: 'none' }),
@@ -98,19 +105,39 @@ async function render(request, index) {
   host.replaceChildren();
   const { kind, source } = request;
   switch (kind) {
+    case 'zenuml':
     case 'mermaid': {
-      const result = await mermaid.render(`glim-diagram-${index}`, source);
+      await externalDiagramsReady;
+      const input = kind === 'zenuml' && !/^\s*zenuml\b/.test(source) ? `zenuml\n${source}` : source;
+      const result = await mermaid.render(`glim-diagram-${index}`, input);
       return result.svg;
     }
     case 'dot':
       viz ??= await instance();
       return viz.renderString(source, { format: 'svg' });
     case 'plantuml': {
+      if (/^\s*@startchen\b/m.test(source)) {
+        viz ??= await instance();
+        return viz.renderString(chenToDot(source), { format: 'svg' });
+      }
+      if (/^\s*@startsalt\b/m.test(source) || /^\s*(?:@startuml\s*\n)?salt\b/m.test(source)) {
+        return renderSalt(source);
+      }
+      if (/^\s*@startdot\b/m.test(source)) {
+        viz ??= await instance();
+        return viz.renderString(source.replace(/^\s*@startdot[^\n]*\n/m, '').replace(/^\s*@enddot\s*$/m, ''), { format: 'svg' });
+      }
       if (/^\s*!include(?:url|_once|_many)?\s+(?!<)/mi.test(source)) {
         throw new Error('离线预览只支持随应用提供的 PlantUML 标准库 include');
       }
       const wrapped = /^\s*@start\w+/m.test(source) ? source : `@startuml\n${source}\n@enduml`;
-      return new Promise((resolve, reject) => window.PLANTUML_RENDER(wrapped.split(/\r?\n/), resolve, reject));
+      const svg = await new Promise((resolve, reject) => window.PLANTUML_RENDER(wrapped.split(/\r?\n/), resolve, reject));
+      const document = new DOMParser().parseFromString(svg, 'image/svg+xml');
+      const message = document.documentElement.textContent || '';
+      if (/Diagram not supported by this release of PlantUML|Syntax Error\?|Syntax Error|Cannot include|Cannot load theme/i.test(message)) {
+        throw new Error(message.trim().slice(0, 1200));
+      }
+      return svg;
     }
     case 'flowchart': {
       host.id = `flowchart-${index}`;
@@ -137,7 +164,8 @@ async function render(request, index) {
       });
       const markup = adaptor.outerHTML(node);
       host.innerHTML = markup;
-      if (host.querySelector('[data-mjx-error]')) throw new Error('数学公式语法无法识别');
+      const error = host.querySelector('[data-mjx-error]');
+      if (error) throw new Error(`数学公式语法无法识别：${error.getAttribute('data-mjx-error') || '解析错误'}`);
       const svg = host.querySelector('svg');
       if (!svg) throw new Error('数学公式没有返回 SVG');
       return svg.outerHTML;

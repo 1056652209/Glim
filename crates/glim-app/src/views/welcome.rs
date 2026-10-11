@@ -27,14 +27,16 @@ pub fn welcome(show_open_folder: bool, cx: &App) -> impl IntoElement {
         .child(
             div()
                 .text_color(cx.theme().muted_foreground)
-                .child("The all-purpose viewer for the AI era."),
+                .child(glim_services::locale::tr(
+                    "The all-purpose viewer for the AI era.",
+                )),
         )
         .when(show_open_folder, |view| {
             view.child(
                 div().mt_4().child(
                     Button::new("welcome-open-folder")
                         .primary()
-                        .label("Open Folder")
+                        .label(glim_services::locale::tr("Open Folder"))
                         .on_click(|_, window, cx| {
                             window.dispatch_action(Box::new(OpenFolder), cx);
                         }),

@@ -1,3 +1,4 @@
+mod csv;
 mod diagrams;
 mod diff;
 mod json;
@@ -54,6 +55,7 @@ pub struct Reader {
     pub commit_id: Option<String>,
     pub commit_file: Option<PathBuf>,
     json: Option<(Entity<json::JsonTree>, bool)>,
+    csv: Option<(Entity<csv::CsvTable>, bool)>,
     renderer: Renderer,
 }
 impl Reader {
@@ -81,8 +83,22 @@ impl Reader {
                 cx,
             ))
         };
-        let json = (language_for_path(&document.path) == "json")
-            .then(|| (cx.new(|_| json::JsonTree::new()), false));
+        let json = (language_for_path(&document.path) == "json").then(|| {
+            let jsonc = document
+                .path
+                .extension()
+                .and_then(|s| s.to_str())
+                .is_some_and(|s| {
+                    s.eq_ignore_ascii_case("jsonc") || s.eq_ignore_ascii_case("code-workspace")
+                });
+            (cx.new(|_| json::JsonTree::new(jsonc)), false)
+        });
+        let csv = document
+            .path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("csv"))
+            .then(|| (cx.new(|_| csv::CsvTable::new()), false));
         Self {
             title: document.path.display().to_string().into(),
             path: document.path,
@@ -93,6 +109,7 @@ impl Reader {
             commit_id: None,
             commit_file: None,
             json,
+            csv,
             renderer,
         }
     }
@@ -107,6 +124,7 @@ impl Reader {
             commit_id: None,
             commit_file: None,
             json: None,
+            csv: None,
             renderer: Renderer::Native(
                 cx.new(|cx| native::NativeReader::new(path, folder, shuffle, cx)),
             ),
@@ -124,6 +142,7 @@ impl Reader {
             commit_id: None,
             commit_file: None,
             json: None,
+            csv: None,
             renderer: Renderer::Paged(cx.new(|_| paged::PagedReader::new(page))),
         }
     }
@@ -179,10 +198,12 @@ impl Reader {
             commit_id,
             commit_file,
             json: None,
+            csv: None,
             renderer: Renderer::Diff(DiffReader {
                 source,
                 split,
                 side_by_side,
+                notice: None,
             }),
         }
     }
@@ -210,6 +231,7 @@ impl Reader {
             commit_id: None,
             commit_file: None,
             json: None,
+            csv: None,
             renderer: Renderer::Bytes(source),
         }
     }
@@ -235,14 +257,29 @@ impl Reader {
             commit_id: None,
             commit_file: None,
             json: None,
+            csv: None,
             renderer,
         }
     }
     pub fn from_image(
         document: glim_services::media::ImageDocument,
         _: &mut Window,
-        _: &mut App,
+        cx: &mut App,
     ) -> Self {
+        let format = if document.gif {
+            ImageFormat::Gif
+        } else {
+            ImageFormat::Png
+        };
+        let pages = if document.pages.is_empty() {
+            vec![document.png]
+        } else {
+            document.pages
+        };
+        let images = pages
+            .into_iter()
+            .map(|bytes| Arc::new(Image::from_bytes(format, bytes)))
+            .collect();
         Self {
             title: document.path.display().to_string().into(),
             path: document.path,
@@ -253,10 +290,11 @@ impl Reader {
             commit_id: None,
             commit_file: None,
             json: None,
-            renderer: Renderer::Image(ImageReader(Arc::new(Image::from_bytes(
-                ImageFormat::Png,
-                document.png,
-            )))),
+            csv: None,
+            renderer: Renderer::Image(ImageReader {
+                pages: images,
+                page: cx.new(|_| 0_usize),
+            }),
         }
     }
     pub fn unavailable(path: PathBuf, reason: String, _: &mut Window, _: &mut App) -> Self {
@@ -271,6 +309,7 @@ impl Reader {
             commit_id: None,
             commit_file: None,
             json: None,
+            csv: None,
             renderer,
         }
     }
@@ -326,7 +365,9 @@ impl Reader {
         }
     }
     pub fn inherit_view(&mut self, old: &Self, cx: &mut App) {
-        if old.json.as_ref().is_some_and(|(_, visible)| *visible) {
+        if old.csv.as_ref().is_some_and(|(_, visible)| *visible)
+            || old.json.as_ref().is_some_and(|(_, visible)| *visible)
+        {
             self.set_preview(true, cx);
         }
         match (&mut self.renderer, &old.renderer) {
@@ -362,7 +403,9 @@ impl Reader {
     }
 
     pub fn horizontal_offsets(&self, cx: &App) -> Option<Vec<Pixels>> {
-        if self.json.as_ref().is_some_and(|(_, visible)| *visible) {
+        if self.csv.as_ref().is_some_and(|(_, visible)| *visible)
+            || self.json.as_ref().is_some_and(|(_, visible)| *visible)
+        {
             return Some(Vec::new());
         }
         match &self.renderer {
@@ -408,6 +451,9 @@ impl Reader {
         ))
     }
 
+    pub fn is_csv(&self) -> bool {
+        self.csv.is_some()
+    }
     pub fn is_json(&self) -> bool {
         self.json.is_some()
     }
@@ -418,9 +464,22 @@ impl Reader {
         }
     }
     pub fn can_preview(&self) -> bool {
-        self.json.is_some() || matches!(self.renderer, Renderer::Markup(_))
+        self.csv.is_some() || self.json.is_some() || matches!(self.renderer, Renderer::Markup(_))
     }
     pub fn set_preview(&mut self, preview: bool, cx: &mut App) {
+        if self.csv.is_some() {
+            let text = if preview {
+                self.source().map(|s| s.state.read(cx).value().to_string())
+            } else {
+                None
+            };
+            if let Some((table, visible)) = &mut self.csv {
+                *visible = preview;
+                if let Some(text) = text {
+                    table.update(cx, |view, cx| view.load(text, cx));
+                }
+            }
+        }
         if self.json.is_some() {
             let text = if preview {
                 self.source().map(|s| s.state.read(cx).value().to_string())
@@ -442,7 +501,8 @@ impl Reader {
         }
     }
     pub fn toggle_label(&self) -> &'static str {
-        if self.json.as_ref().is_some_and(|(_, visible)| *visible)
+        if self.csv.as_ref().is_some_and(|(_, visible)| *visible)
+            || self.json.as_ref().is_some_and(|(_, visible)| *visible)
             || matches!(&self.renderer, Renderer::Markup(m) if m.preview)
         {
             "Source"
@@ -478,6 +538,9 @@ impl Reader {
         }
     }
     pub fn render(&mut self, open: OpenLink, cx: &mut App) -> AnyElement {
+        if let Some((table, true)) = &self.csv {
+            return table.clone().into_any_element();
+        }
         if let Some((tree, true)) = &self.json {
             return tree.clone().into_any_element();
         }
@@ -485,7 +548,7 @@ impl Reader {
             Renderer::Source(s) | Renderer::Bytes(s) => s.render(cx),
             Renderer::Markup(m) => m.render(open, cx),
             Renderer::Diff(d) => d.render(cx),
-            Renderer::Image(i) => i.render(),
+            Renderer::Image(i) => i.render(cx),
             Renderer::Native(n) => n.clone().into_any_element(),
             Renderer::Paged(p) => p.clone().into_any_element(),
             Renderer::Unavailable(e) => e.render(cx),

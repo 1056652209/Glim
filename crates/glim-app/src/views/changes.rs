@@ -60,12 +60,26 @@ pub struct Changes {
 }
 impl EventEmitter<ChangeSelected> for Changes {}
 impl Changes {
+    pub(crate) fn refresh_language(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.message.update(cx, |input, cx| {
+            input.set_placeholder(
+                glim_services::locale::tr(if cfg!(target_os = "macos") {
+                    "Commit message · ⌘Enter"
+                } else {
+                    "Commit message · Ctrl+Enter"
+                }),
+                window,
+                cx,
+            )
+        });
+    }
+
     pub fn new(repositories: Vec<Repository>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let message = cx.new(|cx| {
             InputState::new(window, cx).placeholder(if cfg!(target_os = "macos") {
-                "Commit message · ⌘Enter"
+                glim_services::locale::tr("Commit message · ⌘Enter")
             } else {
-                "Commit message · Ctrl+Enter"
+                glim_services::locale::tr("Commit message · Ctrl+Enter")
             })
         });
         let message_subscription =
@@ -334,7 +348,11 @@ impl Render for Changes {
                     .font_weight(FontWeight::BOLD)
                     .cursor_pointer()
                     .child(disclosure(self.repos_collapsed, cx))
-                    .child(div().flex_1().child("Repositories"))
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(glim_services::locale::tr("Repositories")),
+                    )
                     .child(
                         div()
                             .text_xs()
@@ -459,7 +477,7 @@ impl Render for Changes {
                             .font_weight(FontWeight::BOLD)
                             .cursor_pointer()
                             .child(disclosure(self.changes_collapsed, cx))
-                            .child("Changes")
+                            .child(glim_services::locale::tr("Changes"))
                             .on_click(
                                 cx.listener(|v, _, window, cx| v.toggle_section(1, window, cx)),
                             ),
@@ -469,8 +487,8 @@ impl Render for Changes {
                             .ghost()
                             .xsmall()
                             .icon(Icon::new(gpui_kit::assets::IconName::ListTree))
-                            .tooltip("Tree")
-                            .accessibility_label("Tree")
+                            .tooltip(glim_services::locale::tr("Tree"))
+                            .accessibility_label(glim_services::locale::tr("Tree"))
                             .selected(self.tree)
                             .on_click(cx.listener(|v, _, _, cx| {
                                 v.tree = true;
@@ -483,8 +501,8 @@ impl Render for Changes {
                             .ghost()
                             .xsmall()
                             .icon(Icon::new(gpui_kit::assets::IconName::List))
-                            .tooltip("List")
-                            .accessibility_label("List")
+                            .tooltip(glim_services::locale::tr("List"))
+                            .accessibility_label(glim_services::locale::tr("List"))
                             .selected(!self.tree)
                             .on_click(cx.listener(|v, _, _, cx| {
                                 v.tree = false;

@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const PREVIEW_BYTES: usize = 64 * 1024;
+pub const PREVIEW_BYTES: usize = 256 * 1024;
 pub struct BytePreview {
     pub path: PathBuf,
     pub text: String,
@@ -24,7 +24,7 @@ pub fn read_preview(path: &Path) -> Result<BytePreview> {
         "Read-only byte preview · {} bytes shown{}\nOffset    Hex bytes                                         ASCII\n",
         bytes.len(),
         if truncated {
-            " · truncated to first 64 KiB"
+            " · truncated to first 256 KiB"
         } else {
             ""
         }
@@ -69,7 +69,7 @@ mod tests {
         std::fs::write(&path, vec![0; PREVIEW_BYTES + 100])?;
         let preview = read_preview(&path)?;
         assert!(preview.text.contains("truncated"));
-        assert!(!preview.text.contains("00010000"));
+        assert!(!preview.text.contains(&format!("{:08x}", PREVIEW_BYTES)));
         assert!(read_preview(dir.path()).is_err());
         Ok(())
     }

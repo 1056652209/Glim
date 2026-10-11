@@ -27,7 +27,7 @@ pub fn run() -> anyhow::Result<()> {
             .context("Missing renderer output")?,
     );
     ensure!(
-        std::fs::metadata(&input)?.len() <= 8 * 1024 * 1024,
+        std::fs::metadata(&input)?.len() <= 64 * 1024 * 1024,
         "Renderer input too large"
     );
     let request = std::fs::read(input)?;
@@ -54,8 +54,13 @@ pub fn run() -> anyhow::Result<()> {
     let mut event_loop = EventLoopBuilder::<serde_json::Value>::with_user_event().build();
     #[cfg(target_os = "macos")]
     {
-        use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
+        use tao::platform::macos::{
+            ActivationPolicy, EventLoopExtMacOS, EventLoopWindowTargetExtMacOS,
+        };
         event_loop.set_activation_policy(ActivationPolicy::Prohibited);
+        event_loop.set_activation_policy_at_runtime(ActivationPolicy::Prohibited);
+        event_loop.set_dock_visibility(false);
+        event_loop.set_activate_ignoring_other_apps(false);
     }
     let proxy = event_loop.create_proxy();
     let window = WindowBuilder::new()
@@ -136,6 +141,7 @@ pub fn run() -> anyhow::Result<()> {
     let started = Instant::now();
     let mut bytes_used = 0;
     let mut write_error = None;
+    let mut timed_out = false;
     event_loop.run_return(|event, _, control_flow| {
         *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
         if let Event::UserEvent(value) = event {
@@ -184,13 +190,24 @@ pub fn run() -> anyhow::Result<()> {
                 }
             }
         }
-        if started.elapsed() > Duration::from_secs(40) {
+        if started.elapsed() > Duration::from_secs(10 + count as u64 * 8) {
+            timed_out = true;
             *control_flow = ControlFlow::Exit;
         }
     });
     if let Some(error) = write_error {
         return Err(error);
     }
+    for slot in &mut results {
+        if slot.is_null() {
+            *slot = serde_json::json!({ "error": if timed_out {
+                "整页图表渲染达到等待上限，此块尚未完成"
+            } else {
+                "离线渲染进程结束，此块未返回结果"
+            }});
+        }
+    }
+    std::fs::write(&output, serde_json::to_vec(&results)?)?;
     Ok(())
 }
 

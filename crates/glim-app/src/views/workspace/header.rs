@@ -107,7 +107,7 @@ impl Workspace {
         }));
         cx.notify();
     }
-    fn toggle_word_wrap(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn toggle_word_wrap(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.word_wrap = !self.word_wrap;
         let enabled = self.word_wrap;
         cx.global_mut::<crate::app::ReaderPreferences>().word_wrap = enabled;
@@ -128,7 +128,12 @@ impl Workspace {
         cx.notify();
     }
 
-    fn set_reader_preview(&mut self, preview: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn set_reader_preview(
+        &mut self,
+        preview: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(index) = self.active else {
             return;
         };
@@ -219,7 +224,7 @@ impl Workspace {
                             .size(px(16.))
                             .text_color(cx.theme().foreground),
                     )
-                    .accessibility_label("Toggle dark mode")
+                    .accessibility_label(glim_services::locale::tr("Toggle dark mode"))
                     .tooltip(if cx.theme().is_dark() {
                         "Switch to light mode"
                     } else {
@@ -238,7 +243,7 @@ impl Workspace {
                             .size(px(16.))
                             .text_color(cx.theme().foreground),
                     )
-                    .accessibility_label("Word wrap")
+                    .accessibility_label(glim_services::locale::tr("Word wrap"))
                     .tooltip(if self.word_wrap {
                         "Turn off word wrap"
                     } else {
@@ -255,8 +260,8 @@ impl Workspace {
                             .custom(subtle)
                             .icon(Icon::new(gpui_kit::assets::IconName::FileText))
                             .xsmall()
-                            .tooltip("View file")
-                            .accessibility_label("View file")
+                            .tooltip(glim_services::locale::tr("View file"))
+                            .accessibility_label(glim_services::locale::tr("View file"))
                             .on_click(cx.listener(|view, _, window, cx| {
                                 if let Some(reader) = view.active_reader() {
                                     view.open_path(reader.path.clone(), window, cx);
@@ -276,8 +281,8 @@ impl Workspace {
                             .custom(subtle)
                             .icon(Icon::new(gpui_kit::assets::IconName::Columns2))
                             .xsmall()
-                            .tooltip("Side by side")
-                            .accessibility_label("Side by side")
+                            .tooltip(glim_services::locale::tr("Side by side"))
+                            .accessibility_label(glim_services::locale::tr("Side by side"))
                             .selected(split)
                             .disabled(!available)
                             .on_click(cx.listener(|v, _, _, cx| {
@@ -289,8 +294,8 @@ impl Workspace {
                             .custom(subtle)
                             .icon(Icon::new(gpui_kit::assets::IconName::Rows2))
                             .xsmall()
-                            .tooltip("Inline")
-                            .accessibility_label("Inline")
+                            .tooltip(glim_services::locale::tr("Inline"))
+                            .accessibility_label(glim_services::locale::tr("Inline"))
                             .selected(!split)
                             .on_click(cx.listener(|v, _, _, cx| {
                                 v.set_diff_mode(false, cx);
@@ -302,6 +307,7 @@ impl Workspace {
                 self.active_reader().is_some_and(|r| r.can_preview()),
                 |bar| {
                     let json = self.active_reader().is_some_and(|r| r.is_json());
+                    let csv = self.active_reader().is_some_and(|r| r.is_csv());
                     let preview = self
                         .active_reader()
                         .is_some_and(|r| r.toggle_label() == "Source");
@@ -318,8 +324,20 @@ impl Workspace {
                                         gpui_kit::assets::IconName::Eye
                                     }))
                                     .xsmall()
-                                    .accessibility_label(if json { "JSON tree" } else { "Preview" })
-                                    .tooltip(if json { "JSON tree" } else { "Preview" })
+                                    .accessibility_label(glim_services::locale::tr(if csv {
+                                        "CSV table"
+                                    } else if json {
+                                        "JSON tree"
+                                    } else {
+                                        "Preview"
+                                    }))
+                                    .tooltip(glim_services::locale::tr(if csv {
+                                        "CSV table"
+                                    } else if json {
+                                        "JSON tree"
+                                    } else {
+                                        "Preview"
+                                    }))
                                     .selected(preview)
                                     .on_click(cx.listener(|view, _, window, cx| {
                                         view.set_reader_preview(true, window, cx);
@@ -330,8 +348,8 @@ impl Workspace {
                                     .custom(subtle)
                                     .icon(Icon::new(gpui_kit::assets::IconName::Code))
                                     .xsmall()
-                                    .accessibility_label("Source")
-                                    .tooltip("Source")
+                                    .accessibility_label(glim_services::locale::tr("Source"))
+                                    .tooltip(glim_services::locale::tr("Source"))
                                     .selected(!preview)
                                     .on_click(cx.listener(|view, _, window, cx| {
                                         view.set_reader_preview(false, window, cx);
@@ -355,72 +373,74 @@ impl Workspace {
             }))
             .w_full()
             .flex_shrink_0()
-            .child(
-                TitleBar::new().h(px(44.)).pl_0().pr_0().child(
-                    h_flex()
-                        .relative()
-                        .w_full()
-                        .h_full()
-                        .justify_center()
-                        .child(
-                            div()
-                                .relative()
-                                .w(px(380.))
-                                .child(Input::new(&self.search).small().focus_bordered(false))
-                                .child(
-                                    h_flex()
-                                        .absolute()
-                                        .right(relative(1.))
-                                        .top_0()
-                                        .h_full()
-                                        .mr_2()
-                                        .gap_1()
-                                        .child(
-                                            Button::new("back")
-                                                .ghost()
-                                                .small()
-                                                .label("←")
-                                                .accessibility_label("Back")
-                                                .disabled(
-                                                    self.history_cursor.is_none_or(|i| i == 0),
-                                                )
-                                                .on_click(cx.listener(|v, _, w, cx| {
-                                                    v.navigate(false, w, cx)
-                                                })),
-                                        )
-                                        .child(
-                                            Button::new("forward")
-                                                .ghost()
-                                                .small()
-                                                .label("→")
-                                                .accessibility_label("Forward")
-                                                .disabled(
-                                                    self.history_cursor.is_none_or(|i| {
-                                                        i + 1 >= self.history.len()
-                                                    }),
-                                                )
-                                                .on_click(cx.listener(|v, _, w, cx| {
-                                                    v.navigate(true, w, cx)
-                                                })),
-                                        ),
-                                ),
-                        )
-                        .child(
-                            h_flex()
-                                .absolute()
-                                .right(px(12.))
-                                .top_0()
-                                .h_full()
-                                .child(self.reader_controls(cx)),
-                        ),
-                ),
-            )
+            .child(workspace_title_bar(
+                h_flex()
+                    .relative()
+                    .w_full()
+                    .h_full()
+                    .justify_center()
+                    .child(
+                        div()
+                            .relative()
+                            .w(px(380.))
+                            .child(Input::new(&self.search).small().focus_bordered(false))
+                            .child(
+                                h_flex()
+                                    .absolute()
+                                    .right(relative(1.))
+                                    .top_0()
+                                    .h_full()
+                                    .mr_2()
+                                    .gap_1()
+                                    .child(
+                                        Button::new("back")
+                                            .ghost()
+                                            .small()
+                                            .label("←")
+                                            .accessibility_label(glim_services::locale::tr("Back"))
+                                            .disabled(self.history_cursor.is_none_or(|i| i == 0))
+                                            .on_click(
+                                                cx.listener(|v, _, w, cx| v.navigate(false, w, cx)),
+                                            ),
+                                    )
+                                    .child(
+                                        Button::new("forward")
+                                            .ghost()
+                                            .small()
+                                            .label("→")
+                                            .accessibility_label(glim_services::locale::tr(
+                                                "Forward",
+                                            ))
+                                            .disabled(
+                                                self.history_cursor
+                                                    .is_none_or(|i| i + 1 >= self.history.len()),
+                                            )
+                                            .on_click(
+                                                cx.listener(|v, _, w, cx| v.navigate(true, w, cx)),
+                                            ),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .absolute()
+                            .right(px(12.))
+                            .top_0()
+                            .h_full()
+                            .child(self.reader_controls(cx)),
+                    ),
+                cx,
+            ))
             .when(!self.results.is_empty(), |v| {
                 v.child(
                     deferred(
                         h_flex()
                             .absolute()
-                            .top(px(44.))
+                            .top(px(if cfg!(target_os = "windows") {
+                                74.
+                            } else {
+                                44.
+                            }))
                             .left_0()
                             .w_full()
                             .justify_center()
@@ -476,6 +496,33 @@ impl Workspace {
                     .with_priority(1),
                 )
             })
+            .into_any_element()
+    }
+}
+
+// Windows treats the title bar's Drag hitbox as a native non-client region.
+// Interactive controls must be in a separate client toolbar, not its children.
+fn workspace_title_bar(content: impl IntoElement, cx: &App) -> AnyElement {
+    if cfg!(target_os = "windows") {
+        v_flex()
+            .w_full()
+            .child(TitleBar::new().h(px(30.)).pl_0().pr_0())
+            .child(
+                div()
+                    .h(px(44.))
+                    .w_full()
+                    .bg(cx.theme().title_bar)
+                    .border_b_1()
+                    .border_color(cx.theme().title_bar_border)
+                    .child(content),
+            )
+            .into_any_element()
+    } else {
+        TitleBar::new()
+            .h(px(44.))
+            .pl_0()
+            .pr_0()
+            .child(content)
             .into_any_element()
     }
 }

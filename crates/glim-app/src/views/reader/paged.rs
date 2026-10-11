@@ -47,7 +47,7 @@ impl PagedReader {
         }
         let path = self.page.path.clone();
         let stamp = (self.page.total, self.page.modified);
-        let response = all.then(|| window.prompt(PromptLevel::Warning, "Load the entire file?", Some("Full view can use substantially more memory. Files up to 64 MiB can be loaded as read-only virtual text; syntax parsing, editing and minimap are disabled. Larger files remain paged."), &["Cancel", "Load All"], cx));
+        let response = all.then(|| window.prompt(PromptLevel::Warning, &glim_services::locale::tr("Load the entire file?"), Some("Full view can use substantially more memory. Files up to 256 MiB can be loaded as read-only virtual text; syntax parsing, editing and minimap are disabled. Larger files remain paged."), &["Cancel", "Load All"], cx));
         self.task = Some(cx.spawn_in(window, async move |view, cx| {
             if let Some(response) = response
                 && response.await != Ok(1)
@@ -141,7 +141,7 @@ impl Render for PagedReader {
                     .child(
                         Button::new("page-back")
                             .ghost()
-                            .label("Previous")
+                            .label(glim_services::locale::tr("Previous"))
                             .disabled(busy || previous.is_none())
                             .on_click(cx.listener(move |v, _, w, cx| {
                                 if let Some(offset) = previous {
@@ -152,7 +152,7 @@ impl Render for PagedReader {
                     .child(
                         Button::new("page-next")
                             .ghost()
-                            .label("Next page")
+                            .label(glim_services::locale::tr("Next page"))
                             .disabled(busy || next >= self.page.total)
                             .on_click(
                                 cx.listener(move |v, _, w, cx| v.load(next, false, false, w, cx)),
@@ -161,8 +161,8 @@ impl Render for PagedReader {
                     .child(
                         Button::new("page-all")
                             .ghost()
-                            .label("Load all…")
-                            .tooltip("Full view: up to 64 MiB and one million line breaks; larger files stay paged")
+                            .label(glim_services::locale::tr("Load all…"))
+                            .tooltip(glim_services::locale::tr("Full view: up to 256 MiB and four million line breaks; larger files stay paged"))
                             .disabled(
                                 busy || self.page.total > FULL_BYTES
                                     || (self.page.start == 0 && self.page.end == self.page.total),

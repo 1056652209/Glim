@@ -7,7 +7,7 @@ use std::{
     time::SystemTime,
 };
 
-const MAX_SNAPSHOT: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_SNAPSHOT: u64 = 4 * 1024 * 1024 * 1024;
 pub fn supports(path: &Path) -> bool {
     let name = path
         .file_name()
@@ -122,7 +122,7 @@ pub fn prepare(path: &Path) -> Result<Snapshot> {
             .context("Database family size overflow")?;
         ensure!(
             total <= MAX_SNAPSHOT,
-            "SQLite preview snapshot is limited to 2 GiB including its WAL; choose a smaller database copy"
+            "SQLite preview snapshot is limited to 4 GiB including its WAL; choose a smaller database copy"
         );
         let directory = tempfile::tempdir()?;
         let database = directory.path().join("snapshot.sqlite");

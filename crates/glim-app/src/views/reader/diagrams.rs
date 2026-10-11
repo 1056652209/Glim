@@ -11,7 +11,7 @@ use gpui_kit::{
 use std::{
     collections::HashMap,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
@@ -167,34 +167,58 @@ impl DiagramPreview {
         self.cancelled = Arc::new(AtomicBool::new(false));
         self.extensions = extensions(Arc::new(HashMap::new()));
         let cancelled = self.cancelled.clone();
+        let updates = Arc::new(Mutex::new(HashMap::new()));
+        let pending = updates.clone();
+        let done = Arc::new(AtomicBool::new(false));
+        let completed = done.clone();
         let work = cx.background_executor().spawn(async move {
-            match markdown_preview::render(&text, &cancelled) {
-                Ok(results) => results,
-                Err(error) => markdown_preview::collect(&text)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|diagram| (diagram, Err(format!("离线图表无法渲染：{error}"))))
-                    .collect(),
-            }
+            let publish = |diagram: Diagram,
+                           image: std::result::Result<markdown_preview::DiagramImage, String>| {
+                let preview = match image {
+                    Ok(image) => Preview::Image(
+                        Arc::new(Image::from_bytes(ImageFormat::Png, image.png)),
+                        image.width,
+                        image.height,
+                        image.baseline,
+                    ),
+                    Err(error) => Preview::Error(error),
+                };
+                pending.lock().unwrap().insert(diagram, preview);
+            };
+            let result = markdown_preview::render(&text, &cancelled, publish);
+            completed.store(true, Ordering::Release);
+            (result, text)
         });
         self.task = Some(cx.spawn(async move |view, cx| {
-            let result = work.await;
+            let mut snapshot = HashMap::new();
+            while !done.load(Ordering::Acquire) {
+                let batch = std::mem::take(&mut *updates.lock().unwrap());
+                if !batch.is_empty() {
+                    snapshot.extend(batch);
+                    if view
+                        .update(cx, |view, cx| {
+                            view.extensions = extensions(Arc::new(snapshot.clone()));
+                            cx.notify();
+                        })
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(100))
+                    .await;
+            }
+            let (result, text) = work.await;
+            snapshot.extend(std::mem::take(&mut *updates.lock().unwrap()));
+            if let Err(error) = result {
+                for diagram in markdown_preview::collect(&text).unwrap_or_default() {
+                    snapshot
+                        .entry(diagram)
+                        .or_insert_with(|| Preview::Error(format!("离线图表无法渲染：{error}")));
+                }
+            }
             let _ = view.update(cx, |view, cx| {
-                let snapshot = result
-                    .into_iter()
-                    .map(|(diagram, image)| {
-                        let preview = match image {
-                            Ok(image) => Preview::Image(
-                                Arc::new(Image::from_bytes(ImageFormat::Png, image.png)),
-                                image.width,
-                                image.height,
-                                image.baseline,
-                            ),
-                            Err(error) => Preview::Error(error),
-                        };
-                        (diagram, preview)
-                    })
-                    .collect();
                 view.extensions = extensions(Arc::new(snapshot));
                 view.task = None;
                 cx.notify();
@@ -251,7 +275,7 @@ impl MarkdownPlugin for DiagramPlugin {
         if inline == self.block {
             return None;
         }
-        let diagram = markdown_preview::from_node(node)?;
+        let diagram = markdown_preview::from_node_with_source(node, cx.node_source(node))?;
         let source = cx.node_source(node).unwrap_or(&diagram.source).to_owned();
         let preview = self
             .snapshot
