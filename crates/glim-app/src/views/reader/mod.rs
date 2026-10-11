@@ -1,3 +1,4 @@
+mod diagrams;
 mod diff;
 mod json;
 mod lexical;
@@ -37,7 +38,7 @@ enum Renderer {
     Source(SourceReader),
     Paged(Entity<paged::PagedReader>),
     Bytes(SourceReader),
-    Markup(MarkupReader),
+    Markup(Box<MarkupReader>),
     Diff(DiffReader),
     Image(ImageReader),
     Native(Entity<native::NativeReader>),
@@ -63,12 +64,12 @@ impl Reader {
             .and_then(|s| s.to_str())
             .is_some_and(|s| s.eq_ignore_ascii_case("html") || s.eq_ignore_ascii_case("htm"));
         let renderer = if document.kind == DocumentKind::Markdown || html {
-            Renderer::Markup(MarkupReader::new(
+            Renderer::Markup(Box::new(MarkupReader::new(
                 &document.path,
                 &document.text,
                 window,
                 cx,
-            ))
+            )))
         } else {
             Renderer::Source(SourceReader::new(
                 &document.text,

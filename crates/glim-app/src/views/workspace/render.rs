@@ -278,7 +278,10 @@ impl Render for Workspace {
                                     view.sidebar = mode;
                                     if view.sidebar_visible
                                         && mode == Sidebar::Changes
-                                        && !view.changes.as_ref().is_some_and(|c| c.read(cx).is_busy())
+                                        && !view
+                                            .changes
+                                            .as_ref()
+                                            .is_some_and(|c| c.read(cx).is_busy())
                                     {
                                         view.refresh(window, cx);
                                     }

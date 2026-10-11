@@ -4,6 +4,7 @@ pub mod binary;
 pub mod files;
 pub mod git;
 pub mod json;
+pub mod markdown_preview;
 pub mod media;
 pub mod paged;
 pub mod preferences;

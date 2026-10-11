@@ -40,6 +40,8 @@ SourceReader 持有长期 EditorState，支持基础输入、选择、撤销/重
 
 `reader/markup` 通过 TextView 的 HTML / Markdown 解析器排版，预览与源码共享内容，处理相对图片和本地链接。HTML 预览用于静态文档阅读，不提供浏览器脚本运行环境。两种格式默认预览，用户的模式选择按格式独立保存到偏好目录；刷新保留标签模式，新打开文件读取当前偏好。偏好写入由应用共享任务串行执行，防止快速切换时旧值覆盖新值。JSON 树使用独立实体，切换时读取当前编辑器快照并后台解析；虚拟列表只投影展开节点，源码始终可访问。
 
+`reader/diagrams` 持有 Markdown 图表的预览快照、扩展注册表和可取消任务。`services/markdown_preview` 在后台解析并去重图表／公式，调用当前应用的私有 `--render-markdown` 子进程入口，再将 SVG 转为有界 PNG；services 不依赖 UI。`app/diagram_engine` 在子进程主线程使用系统 WebView（macOS WebKit / Windows WebView2）加载内嵌离线引擎，接收 JSON 数据，通过 IPC 返回 SVG。该页面不加载 Markdown 原文 HTML，不允许网络连接、外部导航和下载；临时源文件及浏览器配置随请求清理。Mermaid、Graphviz、PlantUML（含 C4）、flowchart.js、WaveDrom 与 MathJax 资源均提交并内嵌，运行不依赖 Node、Java 或外部渲染服务。图表转换只在后台任务执行，render 使用已准备的图片或错误状态；更新内容和关闭标签取消旧任务，扩展解析版本随快照更新。GitHub Alerts 使用原生主题颜色和嵌套 TextView，复用图表快照、图片路径及链接处理；源码保持不变。引擎资源与更新入口见 `assets/markdown/README.md`。
+
 文本、图片、JSON 树及模型预览分别限制输入或展示规模；具体数值见[格式与限制](file-format-support.md)。分页替换旧页，不累计全文件；预算按标签计算。
 
 ## 文档与媒体

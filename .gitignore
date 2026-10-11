@@ -1,3 +1,4 @@
 /target/
 /dist/
 .DS_Store
+/scripts/markdown/node_modules/

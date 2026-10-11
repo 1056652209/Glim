@@ -35,7 +35,7 @@
 | Jinja / Nunjucks / Twig、Dockerfile、INI、dotenv、忽略规则、Nix | 可见行轻量着色，不提供完整跨行语义解析 |
 | Vue、XML / plist、SCSS / LESS、Cython、CUDA / Metal、GLSL / OSL | 分别复用 HTML、CSS、Python、C++、C 高亮，不提供专用语义校验 |
 | HTML / HTM | 工作台内静态排版预览与源码切换，不执行 JavaScript；不等同于完整浏览器 CSS 布局 |
-| Markdown | 排版预览、表格、代码块、相对图片、本地链接及源码编辑 |
+| Markdown | 原生排版、GFM 表格／任务列表／删除线／脚注、GitHub Alerts、YAML frontmatter、离线图表与 LaTeX 公式、相对图片、本地链接及源码编辑 |
 | JSON | 源码高亮与只读可折叠树；JSONC / JSONL 使用源码，Notebook 只看 JSON、不执行 |
 | Apple 办公 | `.key`、`.pages`、`.numbers`，通过 Quick Look 预览，兼容目录形式的文档包；不提供编辑或幻灯片动画播放 |
 | Office | DOC / DOCX、XLS / XLSX、PPT / PPTX、RTF，通过系统 Quick Look 只读预览；排版与可用性取决于系统预览器 |
@@ -48,10 +48,25 @@
 | CSV、RST、日志等 UTF-8 文件 | 文本阅读与基础编辑，不提供表格或专用排版 |
 | 二进制点文件（如 .DS_Store） | 有界十六进制/ASCII 预览，不提供语义解析或编辑 |
 
+## Markdown 扩展语法
+
+| 内容 | 写法 |
+| --- | --- |
+| Mermaid | `mermaid` / `mmd` 代码块；支持引擎提供的流程图（含 `flowchart TB` 和 `subgraph`）、时序图、类图、状态图、ER、甘特图、饼图、思维导图等 |
+| Graphviz | `dot` / `graphviz` 代码块 |
+| PlantUML | `plantuml` / `puml` / `uml` 代码块，可省略 `@startuml` / `@enduml`；随应用提供 C4、主题、emoji 与 OpenIconic |
+| flowchart.js | `flow` / `flowchart` / `flowchart.js` 代码块；`flowchart` 块以 Mermaid `flowchart` / `graph` 声明开头时自动交给 Mermaid |
+| WaveDrom | `wavedrom` / `wavejson` 代码块，接受 JSON / JSON5（单引号、无引号键、尾逗号），不执行 JavaScript |
+| LaTeX | `$…$` / `$$…$$` 行内公式，单独成行的 `$$` 块公式；`math` / `latex` / `tex` / `katex` 代码块 |
+| GitHub Alerts | 引用块首行使用 `[!NOTE]`、`[!TIP]`、`[!IMPORTANT]`、`[!WARNING]`、`[!CAUTION]` |
+
+未标注语言的代码块可通过明确的 Mermaid 或 PlantUML 开头声明，以及 Graphviz `digraph` / `strict` 声明识别；普通代码块继续显示源码。图表与公式在工作台内显示为静态图片，源码和保存内容不改写，图表内部交互不执行。失败块显示错误并保留源码。PlantUML 外部 include、未内置的云厂商图标库，以及图表中的外部图片不加载；引擎输出的 HTML 标签（`foreignObject`）不能转成原生图片时显示错误。Windows 需要系统 WebView2 Runtime，缺失时图表回退为错误及源码，普通 Markdown 保持可读。
+
 ## 资源预算
 
 | 模式 | 限制 |
 | --- | --- |
+| Markdown 图表 | 每文档最多 64 个不同图表／公式，每块源码 64 KiB；每块 SVG 8 MiB，总 SVG / PNG 各 64 MiB，解码像素总计 128 MiB；图片最长 2,400px；单块异步等待 8 秒，渲染子进程最多 45 秒 |
 | 普通文本编辑 | 8 MiB；超过 10 万换行符或单行超过 16 KiB 时进入分页 |
 | 只读分页 | 约 256 KiB/页，补齐 UTF-8 字符；替换旧页，不提供编辑或全文搜索 |
 | 完整只读加载 | 用户确认后最多 64 MiB / 100 万换行符 |

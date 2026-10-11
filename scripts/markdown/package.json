@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "scripts": { "bundle": "node bundle.mjs" },
+  "dependencies": {
+    "@plantuml/core": "1.2026.8",
+    "@viz-js/viz": "3.31.0",
+    "flowchart.js": "1.18.0",
+    "json5": "2.2.3",
+    "mathjax-full": "3.2.2",
+    "mermaid": "12.1.0",
+    "wavedrom": "3.7.0"
+  },
+  "devDependencies": { "esbuild": "0.25.12" }
+}

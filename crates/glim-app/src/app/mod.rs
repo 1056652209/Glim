@@ -1,5 +1,6 @@
 pub mod actions;
 mod assets;
+pub(crate) mod diagram_engine;
 pub(crate) mod languages;
 
 use anyhow::{Result, bail};
@@ -139,11 +140,7 @@ pub fn run() -> Result<()> {
     application.run(move |cx| {
         gpui_kit::init(cx);
         if dark_mode {
-            gpui_kit::component::Theme::change(
-                gpui_kit::component::ThemeMode::Dark,
-                None,
-                cx,
-            );
+            gpui_kit::component::Theme::change(gpui_kit::component::ThemeMode::Dark, None, cx);
         }
         cx.set_global(AppearanceSaveTask::default());
         languages::init();

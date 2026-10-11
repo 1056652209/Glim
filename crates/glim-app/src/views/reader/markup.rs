@@ -1,4 +1,4 @@
-use super::{OpenLink, source::SourceReader};
+use super::{OpenLink, diagrams::DiagramPreview, source::SourceReader};
 use gpui_kit::{
     base::{TextView, TextViewState},
     component::scroll::Scrollbar,
@@ -17,6 +17,8 @@ pub(super) struct MarkupReader {
     pending_anchor: Option<String>,
     _subscription: Subscription,
     reveal_pending: Rc<Cell<bool>>,
+    diagrams: Option<Entity<DiagramPreview>>,
+    _diagram_subscription: Option<Subscription>,
 }
 impl MarkupReader {
     pub fn new(path: &Path, text: &str, window: &mut Window, cx: &mut App) -> Self {
@@ -48,7 +50,13 @@ impl MarkupReader {
                 cx.refresh_windows();
             }
         });
+        let diagrams = (!html).then(|| cx.new(|cx| DiagramPreview::new(text.into(), cx)));
+        let diagram_subscription = diagrams
+            .as_ref()
+            .map(|diagrams| cx.observe(diagrams, |_, cx| cx.refresh_windows()));
         Self {
+            diagrams,
+            _diagram_subscription: diagram_subscription,
             _subscription: subscription,
             reveal_pending,
             source: SourceReader::new(
@@ -73,6 +81,9 @@ impl MarkupReader {
         let text = self.source.state.read(cx).value().to_string();
         self.headings = headings(&text);
         self.state.update(cx, |s, cx| s.set_text(&text, cx));
+        if let Some(diagrams) = &self.diagrams {
+            diagrams.update(cx, |diagrams, cx| diagrams.load(text, cx));
+        }
     }
     pub fn reveal(&mut self, anchor: &str) {
         self.pending_anchor = Some(anchor.to_owned());
@@ -112,6 +123,16 @@ impl MarkupReader {
         let link_base = self.base.clone();
         let scroll = self.scroll.clone();
         let minimap = self.source.minimap.clone();
+        let text_view = TextView::new(&self.state).scrollable(false).w_full();
+        let text_view = if let Some(diagrams) = &self.diagrams {
+            text_view.markdown_extensions(super::diagrams::with_alerts(
+                diagrams.read(cx).extensions.clone(),
+                self.base.clone(),
+                open.clone(),
+            ))
+        } else {
+            text_view
+        };
         div()
             .relative()
             .size_full()
@@ -127,9 +148,7 @@ impl MarkupReader {
                     .py_4()
                     .pr(px(124.))
                     .child(
-                        TextView::new(&self.state)
-                            .scrollable(false)
-                            .w_full()
+                        text_view
                             .image_source(move |uri| {
                                 image_base
                                     .join(uri.as_ref())
@@ -139,22 +158,7 @@ impl MarkupReader {
                                     .unwrap_or_else(|| uri.clone().into())
                             })
                             .on_link_click(move |href, _, window, cx| {
-                                if let Ok(url) = link_base.join(href) {
-                                    match url.scheme() {
-                                        "file" => {
-                                            if let Ok(path) = url.to_file_path() {
-                                                open(
-                                                    path,
-                                                    url.fragment().map(decode_fragment),
-                                                    window,
-                                                    cx,
-                                                );
-                                            }
-                                        }
-                                        "http" | "https" | "mailto" => cx.open_url(url.as_str()),
-                                        _ => {}
-                                    }
-                                }
+                                follow_link(&link_base, &open, href, window, cx);
                             })
                             .on_reveal(move |line, _, _| {
                                 let viewport = scroll.bounds();
@@ -179,6 +183,25 @@ impl MarkupReader {
             )
             .child(Scrollbar::vertical(&self.scroll))
             .into_any_element()
+    }
+}
+pub(super) fn follow_link(
+    base: &url::Url,
+    open: &OpenLink,
+    href: &str,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    if let Ok(url) = base.join(href) {
+        match url.scheme() {
+            "file" => {
+                if let Ok(path) = url.to_file_path() {
+                    open(path, url.fragment().map(decode_fragment), window, cx);
+                }
+            }
+            "http" | "https" | "mailto" => cx.open_url(url.as_str()),
+            _ => {}
+        }
     }
 }
 fn decode_fragment(value: &str) -> String {
