@@ -515,7 +515,10 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
             web.loadHTMLString(html, baseURL: nil)
             return
         }
-        guard let preview = QLPreviewView(frame: host.bounds, style: .normal) else {
+        // Use the undecorated embedded presentation rather than Quick Look's
+        // full preview frame, which adds a page-edge rule beside Office slides.
+        // Auto Layout supplies the actual content bounds below the toolbar.
+        guard let preview = QLPreviewView(frame: .zero, style: .compact) else {
             let alert = NSAlert(); alert.messageText = L("Document preview is unavailable"); alert.informativeText = L("Open this document in its default app to view it."); alert.runModal(); return
         }
         officeView = preview

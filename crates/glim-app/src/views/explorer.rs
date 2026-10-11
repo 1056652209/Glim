@@ -308,7 +308,9 @@ impl Explorer {
             .h(px(ROW_HEIGHT))
             .w_full()
             .bg(if self.selected == Some(index) {
-                cx.theme().foreground.opacity(0.14)
+                cx.theme()
+                    .sidebar
+                    .blend(cx.theme().foreground.opacity(0.14))
             } else {
                 cx.theme().sidebar
             })

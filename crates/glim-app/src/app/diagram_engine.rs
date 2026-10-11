@@ -172,16 +172,17 @@ pub fn run() -> anyhow::Result<()> {
                 };
                 // Preserve completed blocks if a later engine stalls or the
                 // parent kills this child at its document deadline.
-                if let Err(error) = serde_json::to_vec(&results)
+                if let Err(error) = serde_json::to_vec(slot)
                     .map_err(anyhow::Error::from)
                     .and_then(|bytes| {
                         ensure!(
                             bytes.len() <= 128 * 1024 * 1024,
                             "Renderer IPC budget exceeded"
                         );
-                        let temporary = output.with_extension("json.tmp");
+                        let destination = output.with_extension(format!("{index}.json"));
+                        let temporary = destination.with_extension("tmp");
                         std::fs::write(&temporary, bytes)?;
-                        std::fs::rename(temporary, &output)?;
+                        std::fs::rename(temporary, destination)?;
                         Ok(())
                     })
                 {

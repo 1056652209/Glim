@@ -6,7 +6,7 @@ use std::{
     collections::{HashMap, HashSet},
     process::{Command, Stdio},
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -230,13 +230,17 @@ pub fn render(
         .context("Cannot start offline diagram renderer")?;
     let started = Instant::now();
     let deadline = Duration::from_secs(15 + requests.len() as u64 * 8);
-    let mut fonts = resvg::usvg::fontdb::Database::new();
-    fonts.load_system_fonts();
-    let fonts = Arc::new(fonts);
+    static FONTS: OnceLock<Arc<resvg::usvg::fontdb::Database>> = OnceLock::new();
+    let fonts = FONTS
+        .get_or_init(|| {
+            let mut fonts = resvg::usvg::fontdb::Database::new();
+            fonts.load_system_fonts();
+            Arc::new(fonts)
+        })
+        .clone();
     let mut bytes_used = 0;
     let mut pixels_used = 0_u64;
     let mut completed = HashSet::new();
-    let mut output_size = 0;
     let mut timed_out = false;
     loop {
         let status = match child.try_wait() {
@@ -265,56 +269,61 @@ pub fn render(
         } else {
             "离线渲染进程结束，但此块未返回结果".to_owned()
         };
-        // Each child update adds a slot, so the atomic snapshot grows. Avoid
-        // repeatedly reading and parsing a potentially large unchanged file.
-        let size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
-        if size != output_size || finished {
-            output_size = size;
-            let values = if size <= 128 * 1024 * 1024 {
-                std::fs::read(&output)
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<Vec<serde_json::Value>>(&bytes).ok())
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-            for (index, diagram) in requests.iter().enumerate() {
-                if completed.contains(&index)
-                    || (!finished && values.get(index).is_none_or(|v| v.is_null()))
-                {
-                    continue;
-                }
-                let value = values.get(index);
-                let result =
-                    if let Some(svg) = value.and_then(|v| v.get("svg")).and_then(|v| v.as_str()) {
-                        let baseline = value
-                            .and_then(|v| v.get("baseline"))
-                            .and_then(|v| v.as_f64());
-                        rasterize(svg, fonts.clone(), baseline)
-                            .and_then(|image| {
-                                bytes_used += image.png.len();
-                                pixels_used += u64::from(image.width) * u64::from(image.height) * 4;
-                                ensure!(
-                                    bytes_used <= 64 * 1024 * 1024,
-                                    "Diagram image budget exceeded"
-                                );
-                                ensure!(
-                                    pixels_used <= 128 * 1024 * 1024,
-                                    "Decoded diagram image budget exceeded"
-                                );
-                                Ok(image)
-                            })
-                            .map_err(|e| format!("图表无法显示：{e}"))
-                    } else {
-                        Err(value
-                            .and_then(|v| v.get("error"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(&missing_reason)
-                            .to_owned())
-                    };
-                completed.insert(index);
-                publish(diagram.clone(), result);
+        // Each block is published atomically once. Reading only new slots
+        // avoids repeatedly serializing/parsing all preceding SVGs.
+        let final_values = if finished {
+            std::fs::metadata(&output)
+                .ok()
+                .filter(|m| m.len() <= 128 * 1024 * 1024)
+                .and_then(|_| std::fs::read(&output).ok())
+                .and_then(|bytes| serde_json::from_slice::<Vec<serde_json::Value>>(&bytes).ok())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        for (index, diagram) in requests.iter().enumerate() {
+            if completed.contains(&index) {
+                continue;
             }
+            let slot_path = output.with_extension(format!("{index}.json"));
+            let slot = std::fs::metadata(&slot_path)
+                .ok()
+                .filter(|m| m.len() <= 16 * 1024 * 1024)
+                .and_then(|_| std::fs::read(slot_path).ok())
+                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+            let value = slot.as_ref().or_else(|| final_values.get(index));
+            if !finished && value.is_none_or(|v| v.is_null()) {
+                continue;
+            }
+            let result =
+                if let Some(svg) = value.and_then(|v| v.get("svg")).and_then(|v| v.as_str()) {
+                    let baseline = value
+                        .and_then(|v| v.get("baseline"))
+                        .and_then(|v| v.as_f64());
+                    rasterize(svg, fonts.clone(), baseline)
+                        .and_then(|image| {
+                            bytes_used += image.png.len();
+                            pixels_used += u64::from(image.width) * u64::from(image.height) * 4;
+                            ensure!(
+                                bytes_used <= 64 * 1024 * 1024,
+                                "Diagram image budget exceeded"
+                            );
+                            ensure!(
+                                pixels_used <= 128 * 1024 * 1024,
+                                "Decoded diagram image budget exceeded"
+                            );
+                            Ok(image)
+                        })
+                        .map_err(|e| format!("图表无法显示：{e}"))
+                } else {
+                    Err(value
+                        .and_then(|v| v.get("error"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&missing_reason)
+                        .to_owned())
+                };
+            completed.insert(index);
+            publish(diagram.clone(), result);
         }
         if finished {
             break;

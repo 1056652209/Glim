@@ -80,7 +80,9 @@ fn tokens(line: &str, language: &str) -> Vec<(Range<usize>, &'static str)> {
     while i < bytes.len() {
         let start = i;
         let mut kind = "";
-        if ((i == first || language == "nix")
+        if ((i == first
+            || language == "nix"
+            || (language == "dotenv" && i > 0 && bytes[i - 1].is_ascii_whitespace()))
             && (bytes[i] == b'#' || (language == "ini" && bytes[i] == b';')))
             || (language == "jinja" && line[i..].starts_with("{#"))
         {
@@ -90,6 +92,17 @@ fn tokens(line: &str, language: &str) -> Vec<(Range<usize>, &'static str)> {
             } else {
                 bytes.len()
             };
+        } else if language == "dotenv"
+            && key_end.is_some_and(|end| i > end)
+            && !bytes[i].is_ascii_whitespace()
+            && !b"\"'$".contains(&bytes[i])
+        {
+            kind = "string";
+            i += 1;
+            while i < bytes.len() && !bytes[i].is_ascii_whitespace() && !b"\"'$".contains(&bytes[i])
+            {
+                i += 1;
+            }
         } else if bytes[i] == b'\'' || bytes[i] == b'"' {
             kind = "string";
             let quote = bytes[i];
@@ -130,7 +143,8 @@ fn tokens(line: &str, language: &str) -> Vec<(Range<usize>, &'static str)> {
                 i += 1;
             }
             let word = &line[start..i];
-            if (language == "dockerfile" && start == first)
+            if (language == "dotenv" && start == first && word == "export")
+                || (language == "dockerfile" && start == first)
                 || matches!(language, "jinja" | "nix")
                     && matches!(
                         word,

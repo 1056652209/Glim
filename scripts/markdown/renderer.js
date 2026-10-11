@@ -66,6 +66,25 @@ function normalize(svg) {
     mounted.setAttribute('width', String(box.width));
     mounted.setAttribute('height', String(box.height));
   }
+  // Journey's SVG labels share the rectangle's classes; its default CSS can
+  // therefore paint white text on pale tasks (and hide section headings).
+  // Resolve label contrast against the actual adjacent rectangle before
+  // freezing computed styles for the native SVG renderer.
+  for (const label of mounted.querySelectorAll('text.task, text.journey-section')) {
+    const rect = label.parentElement.querySelector('rect.task, rect.journey-section');
+    if (!rect) continue;
+    const channels = getComputedStyle(rect).fill.match(/[\d.]+/g);
+    if (!channels || channels.length < 3) continue;
+    const linear = channels.slice(0, 3).map(value => {
+      const channel = Number(value) / 255;
+      return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+    const color = luminance > 0.179 ? '#000000' : '#ffffff';
+    for (const text of [label, ...label.querySelectorAll('tspan')]) {
+      text.style.setProperty('fill', color, 'important');
+    }
+  }
   for (const element of mounted.querySelectorAll('*')) {
     if (element.localName === 'script' || element.localName === 'foreignObject') {
       throw new Error('此图表使用了当前原生预览不支持的 HTML 标签');
@@ -177,15 +196,18 @@ async function render(request, index) {
 async function main() {
   const requests = window.GLIM_REQUESTS;
   for (let index = 0; index < requests.length; index++) {
+    let timeout;
     try {
       const result = normalize(await Promise.race([
         render(requests[index], index),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('此图表渲染超过 8 秒')), 8000)),
+        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('此图表渲染超过 8 秒')), 8000); }),
       ]));
       if (new TextEncoder().encode(result.svg).byteLength > 8 * 1024 * 1024) throw new Error('图表 SVG 超过 8 MiB');
       window.ipc.postMessage(JSON.stringify({ index, ...result }));
     } catch (error) {
       window.ipc.postMessage(JSON.stringify({ index, error: String(error).slice(0, 2000) }));
+    } finally {
+      clearTimeout(timeout);
     }
   }
   window.ipc.postMessage(JSON.stringify({ done: true }));
