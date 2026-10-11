@@ -36,8 +36,13 @@ with tempfile.TemporaryDirectory(prefix='glim-dmg-') as directory:
         'This release is ad-hoc signed, without Developer ID signing or notarization.\n'
         'macOS Gatekeeper may require explicit approval in System Settings > Privacy & Security.\n\n'
         'Source and issues: https://github.com/NeoPanic/Glim\n', encoding='utf-8')
+    # Bound the image size explicitly. Automatic APFS image sizing can fail
+    # with ENOSPC on hosted runners even when the host volume has ample space.
+    payload_bytes = sum(p.stat().st_size for p in stage.rglob('*') if p.is_file() and not p.is_symlink())
+    image_mib = max(256, (payload_bytes * 2 + 1024 * 1024 - 1) // (1024 * 1024) + 64)
     subprocess.run(['hdiutil', 'create', '-ov', '-volname', f'Glim {version}',
-                    '-srcfolder', directory, '-format', 'UDZO', '-imagekey', 'zlib-level=9', output], check=True)
+                    '-srcfolder', directory, '-size', f'{image_mib}m', '-fs', 'HFS+',
+                    '-format', 'UDZO', '-imagekey', 'zlib-level=9', output], check=True)
 PY
 hdiutil verify "$PWD/dist/$dmg_name"
 (cd dist && shasum -a 256 "$dmg_name" > "$dmg_name.sha256")
