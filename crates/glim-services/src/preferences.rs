@@ -43,6 +43,23 @@ pub fn save_word_wrap(enabled: bool) -> Result<()> {
     Ok(())
 }
 
+pub fn dark_mode() -> bool {
+    wrap_path()
+        .ok()
+        .and_then(|path| std::fs::read_to_string(path.with_file_name("appearance")).ok())
+        .is_some_and(|value| value.trim() == "dark")
+}
+
+pub fn save_dark_mode(enabled: bool) -> Result<()> {
+    let path = wrap_path()?.with_file_name("appearance");
+    let parent = path.parent().context("Invalid preferences path")?;
+    std::fs::create_dir_all(parent)?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    writeln!(file, "{}", if enabled { "dark" } else { "light" })?;
+    file.persist(path)?;
+    Ok(())
+}
+
 pub fn preview_mode(kind: &str) -> bool {
     preview_path(kind)
         .ok()

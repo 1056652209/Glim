@@ -210,6 +210,25 @@ impl Workspace {
         h_flex()
             .gap_1()
             .child(
+                Button::new("dark-mode")
+                    .custom(subtle)
+                    .small()
+                    .icon(
+                        Icon::empty()
+                            .path("navigation/appearance.svg")
+                            .size(px(16.))
+                            .text_color(cx.theme().foreground),
+                    )
+                    .accessibility_label("Toggle dark mode")
+                    .tooltip(if cx.theme().is_dark() {
+                        "Switch to light mode"
+                    } else {
+                        "Switch to dark mode"
+                    })
+                    .selected(cx.theme().is_dark())
+                    .on_click(|_, _, cx| crate::app::toggle_dark_mode(cx)),
+            )
+            .child(
                 Button::new("word-wrap")
                     .custom(subtle)
                     .small()

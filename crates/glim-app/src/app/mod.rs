@@ -8,7 +8,7 @@ use gpui_kit::*;
 use crate::views::workspace::Workspace;
 use actions::{
     AddFolder, CloseWindow, DefaultApplications, NewWindow, OpenFile, OpenFolder, Quit, Refresh,
-    SaveFile,
+    SaveFile, ToggleDarkMode,
 };
 
 pub struct ReaderPreferences {
@@ -23,6 +23,52 @@ impl Global for ReaderPreferences {}
 #[derive(Default)]
 struct DefaultApplicationsTask(Option<Task<()>>);
 impl Global for DefaultApplicationsTask {}
+
+#[derive(Default)]
+struct AppearanceSaveTask(Option<Task<()>>);
+impl Global for AppearanceSaveTask {}
+
+pub(crate) fn toggle_dark_mode(cx: &mut App) {
+    use gpui_kit::component::{Theme, ThemeMode};
+
+    let enabled = !Theme::global(cx).is_dark();
+    Theme::change(
+        if enabled {
+            ThemeMode::Dark
+        } else {
+            ThemeMode::Light
+        },
+        None,
+        cx,
+    );
+    let previous = cx.global_mut::<AppearanceSaveTask>().0.take();
+    let task = cx.spawn(async move |cx| {
+        // Serialize writes so rapid toggles cannot restore an older preference.
+        if let Some(previous) = previous {
+            previous.await;
+        }
+        let result = cx
+            .background_executor()
+            .spawn(async move { glim_services::preferences::save_dark_mode(enabled) })
+            .await;
+        if let Err(error) = result {
+            cx.update(|cx| {
+                if let Some((_, handle)) = cx.global::<OpenWorkspaces>().0.last().cloned() {
+                    let _ = handle.update(cx, |_, window, cx| {
+                        drop(window.prompt(
+                            PromptLevel::Warning,
+                            "Cannot remember appearance",
+                            Some(&format!("{error:#}")),
+                            &["OK"],
+                            cx,
+                        ));
+                    });
+                }
+            });
+        }
+    });
+    cx.global_mut::<AppearanceSaveTask>().0 = Some(task);
+}
 
 fn open_default_applications(cx: &mut App) {
     if cx.global::<DefaultApplicationsTask>().0.is_some() {
@@ -69,6 +115,7 @@ pub fn run() -> Result<()> {
     }
 
     let word_wrap = glim_services::preferences::word_wrap();
+    let dark_mode = glim_services::preferences::dark_mode();
     let html_preview = glim_services::preferences::preview_mode("html");
     let markdown_preview = glim_services::preferences::preview_mode("markdown");
     let diff_side_by_side = glim_services::preferences::diff_side_by_side();
@@ -91,6 +138,14 @@ pub fn run() -> Result<()> {
     });
     application.run(move |cx| {
         gpui_kit::init(cx);
+        if dark_mode {
+            gpui_kit::component::Theme::change(
+                gpui_kit::component::ThemeMode::Dark,
+                None,
+                cx,
+            );
+        }
+        cx.set_global(AppearanceSaveTask::default());
         languages::init();
         cx.set_global(ReaderPreferences {
             word_wrap,
@@ -110,6 +165,7 @@ pub fn run() -> Result<()> {
         cx.on_action(|_: &Quit, cx| request_quit(cx));
         cx.on_action(|_: &NewWindow, cx| open_workspace(None, cx));
         cx.on_action(|_: &DefaultApplications, cx| open_default_applications(cx));
+        cx.on_action(|_: &ToggleDarkMode, cx| toggle_dark_mode(cx));
         cx.bind_keys([
             KeyBinding::new("secondary-q", Quit, None),
             KeyBinding::new("secondary-shift-n", NewWindow, None),
@@ -144,6 +200,11 @@ pub fn run() -> Result<()> {
                     MenuItem::action("Refresh", Refresh),
                     MenuItem::action("Close Tab / Window", CloseWindow),
                 ],
+            },
+            Menu {
+                name: "View".into(),
+                disabled: false,
+                items: vec![MenuItem::action("Toggle Dark Mode", ToggleDarkMode)],
             },
         ]);
         cx.on_window_closed(|cx, _| {

@@ -28,6 +28,11 @@ pub struct Assets;
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
         match path {
+            "navigation/appearance.svg" => {
+                return Ok(Some(Cow::Borrowed(include_bytes!(
+                    "../../../../assets/navigation/appearance.svg"
+                ))));
+            }
             "navigation/wrap.svg" => {
                 return Ok(Some(Cow::Borrowed(include_bytes!(
                     "../../../../assets/navigation/wrap.svg"

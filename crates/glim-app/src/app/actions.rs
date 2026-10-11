@@ -3,6 +3,7 @@ gpui_kit::actions!(
     [
         NewWindow,
         DefaultApplications,
+        ToggleDarkMode,
         Quit,
         OpenFile,
         OpenFolder,
