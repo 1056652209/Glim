@@ -19,12 +19,12 @@
 ## 尚未实现
 
 - Developer ID 签名与 Apple 公证：需要证书及凭据。
-- 自动更新、会话恢复。
-- Markdown Mermaid / 数学公式。
+- 自动更新；完整会话恢复（标签、未保存草稿等）。已实现最近工作空间目录恢复。
+- Salt / Chen 完整方言、图表外部资源与 HTML 标签的原生兼容。当前已提供离线 Mermaid / 数学公式及常见图表语法。
 
 ## 后续候选（未承诺排期）
 
 - GGUF、ONNX、NPY/NPZ 元数据预览。
-- Office 专用排版、归档和 CSV 表格视图：先确定解码、排版、缓存与资源预算。
+- Office 完整样式与图表还原、归档内容预览。CSV 表格视图及 XLS/XLSX 本地表格已实现。
 
 不在当前范围：LSP、插件系统、Git clone、强推、rebase、reset、cherry-pick 和三路合并编辑器。

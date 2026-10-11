@@ -42,6 +42,11 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: cargo build --locked
+      - name: Free validation build space before packaging
+        if: runner.os == 'macOS'
+        run: |
+          cargo clean --profile dev
+          df -h .
       - name: Package macOS
         if: runner.os == 'macOS'
         run: scripts/package-dmg.sh ${{ matrix.arch }}

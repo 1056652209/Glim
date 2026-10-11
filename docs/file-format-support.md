@@ -11,9 +11,9 @@
 | 编程语言 | Rust、C / C++、Go、Swift、Java、C#、Kotlin、Zig、Python、Ruby、PHP、Lua、Scala、Elixir、Shell |
 | Web 与模板 | JavaScript / JSX、TypeScript / TSX、HTML、CSS、Astro、Svelte、ERB、EJS、Jinja / Jinja2、Nunjucks、Twig；Vue 复用 HTML 高亮 |
 | SQLite | DB / SQLite / SQLite3、WAL / SHM 关联文件；表结构、定义 SQL、分页记录与二进制摘要，只读快照 |
-| 数据与接口 | JSON / JSONC / JSONL、GeoJSON、TOML、YAML、SQL、GraphQL、Protobuf；Notebook 查看 JSON 源码 |
+| 数据与接口 | JSON / JSONC / JSONL、GeoJSON、TOML、YAML、SQL、GraphQL、Protobuf；Notebook 源码与结构树；CSV 表格与原文 |
 | 配置与构建 | Dockerfile、Containerfile、Makefile、CMake、Nix、INI、`.env`、`.npmrc`、`.editorconfig`、`.gitignore`、Gemfile 等 |
-| 文档与文本 | HTML / Markdown 排版预览（HTML 为静态阅读，不执行脚本）；TXT、日志、CSV 和其他 UTF-8 文件按文本查看 |
+| 文档与文本 | HTML / Markdown 排版预览（HTML 为静态阅读，不执行脚本）；TXT、日志和其他 UTF-8 文件按文本查看；CSV 可切换表格 |
 | Apple 办公 | Keynote（KEY）、Pages、Numbers；原生只读预览，支持文件及文档包 |
 | Office | Word（DOC / DOCX）、Excel（XLS / XLSX）、PowerPoint（PPT / PPTX）、RTF；macOS 原生只读预览 |
 | 字体 | TTF、OTF、TTC、OTC、DFONT；字体信息、字形切换、自定义示例与多字号预览 |
@@ -24,7 +24,6 @@
 | AI 模型 | safetensors：张量、shape、精度、参数数量与元数据，只读头部，不加载权重 |
 
 编程语言使用语法高亮；部分模板和配置采用轻量着色。GIF 自动播放（系统减少动态效果设置可能抑制动画），EXR / HDR 转为 SDR 预览，ICNS 需包含 PNG 图像。音视频实际解码能力取决于 macOS 支持的编码；压缩包内容暂不支持。
-
 
 
 ## 渲染方式
@@ -38,14 +37,15 @@
 | Markdown | 原生排版、GFM 表格／任务列表／删除线／脚注、GitHub Alerts、YAML frontmatter、离线图表与 LaTeX 公式、相对图片、本地链接及源码编辑 |
 | JSON / JSONC / GeoJSON / Notebook | 源码高亮与只读可折叠树；JSONC 支持注释和尾随逗号。GeoJSON 显示类型提示，Notebook 显示单元类型和文本数组摘要；不绘制地图、不执行 Notebook。JSONL 使用源码 |
 | Apple 办公 | `.key`、`.pages`、`.numbers`，通过 Quick Look 预览，兼容目录形式的文档包；不提供编辑或幻灯片动画播放 |
-| Office | DOC / DOCX、XLS / XLSX、PPT / PPTX、RTF，通过系统 Quick Look 只读预览；排版与可用性取决于系统预览器 |
+| Office | DOC / DOCX、PPT / PPTX、RTF 使用系统 Quick Look 只读预览；XLS / XLSX 使用本地只读表格，显示缓存公式值，不还原完整图表或原始样式 |
 | SQLite | 识别 SQLite 文件头及 DB / DB3 / SQLite / SQLite3；WAL / SHM / journal 通过同名主库打开，只剩 sidecar 时显示关联说明。表结构、定义 SQL、只读记录分页，支持视图 |
 | 字体 | TTF / OTF / TTC / OTC / DFONT，CoreText 原生只读预览，集合内切换字体，自定义样例文字与多字号展示 |
 | PDF | 原生 PDFKit 窗口，翻页、缩放、文字选择；加密文档可输入密码 |
 | 音视频 | 原生 AVKit 窗口；MP3、MP4、M4A、M4V、MOV、AAC、WAV、AIF/AIFF、CAF、FLAC，具体编码取决于系统解码器 |
 | 图片 | PNG、JPEG、WebP、GIF 动画、BMP、TIFF 多页翻页、ICO、SVG、含 PNG 表示的 ICNS；EXR/HDR 转 SDR |
 | safetensors | 仅读取头部，展示张量、shape、参数数量、精度和元数据；不加载权重或执行模型 |
-| CSV、RST、日志等 UTF-8 文件 | 文本阅读与基础编辑，不提供表格或专用排版 |
+| CSV | 可切换虚拟化只读表格与可编辑原文；支持引号、跨行字段、BOM 和不齐列 |
+| RST、日志等 UTF-8 文件 | 文本阅读与基础编辑，不提供专用排版 |
 | 二进制点文件（如 .DS_Store） | 有界十六进制/ASCII 预览，不提供语义解析或编辑 |
 
 ## Markdown 扩展语法

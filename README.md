@@ -16,11 +16,11 @@ Glim brings code, documents, data, and Git changes into one native desktop works
 
 ## Download
 
-| Your device | Glim 0.1.9 |
+| Your device | Glim 0.1.10 |
 | --- | --- |
-| Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.9/Glim-0.1.9-macos-arm64.dmg) |
-| Mac · Intel | [Download Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.9/Glim-0.1.9-macos-x86_64.dmg) |
-| Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.9/Glim-0.1.9-windows-x64.zip) |
+| Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.10/Glim-0.1.10-macos-arm64.dmg) |
+| Mac · Intel | [Download Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.10/Glim-0.1.10-macos-x86_64.dmg) |
+| Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.10/Glim-0.1.10-windows-x64.zip) |
 
 [Latest release & checksums](https://github.com/NeoPanic/Glim/releases/latest) · [All releases](https://github.com/NeoPanic/Glim/releases)
 
@@ -32,13 +32,15 @@ Glim brings code, documents, data, and Git changes into one native desktop works
 
 | Content | Formats and experience |
 | --- | --- |
-| Code & configuration | Rust, Python, Go, JavaScript/TypeScript, C/C++, Java, Swift, Ruby, and more. Syntax highlighting, folding, search, and Minimap. Dockerfile, `.env`, `.npmrc`, Jinja, and other everyday project files. |
-| Documents & data | Markdown and static HTML preview; highlighted JSON source and expandable tree; YAML, TOML, SQL, GraphQL, and other UTF-8 text. |
-| Images | PNG, JPEG, WebP, GIF (first frame), SVG, TIFF, BMP, ICO, ICNS, EXR, and HDR. |
+| Code & configuration | Rust, Python, Go, JavaScript/TypeScript, C/C++/CUDA, Java, Swift, Ruby, and more. Syntax highlighting, folding, search, and Minimap. Dockerfile, `.env`, `.npmrc`, Jinja, and other everyday project files. |
+| Documents & data | Markdown and static HTML preview; highlighted JSON/JSONC, GeoJSON and notebook source and expandable trees; CSV table/source modes; YAML, TOML, SQL, GraphQL, and other UTF-8 text. |
+| Images | PNG, JPEG, WebP, animated GIF, SVG, multipage TIFF, BMP, ICO, ICNS, EXR, and HDR. |
 | Git | Working tree and staged diffs, commit history, inline and side-by-side comparison. |
 | AI model metadata | safetensors tensors, shapes, dtypes, parameter counts, and metadata — without loading model weights. |
 | Native documents · macOS | PDF, Word, Excel, PowerPoint, Keynote, Pages, Numbers, and RTF previews. |
 | Media, fonts & databases · macOS | Audio/video playback and folder queues; TTF/OTF and font collections; read-only SQLite tables, schema, and associated WAL files. |
+
+**Markdown extensions:** Bundled offline Mermaid (including flowcharts/subgraphs, Journey, Radar, and ZenUML), Graphviz/DOT, PlantUML (including common Salt and Chen ER syntax), flowchart.js, WaveDrom, and LaTeX formulas. GFM tables, task lists, footnotes, GitHub Alerts, and frontmatter are supported. Failed blocks retain their source.
 
 **Platform scope:** Windows includes the main workspace: code/text editing, Markdown/HTML, JSON, images, safetensors metadata, and Git. PDF, Office/iWork, media, fonts, SQLite native previews, and default file-type management currently require macOS.
 
@@ -49,8 +51,12 @@ Glim brings code, documents, data, and Git changes into one native desktop works
 - **Read, then edit.** Switch Markdown/HTML between preview and source. Edit ordinary text with undo/redo and autosave; reading-mode preferences are remembered.
 - **Inspect JSON both ways.** Use a collapsible tree to explore structure, or highlighted source to edit it.
 - **Keep Git close.** Stage, unstage, commit, manage branches, fetch, pull, push, and stash. Expand commits into changed files; choose inline or side-by-side diffs.
-- **Open a workspace, not just a file.** Multiple folders, tabs, windows, and file search keep related material together.
+- **Open a workspace, not just a file.** Multiple folders, tabs, windows, and file search keep related material together. The most recently saved workspace folders are restored at startup.
+- **Use your language and keyboard.** Simplified Chinese and English follow the system or a saved menu choice. About shows the version; Keyboard Shortcuts opens a macOS/Windows reference.
+- **Inspect CSV both ways.** Read quoted and multiline fields in a virtualized table, or switch to editable source.
 - **Read large files in chunks.** Text beyond the editing budget opens in read-only pages; full loading asks first and has a bounded limit. Model inspection reads only the safetensors header.
+
+Text editing supports up to 32 MiB; larger files open in bounded pages. Optional full loading is limited to 256 MiB. Diagrams support 128 distinct blocks per document. XLS/XLSX previews on macOS show local tables and stored formula values; full chart/style fidelity remains available in the default application.
 
 ## Get involved
 

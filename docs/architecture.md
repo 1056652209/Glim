@@ -103,3 +103,5 @@ CSV 由 services/csv 在后台解析带引号、转义与跨行字段；reader/c
 应用级快捷键由 app/mod 注册，工作空间动作在 workspace/render 接收。About 下的快捷键说明由 app/shortcuts 展示为独立滚动窗口；原生 macOS 预览通过 File 菜单的 Cmd+W 调用窗口关闭。
 
 界面语言由 services/locale 管理，首批 en/zh-CN 字典位于 assets/locales；系统语言通过 sys-locale 读取，手动选择在 preferences 中原子保存。app 负责更新菜单、控件语言及窗口刷新；macOS 辅助进程通过启动配置接收字典，新建预览使用当前语言。文档内容与技术诊断不翻译。
+
+图表子进程每完成一块便写入独立的原子结果文件，父进程只读取未完成块；最终整页结果用于退出回退。系统字体库在 services 内通过 OnceLock 复用，避免重复加载。

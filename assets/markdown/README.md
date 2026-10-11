@@ -15,3 +15,5 @@ macOS 使用系统 WebKit；Windows 使用 WebView2。Windows 系统没有 WebVi
 Salt 常用线框由 `scripts/markdown/salt.js` 的本地 SVG 适配器绘制，不依赖 PlantUML TeaVM 中缺失的 Salt 模块。支持范围和限制见 `docs/file-format-support.md`。`@startdot` 使用已内置 Graphviz；Journey 指定纯 SVG 文字。
 
 Chen ER 的常用语法通过 `scripts/markdown/chen.js` 转为 DOT，并由内置 Graphviz 布局为 SVG；未支持的 EER 指令会明确报错，适配范围见格式文档。
+
+结果按块独立原子回传，services 只读取新结果并复用系统字体库。Journey 的任务与分区文字根据实际背景选择对比色，避免 SVG 文字模式中的低对比度。
