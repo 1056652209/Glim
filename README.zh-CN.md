@@ -10,11 +10,11 @@ AI 时代的全能查看器。在一个原生桌面工作区里阅读代码、�
 
 ## 下载与安装
 
-| 设备 | Glim 0.1.10 |
+| 设备 | Glim 0.1.11 |
 | --- | --- |
-| Mac · Apple Silicon（M 系列） | [下载 ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.10/Glim-0.1.10-macos-arm64.dmg) |
-| Mac · Intel | [下载 Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.10/Glim-0.1.10-macos-x86_64.dmg) |
-| Windows · Intel / AMD 64 位 | [下载 x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.10/Glim-0.1.10-windows-x64.zip) |
+| Mac · Apple Silicon（M 系列） | [下载 ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-macos-arm64.dmg) |
+| Mac · Intel | [下载 Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-macos-x86_64.dmg) |
+| Windows · Intel / AMD 64 位 | [下载 x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-windows-x64.zip) |
 
 [最新版与 SHA-256 校验文件](https://github.com/NeoPanic/Glim/releases/latest) · [历史版本](https://github.com/NeoPanic/Glim/releases)
 
@@ -29,6 +29,7 @@ AI 时代的全能查看器。在一个原生桌面工作区里阅读代码、�
 | 代码与配置 | Rust、Python、Go、JS/TS、C/C++/CUDA、Java、Swift、Ruby 等语法高亮；Dockerfile、`.env`、`.npmrc`、Jinja 等项目文件 |
 | 文档与数据 | Markdown / 静态 HTML 排版预览；JSON/JSONC、GeoJSON 和 Notebook 源码高亮及折叠树；CSV 表格/原文切换；YAML、TOML、SQL、GraphQL 等 UTF-8 文本 |
 | 图片 | PNG、JPEG、WebP、GIF 动画、SVG、多页 TIFF、BMP、ICO、ICNS、EXR、HDR |
+| 探索格式首轮 | AsciiDoc/Org/RST 与字幕基础阅读；TSV、NDJSON、JSON5；D2/Pikchr/Vega 离线图表；OBJ/STL、BDF、QOI；归档目录、压缩文本、EPUB/ODF 文本与 NumPy 基础数值 |
 | Git | 工作区与暂存区 diff、提交历史、Inline / 双栏比较 |
 | AI 模型 | safetensors 的张量、shape、精度、参数量与元数据，仅读取头部、不加载权重 |
 | 原生文档 · macOS | PDF、Word、Excel、PowerPoint、Keynote、Pages、Numbers、RTF 只读预览 |

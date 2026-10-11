@@ -16,11 +16,11 @@ Glim brings code, documents, data, and Git changes into one native desktop works
 
 ## Download
 
-| Your device | Glim 0.1.10 |
+| Your device | Glim 0.1.11 |
 | --- | --- |
-| Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.10/Glim-0.1.10-macos-arm64.dmg) |
-| Mac · Intel | [Download Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.10/Glim-0.1.10-macos-x86_64.dmg) |
-| Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.10/Glim-0.1.10-windows-x64.zip) |
+| Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-macos-arm64.dmg) |
+| Mac · Intel | [Download Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-macos-x86_64.dmg) |
+| Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-windows-x64.zip) |
 
 [Latest release & checksums](https://github.com/NeoPanic/Glim/releases/latest) · [All releases](https://github.com/NeoPanic/Glim/releases)
 
@@ -35,6 +35,7 @@ Glim brings code, documents, data, and Git changes into one native desktop works
 | Code & configuration | Rust, Python, Go, JavaScript/TypeScript, C/C++/CUDA, Java, Swift, Ruby, and more. Syntax highlighting, folding, search, and Minimap. Dockerfile, `.env`, `.npmrc`, Jinja, and other everyday project files. |
 | Documents & data | Markdown and static HTML preview; highlighted JSON/JSONC, GeoJSON and notebook source and expandable trees; CSV table/source modes; YAML, TOML, SQL, GraphQL, and other UTF-8 text. |
 | Images | PNG, JPEG, WebP, animated GIF, SVG, multipage TIFF, BMP, ICO, ICNS, EXR, and HDR. |
+| First-pass format previews | Basic AsciiDoc/Org/RST and subtitles; TSV, NDJSON, JSON5; offline D2/Pikchr/Vega; OBJ/STL, BDF, QOI; archive listings, compressed text, EPUB/ODF text and NumPy values |
 | Git | Working tree and staged diffs, commit history, inline and side-by-side comparison. |
 | AI model metadata | safetensors tensors, shapes, dtypes, parameter counts, and metadata — without loading model weights. |
 | Native documents · macOS | PDF, Word, Excel, PowerPoint, Keynote, Pages, Numbers, and RTF previews. |
