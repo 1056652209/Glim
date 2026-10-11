@@ -10,11 +10,11 @@ AI 时代的全能查看器。在一个原生桌面工作区里阅读代码、�
 
 ## 下载与安装
 
-| 设备 | Glim 0.1.8 |
+| 设备 | Glim 0.1.9 |
 | --- | --- |
-| Mac · Apple Silicon（M 系列） | [下载 ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-arm64.dmg) |
-| Mac · Intel | [下载 Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-x86_64.dmg) |
-| Windows · Intel / AMD 64 位 | [下载 x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-windows-x64.zip) |
+| Mac · Apple Silicon（M 系列） | [下载 ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.9/Glim-0.1.9-macos-arm64.dmg) |
+| Mac · Intel | [下载 Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.9/Glim-0.1.9-macos-x86_64.dmg) |
+| Windows · Intel / AMD 64 位 | [下载 x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.9/Glim-0.1.9-windows-x64.zip) |
 
 [最新版与 SHA-256 校验文件](https://github.com/NeoPanic/Glim/releases/latest) · [历史版本](https://github.com/NeoPanic/Glim/releases)
 

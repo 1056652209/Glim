@@ -16,11 +16,11 @@ Glim brings code, documents, data, and Git changes into one native desktop works
 
 ## Download
 
-| Your device | Glim 0.1.8 |
+| Your device | Glim 0.1.9 |
 | --- | --- |
-| Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-arm64.dmg) |
-| Mac · Intel | [Download Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-x86_64.dmg) |
-| Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-windows-x64.zip) |
+| Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.9/Glim-0.1.9-macos-arm64.dmg) |
+| Mac · Intel | [Download Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.9/Glim-0.1.9-macos-x86_64.dmg) |
+| Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.9/Glim-0.1.9-windows-x64.zip) |
 
 [Latest release & checksums](https://github.com/NeoPanic/Glim/releases/latest) · [All releases](https://github.com/NeoPanic/Glim/releases)
 

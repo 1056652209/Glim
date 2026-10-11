@@ -46,6 +46,6 @@ scripts/package-dmg.sh x86_64
 
 Windows 构建需要 Visual Studio C++ Build Tools 和 Windows SDK（rc.exe、fxc.exe）。在 Developer PowerShell 中执行 `scripts/package-windows.ps1`，输出 `dist/Glim-<version>-windows-x64.zip` 和校验文件。使用静态 CRT，应用包含 ICO 资源；正常使用需支持 DirectX 11 的图形环境。尚无 Authenticode 签名。
 
-`.github/workflows/ci.yml` 仅在推送 `v*` 版本标签（如 `v0.1.8`）时触发，在 Apple Silicon、Intel Mac 和 Windows 主机分别执行格式、Clippy、测试、构建并生成各平台产物。普通分支推送和 PR 不触发 CI，不提供手动触发入口。发布前下载同一提交的三个 artifact，核对架构及校验文件，再上传同一 GitHub Release。CI 不自动创建公开 Release。
+`.github/workflows/ci.yml` 仅在推送 `v*` 版本标签（如 `v0.1.9`）时触发，在 Apple Silicon、Intel Mac 和 Windows 主机分别执行格式、Clippy、测试、构建并生成各平台产物。普通分支推送和 PR 不触发 CI，不提供手动触发入口。发布前下载同一提交的三个 artifact，核对架构及校验文件，再上传同一 GitHub Release。CI 不自动创建公开 Release。
 
 Windows 不编译 Swift 辅助程序；原生文档/媒体预览和文件类型管理保持 macOS 专属，平台支持范围见 README。
