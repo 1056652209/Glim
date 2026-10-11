@@ -272,10 +272,16 @@ impl Render for Workspace {
                                         cx.theme().muted_foreground
                                     },
                                 ))
-                                .on_click(cx.listener(move |view, _, _, cx| {
+                                .on_click(cx.listener(move |view, _, window, cx| {
                                     view.sidebar_visible =
                                         view.sidebar != mode || !view.sidebar_visible;
                                     view.sidebar = mode;
+                                    if view.sidebar_visible
+                                        && mode == Sidebar::Changes
+                                        && !view.changes.as_ref().is_some_and(|c| c.read(cx).is_busy())
+                                    {
+                                        view.refresh(window, cx);
+                                    }
                                     cx.notify();
                                 })),
                         )
