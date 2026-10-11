@@ -18,5 +18,9 @@
   },
   "devDependencies": {
     "esbuild": "0.25.12"
+  },
+  "overrides": {
+    "katex": "0.18.2",
+    "@xmldom/xmldom": "0.9.12"
   }
 }
