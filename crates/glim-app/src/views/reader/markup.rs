@@ -16,6 +16,7 @@ pub(super) struct MarkupReader {
     headings: HashMap<String, Range<usize>>,
     pending_anchor: Option<String>,
     preview_text: String,
+    format_path: Option<std::path::PathBuf>,
     _subscription: Subscription,
     reveal_pending: Rc<Cell<bool>>,
     diagrams: Option<Entity<DiagramPreview>>,
@@ -37,11 +38,16 @@ impl MarkupReader {
                     preferences.markdown_preview
                 }
             });
+        let format_path = glim_services::text_formats::supports(path).then(|| path.to_path_buf());
+        let projected = format_path
+            .as_ref()
+            .map(|path| glim_services::text_formats::markdown(path, text));
+        let preview_content = projected.as_deref().unwrap_or(text);
         let state = cx.new(|cx| {
             if html {
                 TextViewState::html(text, cx)
             } else {
-                TextViewState::markdown(text, cx)
+                TextViewState::markdown(preview_content, cx)
             }
         });
         let reveal_pending = Rc::new(Cell::new(false));
@@ -51,7 +57,8 @@ impl MarkupReader {
                 cx.refresh_windows();
             }
         });
-        let diagrams = (!html).then(|| cx.new(|cx| DiagramPreview::new(text.into(), cx)));
+        let diagrams =
+            (!html).then(|| cx.new(|cx| DiagramPreview::new(preview_content.into(), cx)));
         let diagram_subscription = diagrams
             .as_ref()
             .map(|diagrams| cx.observe(diagrams, |_, cx| cx.refresh_windows()));
@@ -62,7 +69,7 @@ impl MarkupReader {
             reveal_pending,
             source: SourceReader::new(
                 text,
-                if html { "html" } else { "markdown" },
+                glim_core::language_for_path(path),
                 false,
                 Vec::new(),
                 scroll.clone(),
@@ -74,9 +81,10 @@ impl MarkupReader {
             preview,
             html,
             base: url::Url::from_file_path(path).expect("absolute document path"),
-            headings: headings(text),
+            headings: headings(preview_content),
             pending_anchor: None,
             preview_text: text.to_owned(),
+            format_path,
         }
     }
     pub fn sync_preview(&mut self, cx: &mut App) {
@@ -85,6 +93,11 @@ impl MarkupReader {
             return;
         }
         self.preview_text.clone_from(&text);
+        let text = self
+            .format_path
+            .as_ref()
+            .map(|path| glim_services::text_formats::markdown(path, &text))
+            .unwrap_or(text);
         self.headings = headings(&text);
         self.state.update(cx, |s, cx| s.set_text(&text, cx));
         if let Some(diagrams) = &self.diagrams {

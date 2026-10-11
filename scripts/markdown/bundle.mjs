@@ -11,6 +11,24 @@ await build({
   absWorkingDir: here, entryPoints: ['renderer.js'], bundle: true, minify: true,
   format: 'iife', platform: 'browser', target: ['safari15', 'chrome100'],
   outfile: path.join(output, 'renderer.js'), legalComments: 'linked',
+  plugins: [{
+    name: 'd2-webkit-startup',
+    setup(build) {
+      build.onLoad({ filter: /d2\/dist\/browser\/index\.js$/ }, async ({ path: sourcePath }) => {
+        const source = await readFile(sourcePath, 'utf8');
+        const before = 'go.run(result.instance);\n  return self.d2;';
+        if (!source.includes(before)) throw new Error('D2 startup adapter needs review');
+        // Go's browser runtime can yield before registering its JS API in WebKit.
+        const after = 'let failure; go.run(result.instance).catch(error => { failure = error; });\n  for (let i = 0; !self.d2 && i < 500; i++) { if (failure) throw failure; await new Promise(resolve => setTimeout(resolve, 10)); }\n  if (!self.d2) throw new Error("D2 WASM startup timed out");\n  return self.d2;';
+        const worker = 'async function hf(){let r=new Blob([pf,If],{type:"text/javascript;charset=utf-8"});return new Worker(URL.createObjectURL(r),{type:"module"})}';
+        if (!source.includes(worker)) throw new Error('D2 execution adapter needs review');
+        // WebKit workers have too little native stack for this Go WASM build.
+        // The private renderer already supplies process isolation and a watchdog.
+        const local = 'async function hf(){const bridge={}; const scope=Object.create(globalThis); Object.defineProperty(scope,"onmessage",{value:null,writable:true}); scope.postMessage=data=>queueMicrotask(()=>bridge.onmessage?.({data})); new Function("self",pf+If.replaceAll("export ", ""))(scope); bridge.postMessage=data=>queueMicrotask(()=>scope.onmessage({data})); return bridge;}';
+        return { contents: source.replace(before, after).replace(worker, local), loader: 'js' };
+      });
+    },
+  }],
 });
 // Preserve the official TeaVM engine verbatim: re-minifying its generated
 // state-machine labels can produce JavaScript that browsers cannot parse.
@@ -42,4 +60,10 @@ async function scan(dir) {
   }
 }
 await scan(path.join(here, 'node_modules'));
+// These engines' npm packages omit their upstream implementation licenses.
+for (const file of ['D2-LICENSE.txt', 'D2-THIRD-PARTY-NOTICES.txt']) {
+  notices.push(`\n## D2 (@terrastruct/d2 0.1.33) — ${file}\n\n${await readFile(path.join(here, 'licenses', file), 'utf8')}`);
+}
+const pikchrSource = await readFile(path.join(here, 'node_modules/pikchr-wasm/pikchr/pikchr.c'), 'utf8');
+notices.push(`\n## Pikchr implementation (D. Richard Hipp, 0BSD)\n\n${pikchrSource.slice(pikchrSource.indexOf('/*\n** Zero-Clause'), pikchrSource.indexOf('****************************************************************************'))}`);
 await writeFile(path.join(output, 'THIRD_PARTY_LICENSES.txt'), notices.join('\n'));

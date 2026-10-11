@@ -65,7 +65,10 @@ impl Reader {
             .extension()
             .and_then(|s| s.to_str())
             .is_some_and(|s| s.eq_ignore_ascii_case("html") || s.eq_ignore_ascii_case("htm"));
-        let renderer = if document.kind == DocumentKind::Markdown || html {
+        let renderer = if document.kind == DocumentKind::Markdown
+            || html
+            || glim_services::text_formats::supports(&document.path)
+        {
             Renderer::Markup(Box::new(MarkupReader::new(
                 &document.path,
                 &document.text,
@@ -83,21 +86,27 @@ impl Reader {
                 cx,
             ))
         };
-        let json = (language_for_path(&document.path) == "json").then(|| {
-            let jsonc = document
+        let json = (language_for_path(&document.path) == "json"
+            && !glim_services::text_formats::supports(&document.path))
+        .then(|| {
+            let format = document
                 .path
                 .extension()
                 .and_then(|s| s.to_str())
-                .is_some_and(|s| {
-                    s.eq_ignore_ascii_case("jsonc") || s.eq_ignore_ascii_case("code-workspace")
-                });
-            (cx.new(|_| json::JsonTree::new(jsonc)), false)
+                .unwrap_or("json")
+                .to_ascii_lowercase();
+            let format = if format == "code-workspace" {
+                "jsonc".to_owned()
+            } else {
+                format
+            };
+            (cx.new(|_| json::JsonTree::new(format)), false)
         });
         let csv = document
             .path
             .extension()
             .and_then(|s| s.to_str())
-            .is_some_and(|s| s.eq_ignore_ascii_case("csv"))
+            .is_some_and(|s| s.eq_ignore_ascii_case("csv") || s.eq_ignore_ascii_case("tsv"))
             .then(|| (cx.new(|_| csv::CsvTable::new()), false));
         Self {
             title: document.path.display().to_string().into(),
@@ -476,7 +485,21 @@ impl Reader {
             if let Some((table, visible)) = &mut self.csv {
                 *visible = preview;
                 if let Some(text) = text {
-                    table.update(cx, |view, cx| view.load(text, cx));
+                    table.update(cx, |view, cx| {
+                        view.load(
+                            text,
+                            if self
+                                .path
+                                .extension()
+                                .is_some_and(|e| e.eq_ignore_ascii_case("tsv"))
+                            {
+                                b'\t'
+                            } else {
+                                b','
+                            },
+                            cx,
+                        )
+                    });
                 }
             }
         }

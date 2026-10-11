@@ -20,7 +20,8 @@ pub fn supports(path: &Path) -> bool {
             .unwrap_or_default()
             .to_ascii_lowercase()
             .as_str(),
-        "png"
+        "qoi"
+            | "png"
             | "jpg"
             | "jpeg"
             | "webp"

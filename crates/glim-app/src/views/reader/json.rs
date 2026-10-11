@@ -13,11 +13,11 @@ pub(super) struct JsonTree {
     task: Option<Task<()>>,
     error: Option<String>,
     scroll: UniformListScrollHandle,
-    jsonc: bool,
+    format: String,
     loaded_text: Option<String>,
 }
 impl JsonTree {
-    pub fn new(jsonc: bool) -> Self {
+    pub fn new(format: String) -> Self {
         Self {
             nodes: Vec::new(),
             expanded: HashSet::new(),
@@ -25,7 +25,7 @@ impl JsonTree {
             task: None,
             error: None,
             scroll: UniformListScrollHandle::new(),
-            jsonc,
+            format,
             loaded_text: None,
         }
     }
@@ -34,19 +34,15 @@ impl JsonTree {
             return;
         }
         self.loaded_text = Some(text.clone());
-        let jsonc = self.jsonc;
+        let format = self.format.clone();
         self.nodes.clear();
         self.rows.clear();
         self.expanded.clear();
         self.error = None;
         self.scroll = UniformListScrollHandle::new();
-        let work = cx.background_executor().spawn(async move {
-            if jsonc {
-                glim_services::json::parse_jsonc(&text)
-            } else {
-                glim_services::json::parse(&text)
-            }
-        });
+        let work = cx
+            .background_executor()
+            .spawn(async move { glim_services::json::parse_format(&text, &format) });
         self.task = Some(cx.spawn(async move |view, cx| {
             let result = work.await;
             let _ = view.update(cx, |v, cx| {

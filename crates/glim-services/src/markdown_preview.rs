@@ -92,6 +92,9 @@ pub fn fenced(kind: &str, source: &str) -> Option<Diagram> {
         }
     }
     let kind = match language.as_str() {
+        "d2" => "d2",
+        "pikchr" => "pikchr",
+        "vega" => "vega",
         "mermaid" | "mmd" => "mermaid",
         "zenuml" => "zenuml",
         "dot" | "graphviz" => "dot",

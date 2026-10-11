@@ -10,7 +10,7 @@ use std::ops::Range;
 pub(super) fn supports(language: &str) -> bool {
     matches!(
         language,
-        "dockerfile" | "ini" | "dotenv" | "ignore" | "jinja" | "nix"
+        "dockerfile" | "ini" | "dotenv" | "ignore" | "jinja" | "nix" | "structured"
     )
 }
 pub(super) struct Lexical {
@@ -81,9 +81,13 @@ fn tokens(line: &str, language: &str) -> Vec<(Range<usize>, &'static str)> {
         let start = i;
         let mut kind = "";
         if ((i == first
-            || language == "nix"
+            || matches!(language, "nix" | "structured")
             || (language == "dotenv" && i > 0 && bytes[i - 1].is_ascii_whitespace()))
             && (bytes[i] == b'#' || (language == "ini" && bytes[i] == b';')))
+            || (language == "structured"
+                && (line[i..].starts_with("//")
+                    || line[i..].starts_with("--")
+                    || (i == first && bytes[i] == b'%')))
             || (language == "jinja" && line[i..].starts_with("{#"))
         {
             kind = "comment";

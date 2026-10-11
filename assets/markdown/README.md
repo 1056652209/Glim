@@ -6,7 +6,7 @@
 
 PlantUML 生成代码保留官方原始 ES module，通过 `bootstrap.js` 加载，不再次压缩或转译。资源生成器检查主渲染 bundle 和 PlantUML 的 JavaScript 语法，防止生成代码的跳转标签被压缩器破坏。
 
-引擎版本由 `scripts/markdown/package-lock.json` 固定：Mermaid 及官方 ZenUML 插件、Viz.js / Graphviz、PlantUML 官方 TeaVM 引擎、flowchart.js、WaveDrom、MathJax。第三方完整许可证见 `THIRD_PARTY_LICENSES.txt`，构建工具生成的代码归属见 `renderer.js.LEGAL.txt`。
+引擎版本由 `scripts/markdown/package-lock.json` 固定：Mermaid 及官方 ZenUML 插件、Viz.js / Graphviz、PlantUML 官方 TeaVM 引擎、flowchart.js、WaveDrom、MathJax、D2、Pikchr WASM 与 Vega。第三方完整许可证见 `THIRD_PARTY_LICENSES.txt`，构建工具生成的代码归属见 `renderer.js.LEGAL.txt`。
 
 PlantUML 的 themes / emoji / OpenIconic 来自固定的 `@plantuml/core` 包。C4 标准库 v2.14.0（MIT）来自 [PlantUML 官方生成资源](https://plantuml.github.io/plantuml/js-plantuml/c4.min.js)，库自身附带版本、来源和许可证信息；文件已提交，运行时不下载。标准库来源：[C4-PlantUML](https://github.com/plantuml-stdlib/C4-PlantUML/tree/release/v2.14.0)。其他云厂商图标库及外部 include 未内置。
 

@@ -14,6 +14,9 @@ pub fn parse(text: &str) -> Result<Vec<JsonNode>> {
         "Tree view is limited to 16 MiB; use Source for larger JSON."
     );
     let value: Value = serde_json::from_str(text)?;
+    nodes_for_value(value)
+}
+fn nodes_for_value(value: Value) -> Result<Vec<JsonNode>> {
     let mut nodes = Vec::new();
     fn add(key: String, value: Value, nodes: &mut Vec<JsonNode>) -> Result<usize> {
         ensure!(
@@ -163,6 +166,26 @@ pub fn parse_jsonc(text: &str) -> Result<Vec<JsonNode>> {
         i += 1;
     }
     parse(std::str::from_utf8(&bytes)?)
+}
+
+pub fn parse_format(text: &str, format: &str) -> Result<Vec<JsonNode>> {
+    ensure!(
+        text.len() <= 16 * 1024 * 1024,
+        "Tree preview exceeds 16 MiB"
+    );
+    match format {
+        "json5" => nodes_for_value(json5::from_str(text)?),
+        "ndjson" | "jsonl" => {
+            let values = text
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(serde_json::from_str)
+                .collect::<std::result::Result<Vec<Value>, _>>()?;
+            nodes_for_value(Value::Array(values))
+        }
+        "jsonc" => parse_jsonc(text),
+        _ => parse(text),
+    }
 }
 
 #[cfg(test)]

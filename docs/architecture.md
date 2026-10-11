@@ -105,3 +105,10 @@ CSV 由 services/csv 在后台解析带引号、转义与跨行字段；reader/c
 界面语言由 services/locale 管理，首批 en/zh-CN 字典位于 assets/locales；系统语言通过 sys-locale 读取，手动选择在 preferences 中原子保存。app 负责更新菜单、控件语言及窗口刷新；macOS 辅助进程通过启动配置接收字典，新建预览使用当前语言。文档内容与技术诊断不翻译。
 
 图表子进程每完成一块便写入独立的原子结果文件，父进程只读取未完成块；最终整页结果用于退出回退。系统字体库在 services 内通过 OnceLock 复用，避免重复加载。
+## 扩展格式首轮预览
+
+`services/formats` 有界读取 ZIP/TAR 目录、gzip/bzip2/xz 文本、EPUB 章节和 ODF content.xml 文本、NumPy 元数据及基础数值；不落盘解压，不执行 pickle。容器预览复用只读文本阅读器。`services/vector_formats` 将 OBJ/STL 网格静态投影及 BDF 位图字形转换为 PNG，复用图片阅读器。
+
+`services/text_formats` 将 AsciiDoc、Org、RST、字幕和地理坐标投影到基础 Markdown 阅读视图，源码编辑器保留原始内容。D2、Pikchr、Vega 文件投影为专用图表块，复用已有后台渲染任务与隔离 WebView；官方 D2/Pikchr WASM 和 Vega 资源内嵌，Vega 外部加载禁用。TSV 复用 CSV 虚拟表格，JSON5 与逐行 JSON 复用 JSON 树。
+
+首轮不还原复杂 AsciiDoc/Org/RST 排版、ODF 样式或 EPUB 阅读顺序，不提供地图底图、网格交互旋转、字体安装或归档提取。D2 导入仅使用当前文档的内存文件系统；图表外部资源不加载。

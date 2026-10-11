@@ -8,8 +8,8 @@
     <key>CFBundleExecutable</key><string>glim</string>
     <key>CFBundleIconFile</key><string>Glim</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.10</string>
-    <key>CFBundleVersion</key><string>11</string>
+    <key>CFBundleShortVersionString</key><string>0.1.11</string>
+    <key>CFBundleVersion</key><string>12</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>CFBundleDocumentTypes</key>
@@ -18,6 +18,38 @@
         <key>CFBundleTypeRole</key><string>Viewer</string>
         <key>LSHandlerRank</key><string>Alternate</string>
         <key>CFBundleTypeExtensions</key><array>
+            <string>adoc</string>
+            <string>org</string>
+            <string>rst</string>
+            <string>srt</string>
+            <string>vtt</string>
+            <string>m</string>
+            <string>stan</string>
+            <string>tsv</string>
+            <string>ndjson</string>
+            <string>http</string>
+            <string>hcl</string>
+            <string>dhall</string>
+            <string>kdl</string>
+            <string>json5</string>
+            <string>d2</string>
+            <string>pikchr</string>
+            <string>obj</string>
+            <string>stl</string>
+            <string>gpx</string>
+            <string>kml</string>
+            <string>bdf</string>
+            <string>zip</string>
+            <string>tar</string>
+            <string>gz</string>
+            <string>bz2</string>
+            <string>xz</string>
+            <string>epub</string>
+            <string>odt</string>
+            <string>ods</string>
+            <string>odp</string>
+            <string>npy</string>
+            <string>qoi</string>
             <string>md</string>
             <string>markdown</string>
             <string>txt</string>

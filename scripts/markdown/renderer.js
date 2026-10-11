@@ -1,3 +1,6 @@
+import { D2 } from '@terrastruct/d2';
+import pikchr from 'pikchr-wasm';
+import * as vega from 'vega';
 import mermaid from 'mermaid';
 import zenuml from '@mermaid-js/mermaid-zenuml';
 import { renderSalt } from './salt.js';
@@ -119,11 +122,29 @@ function normalize(svg) {
   };
 }
 
+let d2;
 async function render(request, index) {
   const host = document.getElementById('output');
   host.replaceChildren();
   const { kind, source } = request;
   switch (kind) {
+    case 'd2': {
+      d2 ??= new D2();
+      const result = await d2.compile(source);
+      return d2.render(result.diagram, result.renderOptions);
+    }
+    case 'pikchr': {
+      await pikchr.loadWASM();
+      const svg = pikchr.render(source);
+      if (!svg.trim().startsWith('<svg')) throw new Error('Pikchr syntax error');
+      return svg;
+    }
+    case 'vega': {
+      const spec = JSON.parse(source);
+      const loader = { load: async () => { throw new Error('External Vega resources are disabled'); }, sanitize: async () => { throw new Error('External Vega resources are disabled'); } };
+      const view = new vega.View(vega.parse(spec), { renderer: 'none', loader });
+      try { return await view.toSVG(); } finally { view.finalize(); }
+    }
     case 'zenuml':
     case 'mermaid': {
       await externalDiagramsReady;

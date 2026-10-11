@@ -466,6 +466,12 @@ impl Workspace {
 }
 
 pub(super) fn read_content(path: &std::path::Path) -> anyhow::Result<Content> {
+    if glim_services::vector_formats::supports(path) {
+        return glim_services::vector_formats::read_preview(path).map(Content::Image);
+    }
+    if glim_services::formats::supports(path) {
+        return glim_services::formats::read_preview(path).map(Content::Bytes);
+    }
     if glim_services::preview::can_open(path) {
         return Ok(Content::Native(path.to_path_buf(), false, false));
     }

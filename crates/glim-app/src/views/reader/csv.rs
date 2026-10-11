@@ -21,7 +21,7 @@ impl CsvTable {
             scroll: UniformListScrollHandle::new(),
         }
     }
-    pub fn load(&mut self, text: String, cx: &mut Context<Self>) {
+    pub fn load(&mut self, text: String, delimiter: u8, cx: &mut Context<Self>) {
         if self.loaded.as_deref() == Some(&text) {
             return;
         }
@@ -31,7 +31,7 @@ impl CsvTable {
         self.scroll = UniformListScrollHandle::new();
         let work = cx
             .background_executor()
-            .spawn(async move { glim_services::csv::parse(&text) });
+            .spawn(async move { glim_services::csv::parse_delimited(&text, delimiter) });
         self.task = Some(cx.spawn(async move |view, cx| {
             let result = work.await;
             let _ = view.update(cx, |view, cx| {

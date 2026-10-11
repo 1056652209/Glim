@@ -11,7 +11,7 @@ glim-core.workspace = true
 anyhow.workspace = true
 ignore = "0.4"
 notify = "8.2"
-image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "exr", "hdr"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "exr", "hdr", "qoi"] }
 resvg = { version = "0.45.1", default-features = false, features = ["text", "system-fonts"] }
 
 tempfile = "3"
@@ -21,6 +21,13 @@ markdown = "=1.0.0"
 calamine = "0.31"
 csv = "1"
 sys-locale = "0.3"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
+bzip2 = "0.6"
+xz2 = "0.1"
+quick-xml = "0.38"
+json5 = "0.4"
 
 [lints]
 workspace = true

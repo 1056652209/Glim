@@ -1,11 +1,15 @@
 //! Bounded CSV records for a read-only table; source bytes are never rewritten.
 use anyhow::{Result, ensure};
 pub fn parse(text: &str) -> Result<Vec<Vec<String>>> {
+    parse_delimited(text, b',')
+}
+pub fn parse_delimited(text: &str, delimiter: u8) -> Result<Vec<Vec<String>>> {
     ensure!(
         text.len() <= 16 * 1024 * 1024,
         "CSV table preview is limited to 16 MiB; use Source"
     );
     let mut reader = csv::ReaderBuilder::new()
+        .delimiter(delimiter)
         .has_headers(false)
         .flexible(true)
         .from_reader(text.strip_prefix('\u{feff}').unwrap_or(text).as_bytes());

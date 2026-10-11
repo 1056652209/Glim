@@ -110,13 +110,14 @@ pub fn language_for_path(path: &Path) -> &'static str {
         "ini" | "cfg" | "conf" | "properties" | "service" | "desktop" => "ini",
         "env" => "dotenv",
         "nix" => "nix",
+        "hcl" | "dhall" | "kdl" | "stan" | "m" | "http" | "d2" | "pikchr" | "obj" | "stl"
+        | "bdf" | "srt" | "vtt" | "adoc" | "org" | "rst" => "structured",
         "rs" => "rust",
         "js" | "mjs" | "cjs" | "jsx" => "javascript",
         "ts" | "mts" | "cts" => "typescript",
         "tsx" => "tsx",
-        "json" | "jsonc" | "jsonl" | "ipynb" | "geojson" | "code-workspace" | "tsbuildinfo" => {
-            "json"
-        }
+        "json" | "jsonc" | "json5" | "ndjson" | "jsonl" | "ipynb" | "geojson"
+        | "code-workspace" | "tsbuildinfo" => "json",
         "toml" => "toml",
         "py" | "pyi" | "pyx" | "pxd" | "pxi" => "python",
         "go" => "go",
@@ -124,7 +125,8 @@ pub fn language_for_path(path: &Path) -> &'static str {
         "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "cu" | "cuh" | "metal" => "cpp",
         "css" | "less" | "scss" => "css",
         // HTML provides basic tag highlighting, not full Vue/XML language semantics.
-        "html" | "htm" | "vue" | "xml" | "xsd" | "xsl" | "plist" | "mtlx" | "tmx" | "hbs" => "html",
+        "gpx" | "kml" | "html" | "htm" | "vue" | "xml" | "xsd" | "xsl" | "plist" | "mtlx"
+        | "tmx" | "hbs" => "html",
         "yml" | "yaml" | "ocio" => "yaml",
         "sh" | "bash" | "zsh" | "command" => "bash",
         "swift" => "swift",
