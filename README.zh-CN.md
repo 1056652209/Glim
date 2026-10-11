@@ -12,11 +12,11 @@ AI 时代的全能查看器。在一个原生桌面工作区里阅读代码、�
 
 | 设备 | Glim 0.1.8 |
 | --- | --- |
-| Mac · Apple Silicon（M 系列） | [下载 ARM64 DMG](https://github.com/jony4/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-arm64.dmg) |
-| Mac · Intel | [下载 Intel DMG](https://github.com/jony4/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-x86_64.dmg) |
-| Windows · Intel / AMD 64 位 | [下载 x64 ZIP](https://github.com/jony4/Glim/releases/download/v0.1.8/Glim-0.1.8-windows-x64.zip) |
+| Mac · Apple Silicon（M 系列） | [下载 ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-arm64.dmg) |
+| Mac · Intel | [下载 Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-x86_64.dmg) |
+| Windows · Intel / AMD 64 位 | [下载 x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-windows-x64.zip) |
 
-[最新版与 SHA-256 校验文件](https://github.com/jony4/Glim/releases/latest) · [历史版本](https://github.com/jony4/Glim/releases)
+[最新版与 SHA-256 校验文件](https://github.com/NeoPanic/Glim/releases/latest) · [历史版本](https://github.com/NeoPanic/Glim/releases)
 
 **macOS：** 打开 DMG，将 Glim 拖入“应用程序”。目前使用 ad-hoc 签名，**尚无 Developer ID 签名与 Apple 公证**。若系统拦截，先尝试打开一次，再到 **系统设置 → 隐私与安全性 → 仍要打开**。请确认安装包来自可信的项目发布页，无需关闭系统安全保护。[Apple 官方说明](https://support.apple.com/zh-cn/102445)
 
@@ -48,6 +48,6 @@ AI 时代的全能查看器。在一个原生桌面工作区里阅读代码、�
 
 ## 参与项目
 
-[报告问题](https://github.com/jony4/Glim/issues/new?template=bug_report.yml) · [申请格式或功能](https://github.com/jony4/Glim/issues/new?template=feature_request.yml) · [讨论与交流](https://github.com/jony4/Glim/discussions)，欢迎中文和英文。
+[报告问题](https://github.com/NeoPanic/Glim/issues/new?template=bug_report.yml) · [申请格式或功能](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml) · [讨论与交流](https://github.com/NeoPanic/Glim/discussions)，欢迎中文和英文。
 
 [贡献指南](CONTRIBUTING.md) · [构建说明](docs/releasing.md) · [未完成计划](docs/TODO.md) · [安全政策](SECURITY.md) · [MIT License](LICENSE)

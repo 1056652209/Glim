@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jony4/Glim/releases/latest"><img src="https://img.shields.io/github/v/release/jony4/Glim?style=flat-square&amp;color=268879" alt="Latest release" /></a>
-  <a href="https://github.com/jony4/Glim/actions/workflows/ci.yml"><img src="https://github.com/jony4/Glim/actions/workflows/ci.yml/badge.svg" alt="Desktop builds" /></a>
+  <a href="https://github.com/NeoPanic/Glim/releases/latest"><img src="https://img.shields.io/github/v/release/NeoPanic/Glim?style=flat-square&amp;color=268879" alt="Latest release" /></a>
+  <a href="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml"><img src="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml/badge.svg" alt="Desktop builds" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" /></a>
 </p>
 
@@ -18,11 +18,11 @@ Glim brings code, documents, data, and Git changes into one native desktop works
 
 | Your device | Glim 0.1.8 |
 | --- | --- |
-| Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/jony4/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-arm64.dmg) |
-| Mac · Intel | [Download Intel DMG](https://github.com/jony4/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-x86_64.dmg) |
-| Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/jony4/Glim/releases/download/v0.1.8/Glim-0.1.8-windows-x64.zip) |
+| Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-arm64.dmg) |
+| Mac · Intel | [Download Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-macos-x86_64.dmg) |
+| Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.8/Glim-0.1.8-windows-x64.zip) |
 
-[Latest release & checksums](https://github.com/jony4/Glim/releases/latest) · [All releases](https://github.com/jony4/Glim/releases)
+[Latest release & checksums](https://github.com/NeoPanic/Glim/releases/latest) · [All releases](https://github.com/NeoPanic/Glim/releases)
 
 **macOS:** open the DMG and drag Glim into Applications. The app is ad-hoc signed, **not yet Developer ID signed or notarized**. If macOS blocks it, try opening it once, then go to **System Settings → Privacy & Security → Open Anyway**. Only approve a download you trust. [Apple's instructions](https://support.apple.com/en-us/102445).
 
@@ -54,6 +54,6 @@ Glim brings code, documents, data, and Git changes into one native desktop works
 
 ## Get involved
 
-Found a file Glim should open better? [Report a bug](https://github.com/jony4/Glim/issues/new?template=bug_report.yml), [request a format](https://github.com/jony4/Glim/issues/new?template=feature_request.yml), or [start a discussion](https://github.com/jony4/Glim/discussions). English and Chinese are welcome.
+Found a file Glim should open better? [Report a bug](https://github.com/NeoPanic/Glim/issues/new?template=bug_report.yml), [request a format](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml), or [start a discussion](https://github.com/NeoPanic/Glim/discussions). English and Chinese are welcome.
 
 [Contributing](CONTRIBUTING.md) · [Build from source](docs/releasing.md) · [Roadmap](docs/TODO.md) · [Security](SECURITY.md) · [MIT License](LICENSE)

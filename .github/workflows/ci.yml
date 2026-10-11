@@ -1,9 +1,7 @@
 name: Desktop builds
 on:
   push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
+    tags: ['v*']
 permissions:
   contents: read
 jobs:
@@ -45,14 +43,13 @@ jobs:
       - run: cargo test --workspace --locked
       - run: cargo build --locked
       - name: Package macOS
-        if: runner.os == 'macOS' && github.event_name != 'pull_request'
+        if: runner.os == 'macOS'
         run: scripts/package-dmg.sh ${{ matrix.arch }}
       - name: Package Windows
-        if: runner.os == 'Windows' && github.event_name != 'pull_request'
+        if: runner.os == 'Windows'
         shell: pwsh
         run: scripts/package-windows.ps1
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'pull_request'
         with:
           name: Glim-${{ matrix.platform }}
           path: |

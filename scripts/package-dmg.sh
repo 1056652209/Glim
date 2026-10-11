@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='glim-dmg-') as directory:
         'The all-purpose viewer for the AI era.\n\n'
         'This release is ad-hoc signed, without Developer ID signing or notarization.\n'
         'macOS Gatekeeper may require explicit approval in System Settings > Privacy & Security.\n\n'
-        'Source and issues: https://github.com/jony4/Glim\n', encoding='utf-8')
+        'Source and issues: https://github.com/NeoPanic/Glim\n', encoding='utf-8')
     subprocess.run(['hdiutil', 'create', '-ov', '-volname', f'Glim {version}',
                     '-srcfolder', directory, '-format', 'UDZO', '-imagekey', 'zlib-level=9', output], check=True)
 PY

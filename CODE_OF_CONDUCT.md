@@ -12,7 +12,7 @@ Harassment, threats, discriminatory language, sexual harassment, doxxing, spam, 
 
 These expectations apply to this repository's issues, pull requests, discussions, and other official Glim community spaces. Maintainers may edit or remove harmful content, warn participants, or restrict participation. Responses should reflect the seriousness and repetition of the behavior; maintainers are also subject to these expectations.
 
-To report harmful content, use GitHub's **Report content** control on the relevant item. For concerns that can safely be discussed publicly, contact the maintainer [@jony4](https://github.com/jony4) in the relevant thread. Do not post sensitive evidence in a public issue. Private conduct reporting currently relies on GitHub's reporting channels; the project does not advertise a separate private mailbox.
+To report harmful content, use GitHub's **Report content** control on the relevant item. For concerns that can safely be discussed publicly, contact the maintainer [@NeoPanic](https://github.com/NeoPanic) in the relevant thread. Do not post sensitive evidence in a public issue. Private conduct reporting currently relies on GitHub's reporting channels; the project does not advertise a separate private mailbox.
 
 ## 中文说明
 

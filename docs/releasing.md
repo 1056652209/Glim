@@ -36,7 +36,7 @@ scripts/package-dmg.sh x86_64
 1. 校验 DMG 的 SHA-256、只读挂载内容、ARM64 架构与签名。
 2. 正常退出旧应用，保留可恢复备份后安装至 `/Applications/Glim.app`，确认安装内容一致并启动。
 3. 验证本次改动涉及的界面行为；无法覆盖的交互在 Release 说明中明确列出。
-4. 提交最终源码、推送版本标签，向 [GitHub Releases](https://github.com/jony4/Glim/releases) 上传 DMG 与校验文件；确认发布状态及远端校验值。
+4. 提交最终源码、推送版本标签，向 [GitHub Releases](https://github.com/NeoPanic/Glim/releases) 上传 DMG 与校验文件；确认发布状态及远端校验值。
 
 发布说明保留在 GitHub Release，源码历史由 Git 保存。仓库文档只维护当前状态和未完成事项，不积累逐次操作或验证流水。
 
@@ -46,6 +46,6 @@ scripts/package-dmg.sh x86_64
 
 Windows 构建需要 Visual Studio C++ Build Tools 和 Windows SDK（rc.exe、fxc.exe）。在 Developer PowerShell 中执行 `scripts/package-windows.ps1`，输出 `dist/Glim-<version>-windows-x64.zip` 和校验文件。使用静态 CRT，应用包含 ICO 资源；正常使用需支持 DirectX 11 的图形环境。尚无 Authenticode 签名。
 
-`.github/workflows/ci.yml` 在 Apple Silicon、Intel Mac 和 Windows 主机分别执行格式、Clippy、测试、构建；main 和手动运行同时生成各平台产物。发布前下载同一提交的三个 artifact，核对架构及校验文件，再上传同一 GitHub Release。CI 不自动创建公开 Release。
+`.github/workflows/ci.yml` 仅在推送 `v*` 版本标签（如 `v0.1.8`）时触发，在 Apple Silicon、Intel Mac 和 Windows 主机分别执行格式、Clippy、测试、构建并生成各平台产物。普通分支推送和 PR 不触发 CI，不提供手动触发入口。发布前下载同一提交的三个 artifact，核对架构及校验文件，再上传同一 GitHub Release。CI 不自动创建公开 Release。
 
 Windows 不编译 Swift 辅助程序；原生文档/媒体预览和文件类型管理保持 macOS 专属，平台支持范围见 README。

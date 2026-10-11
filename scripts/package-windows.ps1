@@ -17,7 +17,7 @@ Shortcuts: Ctrl+O open file, Ctrl+Shift+O open folder, Ctrl+S save, Ctrl+Shift+N
 Windows supports the main file/text/image/Git workspace. macOS-native document, media,
 font and SQLite preview windows and the default-file-type manager are not included.
 This executable is not Authenticode signed. Download only from the project release page.
-https://github.com/jony4/Glim/releases
+https://github.com/NeoPanic/Glim/releases
 "@ | Set-Content (Join-Path $stage 'Read Me.txt') -Encoding UTF8
 $archive = Join-Path $PWD "dist/Glim-$version-windows-x64.zip"
 Compress-Archive -Path $stage -DestinationPath $archive -Force
