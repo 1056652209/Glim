@@ -1,3 +1,4 @@
+mod about;
 pub mod actions;
 mod assets;
 pub(crate) mod diagram_engine;
@@ -127,17 +128,7 @@ fn open_default_applications(cx: &mut App) {
 }
 
 fn show_about(cx: &mut App) {
-    if let Some((_, handle)) = cx.global::<OpenWorkspaces>().0.last().cloned() {
-        let _ = handle.update(cx, |_, window, cx| {
-            drop(window.prompt(
-                PromptLevel::Info,
-                &glim_services::locale::tr("About Glim"),
-                Some(concat!("Version ", env!("CARGO_PKG_VERSION"))),
-                &[glim_services::locale::tr("OK").as_str()],
-                cx,
-            ));
-        });
-    }
+    about::open(cx);
 }
 
 pub fn run() -> Result<()> {
