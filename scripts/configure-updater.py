@@ -24,8 +24,13 @@ if enabled:
         raise SystemExit('Updater bundles require one known architecture')
     deployment = subprocess.check_output(['xcrun', 'vtool', '-show-build', str(binary)], text=True)
     minimums = re.findall(r'\bminos\s+([0-9.]+)', deployment)
+    minimums += re.findall(
+        r'\bcmd\s+LC_VERSION_MIN_MACOSX\s+cmdsize\s+\d+\s+version\s+([0-9.]+)', deployment)
     if not minimums:
         raise SystemExit('Cannot determine minimum macOS version from the executable')
+    # Both native Swift bridges target macOS 11, even when Rust's Intel
+    # executable retains an older deployment load command.
+    minimums.append('11.0')
     info.update({
         'LSMinimumSystemVersion': max(minimums, key=lambda v: tuple(map(int, v.split('.')))),
         'SUFeedURL': f'https://github.com/NeoPanic/Glim/releases/latest/download/appcast-macos-{arch}.xml',

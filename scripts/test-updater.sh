@@ -9,3 +9,5 @@ xcrun swiftc -swift-version 5 -F "$GLIM_SPARKLE_DIR" -framework Sparkle \
     -Xlinker -rpath -Xlinker "$GLIM_SPARKLE_DIR" \
     native/Updater.swift native/tests/UpdaterTests.swift -o "$updater_test_dir/updater-tests"
 "$updater_test_dir/updater-tests"
+
+python3 scripts/test-updater-configuration.py
