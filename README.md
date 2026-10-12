@@ -1,6 +1,27 @@
 <p align="center">
-  <img src="assets/branding/repository-banner.svg" alt="Glim — The all-purpose viewer for the AI era. Code, documents, data, and Git." width="100%" />
+  <img src="assets/branding/glim.png" alt="Glim" width="72" height="72" />
 </p>
+
+<h1 align="center">Glim</h1>
+
+<p align="center"><strong>Code, documents, data, and Git. One desktop workspace.</strong><br />
+Explore what your AI tools built, preview Markdown diagrams, and review every change before committing.</p>
+
+<p align="center">Free and open source · macOS &amp; Windows · <b>English</b> / <a href="README.zh-CN.md">简体中文</a></p>
+
+<p align="center">
+  <a href="https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-macos-arm64.dmg"><img src="assets/readme/download-macos-arm64.svg" alt="Download Glim for Mac with Apple Silicon" width="222" height="56" /></a>
+  <a href="https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-macos-x86_64.dmg"><img src="assets/readme/download-macos-x86_64.svg" alt="Download Glim for Intel Mac" width="222" height="56" /></a>
+  <a href="https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-windows-x64.zip"><img src="assets/readme/download-windows-x64.svg" alt="Download Glim for Windows x64" width="222" height="56" /></a>
+</p>
+
+<p align="center"><a href="https://github.com/NeoPanic/Glim/releases/latest">Current release: 0.1.11 · Release notes &amp; checksums</a> · <a href="#download">Installation help</a></p>
+
+<p align="center"><sub>Mac downloads are not yet notarized by Apple. You may need to approve the first launch in System Settings. <a href="#macos">See instructions</a></sub></p>
+
+<a href="assets/screenshots/workspace.png"><img src="assets/screenshots/workspace.png" alt="Glim's real workspace with a project file tree, multiple file tabs, and a Markdown preview containing a Mermaid flowchart, table, and task list" width="100%" /></a>
+
+<p align="center"><sub>Captured on macOS: a project's notes, code, and data, ready to explore. Click the image to zoom in.</sub></p>
 
 <p align="center">
   <a href="https://github.com/NeoPanic/Glim/releases/latest"><img src="https://img.shields.io/github/v/release/NeoPanic/Glim?style=flat-square&amp;color=268879" alt="Latest release" /></a>
@@ -11,56 +32,72 @@
   <a href="https://github.com/NeoPanic/Glim/stargazers"><img src="https://img.shields.io/github/stars/NeoPanic/Glim?style=social" alt="GitHub stars" /></a>
 </p>
 
-<p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
+## Three reasons to open Glim
 
-Glim brings code, documents, data, and Git changes into one native desktop workspace. Read what your AI tools produce, inspect a model's metadata, or review a change before committing it.
+### Understand the project your AI just built
 
-**The all-purpose viewer for the AI era.** Free and open source. Built with Rust and GPUI.
+Open a folder, read the project notes, then switch to code and configuration. Markdown flowcharts, LaTeX formulas, tables, and task lists render directly in the viewer, with diagram engines bundled for offline use. Make small text edits with undo, redo, and autosave.
+
+### See the structure in your data
+
+Switch JSON between source and an expandable tree, or read CSV as a table. Explore configuration, API examples, and exported data without losing their structure. Inspect safetensors names, shapes, and parameter counts without loading model weights.
+
+<p align="center"><a href="assets/screenshots/json-tree.png"><img src="assets/screenshots/json-tree.png" alt="Detail of Glim's JSON tree, expanded through settings, collections, and entries to show strings, booleans, and numbers" width="640" /></a></p>
+
+### Review what changed before you commit
+
+Switch from files to Git to inspect working-tree and staged changes, in inline or side-by-side views. Stage, unstage, and commit with explicit controls, or explore changed files in commit history.
+
+<a href="assets/screenshots/git-diff.png"><img src="assets/screenshots/git-diff.png" alt="Glim's side-by-side Git diff with changed files in the sidebar, removed lines in red, and additions in green" width="100%" /></a>
 
 ## Download
 
-| Your device | Glim 0.1.11 |
+| Your device | Download Glim 0.1.11 |
 | --- | --- |
 | Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-macos-arm64.dmg) |
 | Mac · Intel | [Download Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-macos-x86_64.dmg) |
 | Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.11/Glim-0.1.11-windows-x64.zip) |
 
-[Latest release & checksums](https://github.com/NeoPanic/Glim/releases/latest) · [All releases](https://github.com/NeoPanic/Glim/releases)
+Not sure which Mac download to choose? Open **Apple menu → About This Mac**. An Apple M-series chip means Apple Silicon; an Intel processor means Intel.
 
-**macOS:** open the DMG and drag Glim into Applications. The app is ad-hoc signed, **not yet Developer ID signed or notarized**. If macOS blocks it, try opening it once, then go to **System Settings → Privacy & Security → Open Anyway**. Only approve a download you trust. [Apple's instructions](https://support.apple.com/en-us/102445).
+### macOS
 
-**Windows:** extract the ZIP and run `Glim.exe`. Install [Git for Windows](https://gitforwindows.org/) to use Git features. The executable is not yet Authenticode signed. Requires DirectX 11; Windows ARM is not included.
+Open the DMG and drag Glim into Applications. The app is ad-hoc signed, without Developer ID signing or notarization. If macOS blocks it, try opening it once, then go to **System Settings → Privacy & Security → Open Anyway**. Confirm the download came from this project's releases; there is no need to disable system security. [Apple's instructions](https://support.apple.com/en-us/102445).
 
-## What you can open
+### Windows
 
-| Content | Formats and experience |
+Extract the ZIP and run `Glim.exe`. Install [Git for Windows](https://gitforwindows.org/) to use Git features. The executable is not yet Authenticode signed. Requires DirectX 11; a Windows ARM build is not currently available. Shortcuts use Ctrl in place of the Mac's ⌘.
+
+[Release notes & SHA-256 checksums](https://github.com/NeoPanic/Glim/releases/latest) · [All releases](https://github.com/NeoPanic/Glim/releases) · [Build from source](docs/releasing.md)
+
+## What can you open?
+
+| Content | What you can do |
 | --- | --- |
-| Code & configuration | Rust, Python, Go, JavaScript/TypeScript, C/C++/CUDA, Java, Swift, Ruby, and more. Syntax highlighting, folding, search, and Minimap. Dockerfile, `.env`, `.npmrc`, Jinja, and other everyday project files. |
-| Documents & data | Markdown and static HTML preview; highlighted JSON/JSONC, GeoJSON and notebook source and expandable trees; CSV table/source modes; YAML, TOML, SQL, GraphQL, and other UTF-8 text. |
-| Images | PNG, JPEG, WebP, animated GIF, SVG, multipage TIFF, BMP, ICO, ICNS, EXR, and HDR. |
-| First-pass format previews | Basic AsciiDoc/Org/RST and subtitles; TSV, NDJSON, JSON5; offline D2/Pikchr/Vega; OBJ/STL, BDF, QOI; archive listings, compressed text, EPUB/ODF text and NumPy values |
-| Git | Working tree and staged diffs, commit history, inline and side-by-side comparison. |
-| AI model metadata | safetensors tensors, shapes, dtypes, parameter counts, and metadata — without loading model weights. |
-| Native documents · macOS | PDF, Word, Excel, PowerPoint, Keynote, Pages, Numbers, and RTF previews. |
-| Media, fonts & databases · macOS | Audio/video playback and folder queues; TTF/OTF and font collections; read-only SQLite tables, schema, and associated WAL files. |
+| Code & configuration | Syntax highlighting for Rust, Python, JS/TS, Go, C/C++, Java, Swift, Ruby, and more; file search, folding, Minimap, and basic editing |
+| Documents | Markdown / static HTML preview, offline Markdown diagrams and formulas, and ordinary UTF-8 text reading and editing |
+| Data | Expandable JSON / JSONC trees, CSV tables, YAML / TOML / SQL; GeoJSON and notebook source and structure |
+| Images | PNG, JPEG, WebP, animated GIF, SVG, multipage TIFF, BMP, ICO, ICNS, EXR / HDR |
+| Git | Working-tree and staged diffs, inline / side-by-side views, staging and commits, branches and history |
+| AI model metadata | safetensors names, shapes, dtypes, and parameter counts, read from the header only |
+| Native documents · macOS | Read-only PDF, Word, Excel, PowerPoint, Keynote, Pages, Numbers, and RTF previews |
+| Media & tools · macOS | Audio/video and folder playlists; fonts and font collections; SQLite tables, schema, and associated WAL files |
+| First-pass previews | AsciiDoc / Org / RST, subtitles, TSV / NDJSON / JSON5, D2 / Pikchr / Vega, OBJ / STL, archive listings and selected text previews, and more |
 
-**Markdown extensions:** Bundled offline Mermaid (including flowcharts/subgraphs, Journey, Radar, and ZenUML), Graphviz/DOT, PlantUML (including common Salt and Chen ER syntax), flowchart.js, WaveDrom, and LaTeX formulas. GFM tables, task lists, footnotes, GitHub Alerts, and frontmatter are supported. Failed blocks retain their source.
+**Platform scope:** macOS and Windows both support the main code/text, Markdown/HTML, JSON, image, model-metadata, and Git workspace. Native PDF, Office/iWork, media, font, and SQLite previews, plus default file-type management, currently require macOS.
 
-**Platform scope:** Windows includes the main workspace: code/text editing, Markdown/HTML, JSON, images, safetensors metadata, and Git. PDF, Office/iWork, media, fonts, SQLite native previews, and default file-type management currently require macOS.
+<details>
+<summary>Markdown extensions and key limits</summary>
 
-[Full format list and limits](docs/file-format-support.md) · Office rendering and media codecs depend on macOS. HTML preview is static and does not execute scripts. Archives and non-UTF-8 text are not yet supported.
+Markdown includes Mermaid (flowcharts, subgraphs, Journey, Radar, and ZenUML), Graphviz/DOT, PlantUML (including partial Salt and Chen ER support), flowchart.js, WaveDrom, LaTeX, GFM tables, task lists, footnotes, GitHub Alerts, and frontmatter. Failed diagram blocks retain their source.
 
-## A few things that make it useful
+Text editing supports up to 32 MiB; larger files open in read-only pages. Optional full loading is limited to 256 MiB. Markdown supports 128 distinct diagram blocks per document. HTML preview is static and does not execute scripts. Archives support listings and selected text previews, rather than general extraction or full content rendering. Non-UTF-8 text is not currently decoded.
 
-- **Read, then edit.** Switch Markdown/HTML between preview and source. Edit ordinary text with undo/redo and autosave; reading-mode preferences are remembered.
-- **Inspect JSON both ways.** Use a collapsible tree to explore structure, or highlighted source to edit it.
-- **Keep Git close.** Stage, unstage, commit, manage branches, fetch, pull, push, and stash. Expand commits into changed files; choose inline or side-by-side diffs.
-- **Open a workspace, not just a file.** Multiple folders, tabs, windows, and file search keep related material together. The most recently saved workspace folders are restored at startup.
-- **Use your language and keyboard.** Simplified Chinese and English follow the system or a saved menu choice. About shows the version; Keyboard Shortcuts opens a macOS/Windows reference.
-- **Inspect CSV both ways.** Read quoted and multiline fields in a virtualized table, or switch to editable source.
-- **Read large files in chunks.** Text beyond the editing budget opens in read-only pages; full loading asks first and has a bounded limit. Model inspection reads only the safetensors header.
+Office layout and media codecs depend on macOS support. XLS/XLSX previews show local tables and stored formula values; use the default application for complete styles, charts, or complex documents.
 
-Text editing supports up to 32 MiB; larger files open in bounded pages. Optional full loading is limited to 256 MiB. Diagrams support 128 distinct blocks per document. XLS/XLSX previews on macOS show local tables and stored formula values; full chart/style fidelity remains available in the default application.
+</details>
+
+[Full format list and limits](docs/file-format-support.md) · [Roadmap](docs/TODO.md)
 
 ## Get involved
 
