@@ -183,5 +183,17 @@
   "Update preferences": "更新偏好",
   "Change…": "更改…",
   "Done": "完成",
-  "Automatic updates are unavailable in this build.": "当前构建暂不支持自动更新。"
+  "Automatic updates are unavailable in this build.": "当前构建暂不支持自动更新。",
+  "Mind map · Read only": "思维导图 · 只读",
+  "Collapse all": "全部折叠",
+  "Expand all": "全部展开",
+  "Reset view": "重置视图",
+  "Sheet": "工作表",
+  "Untitled topic": "未命名主题",
+  "Topic details": "主题详情",
+  "Open link": "打开链接",
+  "Related topic": "关联主题",
+  "Mind maps": "思维导图",
+  "Expand topic": "展开主题",
+  "Collapse topic": "折叠主题"
 }

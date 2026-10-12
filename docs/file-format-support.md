@@ -14,6 +14,7 @@
 | 数据与接口 | JSON / JSONC / JSONL、GeoJSON、TOML、YAML、SQL、GraphQL、Protobuf；Notebook 源码与结构树；CSV 表格与原文 |
 | 配置与构建 | Dockerfile、Containerfile、Makefile、CMake、Nix、INI、`.env`、`.npmrc`、`.editorconfig`、`.gitignore`、Gemfile 等 |
 | 文档与文本 | HTML / Markdown 排版预览（HTML 为静态阅读，不执行脚本）；TXT、日志和其他 UTF-8 文件按文本查看；CSV 可切换表格 |
+| 思维导图 | XMind 新版 JSON / 旧版 XML 容器；工作表切换、主题折叠、缩放与详情，macOS / Windows 只读预览 |
 | Apple 办公 | Keynote（KEY）、Pages、Numbers；原生只读预览，支持文件及文档包 |
 | Office | Word（DOC / DOCX）、Excel（XLS / XLSX）、PowerPoint（PPT / PPTX）、RTF；macOS 原生只读预览 |
 | 字体 | TTF、OTF、TTC、OTC、DFONT；字体信息、字形切换、自定义示例与多字号预览 |
@@ -116,3 +117,5 @@ CSV 支持只读表格/原文切换，表格保留所有数据行，显示通用
 | QOI | 静态图片，沿用图片预算 |
 
 容器输入、单项解压及文档提取限制 32 MiB，归档最多 10000 项；几何/字形输入 16 MiB，网格最多 100000 个顶点/面。D2、Pikchr、Vega 沿用图表预算与错误回退。
+
+XMind：输入最多 256 MiB、内部正文最多 16 MiB、100 张工作表、共 10000 个主题及最多 64 层（新版 JSON 另受解析器默认嵌套深度限制）；每个主题标题和标签文本最多 16 KiB，纯文本备注最多 64 KiB。支持主题树、游离主题、纯文本备注、标签、网页链接和关系端点详情；使用统一阅读布局，不复刻 XMind 原始样式、手绘布局、附件、图片、边界或概要。加密与损坏文件显示错误，不修改文件、不运行内容代码、不自动打开链接或加载外部资源。

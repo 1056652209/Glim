@@ -19,5 +19,6 @@ pub mod text_formats;
 pub mod vector_formats;
 pub mod watch;
 pub mod workspace;
+pub mod xmind;
 
 pub mod updates;

@@ -176,5 +176,17 @@
   "Update preferences": "Update preferences",
   "Change…": "Change…",
   "Done": "Done",
-  "Automatic updates are unavailable in this build.": "Automatic updates are unavailable in this build."
+  "Automatic updates are unavailable in this build.": "Automatic updates are unavailable in this build.",
+  "Mind map · Read only": "Mind map · Read only",
+  "Collapse all": "Collapse all",
+  "Expand all": "Expand all",
+  "Reset view": "Reset view",
+  "Sheet": "Sheet",
+  "Untitled topic": "Untitled topic",
+  "Topic details": "Topic details",
+  "Open link": "Open link",
+  "Related topic": "Related topic",
+  "Mind maps": "Mind maps",
+  "Expand topic": "Expand topic",
+  "Collapse topic": "Collapse topic"
 }

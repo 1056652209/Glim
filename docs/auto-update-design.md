@@ -12,7 +12,7 @@ GitHub 托管签名后的安装包和更新清单；Sparkle 负责检查、下�
 
 - `v*` tag 触发 macOS arm64、macOS x86_64 和 Windows x64 构建；受保护的发布工作流组装并验证签名 Release 草稿。
 - macOS DMG 使用 ad-hoc 应用签名，更新包与 feed 使用 Ed25519 验签；尚无 Developer ID 或 Apple 公证。
-- `CFBundleShortVersionString` 为 `0.1.12`，`CFBundleVersion` 为 `13`；后者在正式版本中严格递增。
+- `CFBundleShortVersionString` 为 `0.1.13`，`CFBundleVersion` 为 `14`；后者在正式版本中严格递增。
 - 更新退出检查覆盖未保存内容、保存、Git 操作和待打开文件；会话记录恢复标签及预览模式，不恢复未保存草稿或自动播放媒体。
 
 ## 用户体验

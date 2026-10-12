@@ -129,3 +129,7 @@ CSV 由 services/csv 在后台解析带引号、转义与跨行字段；reader/c
 macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Updater.swift` 的 Sparkle 控制器和自定义 user driver。FFI 生命周期限定在主线程，独立模块允许必要的 unsafe。Sparkle 管理网络、签名验证、安装组件与应用替换。原生桥接为固定 GPUI delegate 增加缺少的可取消退出方法，不替换 delegate；没有匹配的安全退出契约时关闭自动更新。普通未配置构建、Windows 构建只提供手动下载。
 
 更新包与 feed 同时要求 EdDSA 签名，公钥内置于发行包，私钥仅用于受保护的发布任务。SDK 下载脚本固定版本及 SHA-256；打包保留 framework 符号链接、辅助程序权限与正确的嵌套签名顺序。配置、验收和发布步骤见[构建与发布](releasing.md#自动更新配置)。
+
+## XMind 预览
+
+`services/xmind` 在后台读取 XMind ZIP 的 `content.json` 或旧版 `content.xml`，返回有界工作表、主题树、文本备注、标签与关系索引；不提取附件、不加载外部资源，不依赖 UI。`workspace/loading` 将其作为专用只读内容路由，`reader/xmind` 持有工作表选择、折叠、缩放、滚动和主题详情状态，以 GPUI 主题令牌绘制节点与连接线；布局在创建和交互时更新，render 不做文件读取或解析，仅呈现缓存布局和可见节点。Finder 打开、文件刷新及更新后的标签恢复复用普通文件流程。

@@ -10,6 +10,7 @@ mod native;
 mod native_bridge;
 mod paged;
 mod source;
+mod xmind;
 use diff::DiffReader;
 use glim_core::{DiffDocument, Document, DocumentKind, language_for_path};
 use gpui_kit::*;
@@ -44,6 +45,7 @@ enum Renderer {
     Markup(Box<MarkupReader>),
     Diff(DiffReader),
     Image(ImageReader),
+    XMind(Entity<xmind::XMindReader>),
     Native(Entity<native::NativeReader>),
     Unavailable(UnavailableReader),
 }
@@ -354,6 +356,21 @@ impl Reader {
             }),
         }
     }
+    pub fn from_xmind(document: glim_services::xmind::MindMap, cx: &mut App) -> Self {
+        Self {
+            title: document.path.display().to_string().into(),
+            path: document.path.clone(),
+            snapshot: document.fingerprint.clone(),
+            repository_root: None,
+            diff: None,
+            historical: false,
+            commit_id: None,
+            commit_file: None,
+            json: None,
+            csv: None,
+            renderer: Renderer::XMind(cx.new(|_| xmind::XMindReader::new(document))),
+        }
+    }
     pub fn unavailable(path: PathBuf, reason: String, _: &mut Window, _: &mut App) -> Self {
         let renderer = Renderer::Unavailable(UnavailableReader::new(&path, reason));
         Self {
@@ -626,6 +643,7 @@ impl Reader {
             Renderer::Markup(m) => m.render(open, cx),
             Renderer::Diff(d) => d.render(cx),
             Renderer::Image(i) => i.render(cx),
+            Renderer::XMind(v) => v.clone().into_any_element(),
             Renderer::Native(n) => n.clone().into_any_element(),
             Renderer::Paged(p) => p.clone().into_any_element(),
             Renderer::Unavailable(e) => e.render(cx),
