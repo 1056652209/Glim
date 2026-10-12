@@ -603,6 +603,15 @@ pub(crate) fn start_application(path: Option<PathBuf>, urls: Vec<String>, cx: &m
     });
 }
 
+#[cfg(all(target_os = "windows", feature = "windows-updater"))]
+impl Drop for UpdateState {
+    fn drop(&mut self) {
+        if let Some(windows) = &self.windows {
+            windows.stop();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{UpdateInstallLock, UpdateState, busy};
@@ -678,14 +687,5 @@ mod tests {
             assert!(!busy(cx));
         });
         assert_eq!(std::fs::read_to_string(path).unwrap(), "on disk");
-    }
-}
-
-#[cfg(all(target_os = "windows", feature = "windows-updater"))]
-impl Drop for UpdateState {
-    fn drop(&mut self) {
-        if let Some(windows) = &self.windows {
-            windows.stop();
-        }
     }
 }

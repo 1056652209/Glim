@@ -1,6 +1,12 @@
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
-cargo build --release --locked --target x86_64-pc-windows-msvc
+$updaterEnabled = $env:GLIM_ENABLE_UPDATER -eq '1'
+$cargoArgs = @('build', '--release', '--locked', '--target', 'x86_64-pc-windows-msvc')
+if ($updaterEnabled) {
+    if (-not $env:GLIM_UPDATE_PUBLIC_KEY) { throw 'Configure GLIM_UPDATE_PUBLIC_KEY before enabling Windows updates' }
+    $cargoArgs += @('--features', 'windows-updater')
+}
+cargo @cargoArgs
 if ($LASTEXITCODE -ne 0) { throw 'Windows release build failed' }
 $metadata = cargo metadata --format-version 1 --no-deps | ConvertFrom-Json
 $version = ($metadata.packages | Where-Object name -eq 'glim-app').version
@@ -16,9 +22,23 @@ Extract this folder and open Glim.exe. Git features require Git for Windows on P
 Shortcuts: Ctrl+O open file, Ctrl+Shift+O open folder, Ctrl+S save, Ctrl+Shift+N new window.
 Windows supports the main file/text/image/Git workspace. macOS-native document, media,
 font and SQLite preview windows and the default-file-type manager are not included.
-This executable is not Authenticode signed. Download only from the project release page.
+Automatic updates are available in updater-enabled releases when this portable folder is writable.
+Updates verify an Ed25519-signed manifest and archive SHA-256, back up application files,
+wait for Glim to quit, and preserve other files in this folder and AppData preferences.
+Older Windows releases require one manual installation of 0.1.14 or later.
+Protected installation folders still require a manual update; the updater does not request elevation.
+This executable is not Authenticode signed. Update signing does not replace SmartScreen trust.
+Download only from the project release page.
 https://github.com/NeoPanic/Glim/releases
 "@ | Set-Content (Join-Path $stage 'Read Me.txt') -Encoding UTF8
+[xml]$bundleInfo = Get-Content 'assets/macos/Info.plist' -Raw
+$buildNumber = [long]$bundleInfo.SelectSingleNode("//key[text()='CFBundleVersion']/following-sibling::string[1]").InnerText
+$publicKey = if ($env:GLIM_UPDATE_PUBLIC_KEY) { $env:GLIM_UPDATE_PUBLIC_KEY.Trim() } else { '' }
+$releaseMetadata = @{
+    schema = 1; application = 'io.github.neopanic.glim'; platform = 'windows-x64'
+    version = $version; build = $buildNumber; public_key = $publicKey; updates_enabled = $updaterEnabled
+} | ConvertTo-Json
+[System.IO.File]::WriteAllText((Join-Path $stage 'glim-release.json'), $releaseMetadata, [System.Text.UTF8Encoding]::new($false))
 $archive = Join-Path $PWD "dist/Glim-$version-windows-x64.zip"
 Compress-Archive -Path $stage -DestinationPath $archive -Force
 $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
