@@ -9,6 +9,7 @@ mod native;
 #[cfg(target_os = "macos")]
 mod native_bridge;
 mod paged;
+mod pictures;
 mod source;
 mod xmind;
 use diff::DiffReader;

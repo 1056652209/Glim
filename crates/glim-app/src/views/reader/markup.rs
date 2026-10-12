@@ -1,7 +1,7 @@
-use super::{OpenLink, diagrams::DiagramPreview, source::SourceReader};
+use super::{OpenLink, diagrams::DiagramPreview, pictures::Pictures, source::SourceReader};
 use gpui_kit::{
     base::{TextView, TextViewState},
-    component::scroll::Scrollbar,
+    component::{ActiveTheme, scroll::Scrollbar},
     *,
 };
 use std::{cell::Cell, collections::HashMap, ops::Range, path::Path, rc::Rc};
@@ -19,6 +19,8 @@ pub(super) struct MarkupReader {
     format_path: Option<std::path::PathBuf>,
     _subscription: Subscription,
     reveal_pending: Rc<Cell<bool>>,
+    pictures: Entity<Pictures>,
+    _picture_subscription: Subscription,
     diagrams: Option<Entity<DiagramPreview>>,
     _diagram_subscription: Option<Subscription>,
 }
@@ -50,6 +52,8 @@ impl MarkupReader {
                 TextViewState::markdown(preview_content, cx)
             }
         });
+        let pictures = cx.new(|cx| Pictures::new(preview_content.to_owned(), html, cx));
+        let picture_subscription = cx.observe(&pictures, |_, cx| cx.refresh_windows());
         let reveal_pending = Rc::new(Cell::new(false));
         let pending = reveal_pending.clone();
         let subscription = cx.observe(&state, move |_, cx| {
@@ -63,6 +67,8 @@ impl MarkupReader {
             .as_ref()
             .map(|diagrams| cx.observe(diagrams, |_, cx| cx.refresh_windows()));
         Self {
+            pictures,
+            _picture_subscription: picture_subscription,
             diagrams,
             _diagram_subscription: diagram_subscription,
             _subscription: subscription,
@@ -100,6 +106,9 @@ impl MarkupReader {
             .unwrap_or(text);
         self.headings = headings(&text);
         self.state.update(cx, |s, cx| s.set_text(&text, cx));
+        self.pictures.update(cx, |pictures, cx| {
+            pictures.load(text.clone(), self.html, cx)
+        });
         if let Some(diagrams) = &self.diagrams {
             diagrams.update(cx, |diagrams, cx| diagrams.load(text, cx));
         }
@@ -139,6 +148,8 @@ impl MarkupReader {
             .minimap
             .update(cx, |map, cx| map.set_preview(true, cx));
         let image_base = self.base.clone();
+        let pictures = self.pictures.read(cx).sources.clone();
+        let dark = cx.theme().is_dark();
         let link_base = self.base.clone();
         let scroll = self.scroll.clone();
         let minimap = self.source.minimap.clone();
@@ -169,12 +180,27 @@ impl MarkupReader {
                     .child(
                         text_view
                             .image_source(move |uri| {
-                                image_base
-                                    .join(uri.as_ref())
-                                    .ok()
-                                    .and_then(|u| u.to_file_path().ok())
-                                    .map(ImageSource::from)
-                                    .unwrap_or_else(|| uri.clone().into())
+                                let selected = pictures
+                                    .get(uri.as_ref())
+                                    .and_then(|p| {
+                                        if dark {
+                                            p.dark.as_deref()
+                                        } else {
+                                            p.light.as_deref()
+                                        }
+                                    })
+                                    .unwrap_or(uri.as_ref());
+                                match image_base.join(selected) {
+                                    Ok(url) if url.scheme() == "file" => url
+                                        .to_file_path()
+                                        .ok()
+                                        .map(ImageSource::from)
+                                        .unwrap_or_else(|| {
+                                            SharedUri::from(selected.to_owned()).into()
+                                        }),
+                                    Ok(url) => SharedUri::from(url.to_string()).into(),
+                                    Err(_) => SharedUri::from(selected.to_owned()).into(),
+                                }
                             })
                             .on_link_click(move |href, _, window, cx| {
                                 follow_link(&link_base, &open, href, window, cx);

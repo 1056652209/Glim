@@ -2,12 +2,14 @@
 
 pub mod binary;
 pub mod csv;
+pub mod executables;
 pub mod files;
 pub mod formats;
 pub mod git;
 pub mod json;
 pub mod locale;
 pub mod markdown_preview;
+pub mod markup_images;
 pub mod media;
 pub mod paged;
 pub mod preferences;
