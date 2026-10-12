@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [features]
 macos-updater = []
+windows-updater = []
 
 [dependencies]
 glim-core.workspace = true

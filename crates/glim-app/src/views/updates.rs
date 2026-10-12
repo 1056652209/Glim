@@ -64,8 +64,8 @@ impl Render for Updates {
                 "checking" | "downloading" | "extracting" | "installing"
             );
         v_flex().size_full().track_focus(&self.focus)
-            .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
-            .on_action(cx.listener(|_, _: &CloseWorkspace, window, _| window.remove_window()))
+            .on_action(cx.listener(|_, _: &CloseWindow, window, cx| { if !updates::intercept_last_window_close(cx) { window.remove_window(); } }))
+            .on_action(cx.listener(|_, _: &CloseWorkspace, window, cx| { if !updates::intercept_last_window_close(cx) { window.remove_window(); } }))
             .child(TitleBar::new().child(tr("Software Update")))
             .child(v_flex().id("software-update-panel").flex_1().min_h_0().overflow_y_scroll().gap_5().p_6()
             .child(v_flex().items_center().gap_3().pt_2()

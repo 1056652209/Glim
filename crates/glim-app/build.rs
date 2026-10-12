@@ -1,5 +1,25 @@
 use std::{env, path::PathBuf, process::Command};
 fn main() {
+    println!("cargo:rerun-if-changed=../../assets/macos/Info.plist");
+    let metadata =
+        std::fs::read_to_string("../../assets/macos/Info.plist").expect("Missing release metadata");
+    let build = metadata
+        .split("<key>CFBundleVersion</key><string>")
+        .nth(1)
+        .and_then(|s| s.split("</string>").next())
+        .expect("Missing release build number");
+    assert!(build.parse::<u64>().is_ok(), "Invalid release build number");
+    println!("cargo:rustc-env=GLIM_BUILD_NUMBER={build}");
+    println!("cargo:rerun-if-env-changed=GLIM_UPDATE_PUBLIC_KEY");
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && env::var_os("CARGO_FEATURE_WINDOWS_UPDATER").is_some()
+    {
+        assert!(
+            env::var("GLIM_UPDATE_PUBLIC_KEY").is_ok_and(|key| !key.trim().is_empty()),
+            "Set GLIM_UPDATE_PUBLIC_KEY before enabling Windows updates"
+        );
+    }
+
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         build_native_preview();
         if env::var_os("CARGO_FEATURE_MACOS_UPDATER").is_some() {

@@ -22,3 +22,5 @@ pub mod workspace;
 pub mod xmind;
 
 pub mod updates;
+
+pub mod windows_updates;

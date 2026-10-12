@@ -1,0 +1,33 @@
+name: Windows updater validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/windows-auto-update]
+    paths:
+      - '.github/workflows/windows-updater-validation.yml'
+      - 'crates/glim-services/src/windows_updates/**'
+      - 'crates/glim-app/src/app/updates.rs'
+      - 'crates/glim-app/src/main.rs'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      GLIM_UPDATE_PUBLIC_KEY: ${{ vars.GLIM_UPDATE_PUBLIC_KEY }}
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt, clippy
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-updater-validation
+          cache-on-failure: true
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --features windows-updater --locked -- -D warnings
+      - run: cargo test --workspace --features windows-updater --locked

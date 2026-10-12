@@ -6,7 +6,6 @@ use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::Command,
 };
 
 pub fn state_directory() -> Result<PathBuf> {
@@ -32,7 +31,8 @@ fn digest(path: &Path) -> Result<String> {
     }
     Ok(format!("{:x}", hash.finalize()))
 }
-fn run(command: &mut Command) -> Result<()> {
+#[cfg(not(target_os = "windows"))]
+fn run(command: &mut std::process::Command) -> Result<()> {
     let output = command.output()?;
     ensure!(
         output.status.success(),
@@ -45,8 +45,15 @@ fn run(command: &mut Command) -> Result<()> {
 /// Preserve the signed complete bundle, never user documents or preferences.
 /// Returns an immutable, verified archive; installation remains Sparkle's job.
 pub fn prepare_backup(bundle: &Path) -> Result<PathBuf> {
+    #[cfg(target_os = "windows")]
+    return crate::windows_updates::install::prepare_backup(
+        bundle,
+        &state_directory()?.join("UpdateBackups"),
+    );
+    #[cfg(not(target_os = "windows"))]
     prepare_backup_at(bundle, &state_directory()?.join("UpdateBackups"))
 }
+#[cfg(not(target_os = "windows"))]
 fn prepare_backup_at(bundle: &Path, backups: &Path) -> Result<PathBuf> {
     ensure!(
         cfg!(target_os = "macos"),
@@ -65,7 +72,7 @@ fn prepare_backup_at(bundle: &Path, backups: &Path) -> Result<PathBuf> {
         "Install Glim in Applications before updating"
     );
     let info = bundle.join("Contents/Info.plist");
-    let identity = Command::new("/usr/libexec/PlistBuddy")
+    let identity = std::process::Command::new("/usr/libexec/PlistBuddy")
         .args(["-c", "Print :CFBundleIdentifier"])
         .arg(&info)
         .output()?;
@@ -74,7 +81,7 @@ fn prepare_backup_at(bundle: &Path, backups: &Path) -> Result<PathBuf> {
             && String::from_utf8_lossy(&identity.stdout).trim() == "io.github.jony4.glimpse",
         "Unexpected application identity"
     );
-    run(Command::new("/usr/bin/codesign")
+    run(std::process::Command::new("/usr/bin/codesign")
         .args(["--verify", "--deep", "--strict"])
         .arg(&bundle))?;
     let fingerprint = format!(
@@ -98,12 +105,14 @@ fn prepare_backup_at(bundle: &Path, backups: &Path) -> Result<PathBuf> {
         .prefix(".glim-backup-")
         .tempdir_in(backups)?;
     let copy = temp.path().join("Glim.app");
-    run(Command::new("/usr/bin/ditto").arg(&bundle).arg(&copy))?;
-    run(Command::new("/usr/bin/codesign")
+    run(std::process::Command::new("/usr/bin/ditto")
+        .arg(&bundle)
+        .arg(&copy))?;
+    run(std::process::Command::new("/usr/bin/codesign")
         .args(["--verify", "--deep", "--strict"])
         .arg(&copy))?;
     let prepared = temp.path().join("Glim.zip");
-    run(Command::new("/usr/bin/ditto")
+    run(std::process::Command::new("/usr/bin/ditto")
         .args(["-c", "-k", "--sequesterRsrc", "--keepParent"])
         .arg(&copy)
         .arg(&prepared))?;
@@ -267,12 +276,15 @@ mod tests {
         let source = dir.path().join("main.c");
         fs::write(&source, "int main(void) { return 0; }")?;
         let binary = contents.join("MacOS/glim");
-        run(Command::new("cc").arg(&source).arg("-o").arg(&binary))?;
+        run(std::process::Command::new("cc")
+            .arg(&source)
+            .arg("-o")
+            .arg(&binary))?;
         fs::write(
             contents.join("Info.plist"),
             r#"<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.jony4.glimpse</string><key>CFBundleExecutable</key><string>glim</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleVersion</key><string>1</string></dict></plist>"#,
         )?;
-        run(Command::new("codesign")
+        run(std::process::Command::new("codesign")
             .args(["--force", "--sign", "-", "--timestamp=none"])
             .arg(&bundle))?;
         let backups = dir.path().join("backups");
@@ -282,11 +294,11 @@ mod tests {
         fs::write(&binary, "damaged application")?;
         assert!(prepare_backup_at(&bundle, &backups).is_err());
         let restored = dir.path().join("restored");
-        run(Command::new("ditto")
+        run(std::process::Command::new("ditto")
             .args(["-x", "-k"])
             .arg(&archive)
             .arg(&restored))?;
-        run(Command::new("codesign")
+        run(std::process::Command::new("codesign")
             .args(["--verify", "--deep", "--strict"])
             .arg(restored.join("Glim.app")))?;
         fs::OpenOptions::new()
