@@ -33,6 +33,16 @@
 
 ## 支持的文件格式
 
+<a href="docs/file-format-support.zh-CN.md">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/formats-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/readme/formats.svg" />
+    <img src="assets/readme/formats.svg" alt="Glim 支持的代表文件格式；星号为 macOS 专属，剑号为基础预览" width="100%" />
+  </picture>
+</a>
+
+*代表格式一览：\* 仅 macOS，† 基础预览；具体能力与限制见下表及完整格式文档。*
+
 | 内容 | 可以做什么 |
 | --- | --- |
 | 文档 | Markdown、静态 HTML、普通 UTF-8 文本、图表与公式 |
@@ -58,7 +68,7 @@ Office 排版和音视频编码支持取决于 macOS。XLS/XLSX 显示本地表�
 
 </details>
 
-[完整格式与限制](docs/file-format-support.md) · [未完成计划](docs/TODO.md)
+[中文文档](docs/README.zh-CN.md) · [完整格式与限制](docs/file-format-support.zh-CN.md) · [未完成计划](docs/TODO.zh-CN.md)
 
 ## 下载与安装
 
@@ -78,13 +88,13 @@ Office 排版和音视频编码支持取决于 macOS。XLS/XLSX 显示本地表�
 
 解压 ZIP，运行 `Glim.exe`。Git 功能需要 [Git for Windows](https://gitforwindows.org/)。目前尚无 Authenticode 签名，需要 DirectX 11 图形环境；暂不提供 Windows ARM 安装包。快捷键使用 Ctrl，对应 Mac 的 ⌘。
 
-[更新说明与 SHA-256 校验文件](https://github.com/NeoPanic/Glim/releases/latest) · [历史版本](https://github.com/NeoPanic/Glim/releases) · [从源码构建](docs/releasing.md)
+[更新说明与 SHA-256 校验文件](https://github.com/NeoPanic/Glim/releases/latest) · [历史版本](https://github.com/NeoPanic/Glim/releases) · [从源码构建](docs/releasing.zh-CN.md)
 
 ## 参与项目
 
 [报告问题](https://github.com/NeoPanic/Glim/issues/new?template=bug_report.yml) · [申请格式或功能](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml) · [讨论与交流](https://github.com/NeoPanic/Glim/discussions)，欢迎中文和英文。
 
-[贡献指南](CONTRIBUTING.md) · [构建说明](docs/releasing.md) · [未完成计划](docs/TODO.md) · [安全政策](SECURITY.md) · [MIT License](LICENSE)
+[贡献指南](CONTRIBUTING.md#中文说明) · [构建说明](docs/releasing.zh-CN.md) · [未完成计划](docs/TODO.zh-CN.md) · [安全政策（英文）](SECURITY.md) · [MIT License](LICENSE)
 
 ## 贡献者
 
@@ -114,4 +124,4 @@ Office 排版和音视频编码支持取决于 macOS。XLS/XLSX 显示本地表�
   </picture>
 </a>
 
-每日记录 GitHub 发布附件的累计下载次数，包含校验文件。从 **2026-10-12** 开始积累数据，不补造此前历史；下载次数不等于独立用户数或安装量。
+每日记录 GitHub 公开发布附件的累计下载次数，包含安装包、更新清单、校验文件及发布核验请求。从 **2026-10-12** 开始积累数据，不补造此前历史；下载次数不等于独立用户数或安装量。

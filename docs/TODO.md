@@ -1,31 +1,37 @@
-# 待完成事项
+# Roadmap and remaining work
 
-## 当前改动的验收
+**English** · [简体中文](TODO.zh-CN.md) · [Documentation](README.md)
 
-- [ ] 实机验证 SQLite 主库/WAL 组合、活跃写入时快照检查、孤立 sidecar、结构与分页、原文件不变。
+## Implemented baseline
 
-- [ ] 实机验证字体文件及集合预览、自定义文字、坏文件回退与资源限制。
+- Multiple file readers in workspace tabs, including macOS native previews and cross-platform XMind.
+- Ordinary UTF-8 editing/autosave, structured data previews and offline diagrams; [reader-specific limits](file-format-support.md) apply.
+- macOS signed updates, recovery app backups and one-time update-session tab restoration.
+- Normal startup restores workspace folders; it is not complete general tab/draft restoration.
 
-- [ ] 实机验证文件类型关联的选择、确认、恢复，以及 Finder 冷启动 / 已运行时双击文件的接收。
+## Remaining implementation
 
-- [ ] 实机验证 DOC/DOCX、XLS/XLSX、PPT/PPTX、RTF、Keynote/Pages/Numbers（含目录包） 的系统预览与默认应用打开入口。
-- [ ] 实机验证原生 PDF / 媒体辅助程序的构建与打包、密码 PDF、播放控制、队列顺序/随机、封面元数据/无封面回退、音视频切换、坏文件跳过、主窗口最小化/新建窗口时的播放保持、Dock/重复点击文件唤回、跨窗口预览复用及关闭清理。
-- [ ] 实机验证 HTML 静态预览及 HTML / Markdown 阅读模式在刷新、重开、重启后的保持。
-- [ ] 实机验证 JSON 源码/树切换、错误回退及内存预算。
-- [ ] 实机验证 Graph 合并/分叉连线、展开文件、自动加载及历史双栏/Inline 切换。
-- [ ] 实机验证仓库右键操作目标、扫描错误后保留结果、顶部图标和欢迎页条件显示。
-- [ ] 实机验证触摸板前进/后退、横向滚动互斥及系统自然滚动设置下的方向。
+- Complete Windows signed automatic updating, app/release integration and file-lock/permission/recovery validation. This is under development; published Windows packages currently use manual ZIP downloads.
+- A complete ebook reader: EPUB reading-order navigation, table of contents, styles/images, reading preferences and persistent progress; additional dedicated ebook formats. Current EPUB support is limited container/text extraction.
+- Developer ID signing and Apple notarization; Windows Authenticode signing. Certificates/credentials are required.
+- General session recovery for tabs, scroll/playback positions and unsaved drafts.
+- Complete PlantUML Salt/Chen dialects and unrestricted diagram/HTML external-resource compatibility.
+- Full Office style/chart reproduction, formula recalculation and richer archive content readers.
+- GGUF/ONNX/NPZ metadata readers. NPY already has a basic bounded header/value preview.
 
-## 尚未实现
+## Remaining acceptance coverage
 
-- Developer ID 签名与 Apple 公证：需要证书及凭据。
-- 自动更新外部验收：Intel 实机、需要管理员授权的安装目录、真实 GitHub Release 的跨版本升级，以及 Windows 独立安装后端。
-- 完整会话恢复（标签、未保存草稿等）。已实现最近工作空间目录恢复。
-- Salt / Chen 完整方言、图表外部资源与 HTML 标签的原生兼容。当前已提供离线 Mermaid / 数学公式及常见图表语法。
+- Intel and Windows GUI interactions on real hardware, supported graphics/drivers and Windows WebView2 availability.
+- Real GitHub production upgrades, administrator-required install locations, multi-instance conflicts, canceled authorization and interrupted replacement/recovery.
+- Native document providers: password/corrupt documents, office packages, media codecs, font collections and accessibility behavior.
+- Active SQLite/WAL sources, source-stability rejection, missing-main sidecars and preservation of the source database.
+- Finder cold/warm opening, duplicate/cross-window activation, file-association changes/restoration and native view cleanup.
+- Save conflicts and concurrent Git operations across windows, watcher refreshes, large readers and platform gestures.
 
-## 后续候选（未承诺排期）
+Existing Rust/native/isolated installer checks are useful but do not prove all of these scenarios. Run relevant checks when validating a change and report the actual coverage in its release notes.
 
-- GGUF、ONNX、NPY/NPZ 元数据预览。
-- Office 完整样式与图表还原、归档内容预览。CSV 表格视图及 XLS/XLSX 本地表格已实现。
+## Outside current scope
 
-不在当前范围：LSP、插件系统、Git clone、强推、rebase、reset、cherry-pick 和三路合并编辑器。
+LSP, plugins, Git cloning, force push, rebase/reset/cherry-pick and a three-way merge editor are not part of the current product scope. Candidate work is not a release-date promise.
+
+See [formats](file-format-support.md), [architecture](architecture.md), [updates](auto-update-design.md) and [release process](releasing.md).

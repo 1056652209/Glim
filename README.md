@@ -33,6 +33,16 @@
 
 ## Supported file formats
 
+<a href="docs/file-format-support.md">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme/formats-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/readme/formats.svg" />
+    <img src="assets/readme/formats.svg" alt="Representative Glim file formats; asterisk marks macOS-only previews and dagger marks limited previews" width="100%" />
+  </picture>
+</a>
+
+*Selected formats: \* macOS only, † limited preview. Capabilities and limits are listed below and in the full format guide.*
+
 | Content | What you can do |
 | --- | --- |
 | Documents | Markdown, static HTML, ordinary UTF-8 text, diagrams and formulas |
@@ -58,7 +68,7 @@ Office layout and media codecs depend on macOS support. XLS/XLSX previews show l
 
 </details>
 
-[Full format list and limits](docs/file-format-support.md) · [Roadmap](docs/TODO.md)
+[Documentation](docs/README.md) · [Full format list and limits](docs/file-format-support.md) · [Roadmap](docs/TODO.md)
 
 ## Download
 
@@ -114,4 +124,4 @@ Thanks to everyone helping make Glim better.
   </picture>
 </a>
 
-Daily snapshots of cumulative GitHub release-asset downloads, including checksum files. Tracking starts on **2026-10-12**; earlier history is unavailable. These counts are downloads, not unique users or installs.
+Daily snapshots of cumulative public GitHub release-asset downloads, including installers, update feeds, checksums and release-verification requests. Tracking starts on **2026-10-12**; earlier history is unavailable. These counts are downloads, not unique users or installs.

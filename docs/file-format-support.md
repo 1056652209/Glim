@@ -1,123 +1,103 @@
-# 格式与限制
+# File formats and limits
 
-AI 时代的全能文件查看器，一个应用打开多种格式。
+**English** · [简体中文](file-format-support.zh-CN.md) · [Home](../README.md)
 
-本文记录当前支持的格式与实现边界。返回 [English](../README.md) · [简体中文](../README.zh-CN.md)。
+The all-purpose viewer for the AI era, opening a wide range of file formats in one app.
 
-**平台说明：** PDF、Office/iWork、音视频、字体与 SQLite 原生预览目前仅 macOS 提供；其余工作台功能支持 macOS 和 Windows。
+Support means the behavior listed below, not full compatibility with every feature of a format. Files open in workspace tabs. PDF, Office/iWork, audio/video, fonts and SQLite native previews currently require macOS; the other readers work on macOS and Windows.
 
-## 支持的格式
+## Format catalog
 
-| 类型 | 格式与文件 |
+| Formats | Current behavior |
 | --- | --- |
-| 编程语言 | Rust、C / C++、Go、Swift、Java、C#、Kotlin、Zig、Python、Ruby、PHP、Lua、Scala、Elixir、Shell |
-| Web 与模板 | JavaScript / JSX、TypeScript / TSX、HTML、CSS、Astro、Svelte、ERB、EJS、Jinja / Jinja2、Nunjucks、Twig；Vue 复用 HTML 高亮 |
-| SQLite | DB / SQLite / SQLite3、WAL / SHM 关联文件；表结构、定义 SQL、分页记录与二进制摘要，只读快照 |
-| 数据与接口 | JSON / JSONC / JSONL、GeoJSON、TOML、YAML、SQL、GraphQL、Protobuf；Notebook 源码与结构树；CSV 表格与原文 |
-| 配置与构建 | Dockerfile、Containerfile、Makefile、CMake、Nix、INI、`.env`、`.npmrc`、`.editorconfig`、`.gitignore`、Gemfile 等 |
-| 文档与文本 | HTML / Markdown 排版预览（HTML 为静态阅读，不执行脚本）；TXT、日志和其他 UTF-8 文件按文本查看；CSV 可切换表格 |
-| 思维导图 | XMind 新版 JSON / 旧版 XML 容器；工作表切换、主题折叠、缩放与详情，macOS / Windows 只读预览 |
-| Apple 办公 | Keynote（KEY）、Pages、Numbers；原生只读预览，支持文件及文档包 |
-| Office | Word（DOC / DOCX）、Excel（XLS / XLSX）、PowerPoint（PPT / PPTX）、RTF；macOS 原生只读预览 |
-| 字体 | TTF、OTF、TTC、OTC、DFONT；字体信息、字形切换、自定义示例与多字号预览 |
-| PDF | 原生窗口阅读、翻页、缩放和文字选择 |
-| 音视频 | MP3、MP4、M4A、MOV、WAV、AAC 等；原生播放控件，文件夹顺序 / 随机队列 |
-| 图片 | PNG、JPEG、WebP、GIF、BMP、TIFF、ICO、SVG、ICNS、EXR、HDR |
-| Git | 工作区与暂存区 diff、提交补丁、`.diff` / `.patch` |
-| AI 模型 | safetensors：张量、shape、精度、参数数量与元数据，只读头部，不加载权重 |
+| Rust, C/C++, Go, Swift, Java, C#, Kotlin, Zig, Python, Ruby, PHP, Lua, Scala, Elixir, shell | Source highlighting, folding, search, Minimap and basic UTF-8 editing |
+| JS/TS/JSX/TSX, HTML, CSS, Astro, Svelte, ERB/EJS, Jinja/Jinja2/Nunjucks/Twig | Source highlighting; some templates use lightweight coloring rather than full grammars |
+| Vue, XML/plist, SCSS/LESS, Cython, CUDA/Metal, GLSL/OSL | Reuse related language highlighting; no dedicated semantic validation |
+| Dockerfile/Containerfile, Makefile/CMake, Nix, INI, `.env`, ignore files and related configuration | Highlighted or lightly colored text; editing, not execution |
+| Markdown | Native reading layout, tables, task lists, footnotes, alerts, frontmatter, diagrams, formulas, relative images and local links; source editing |
+| HTML/HTM | Static reading preview and editable source; no JavaScript execution or full browser CSS layout |
+| TXT, logs and other UTF-8 text | Basic editing; large or very long-line documents use read-only pages |
+| JSON/JSONC/JSON5, NDJSON/JSONL, GeoJSON, notebooks | Source and an on-demand read-only tree. JSONC accepts comments/trailing commas; NDJSON becomes a line-record array. GeoJSON is not a map and notebooks are not executed |
+| CSV/TSV | Virtualized read-only table and editable source; quoted/multiline fields, BOM and uneven rows supported |
+| XMind | Modern JSON and legacy XML containers; sheets, attached/floating topic trees, folding, zoom and topic details. Plain notes, labels, HTTP(S) links and relationship endpoints; read-only |
+| PNG/JPEG/WebP/GIF/BMP/TIFF/ICO/SVG/ICNS/EXR/HDR/QOI | Image previews; GIF animation, multipage TIFF, SDR conversion for EXR/HDR. ICNS needs a PNG representation; SVG external file resources are not loaded |
+| PDF — macOS | Embedded PDFKit preview with pages, zoom, text selection and password entry |
+| DOC/DOCX/PPT/PPTX/RTF — macOS | Embedded Quick Look read-only preview; availability and layout depend on the system provider |
+| XLS/XLSX — macOS | Local read-only worksheet tables with cached formula values; no recalculation or complete style/chart reproduction |
+| KEY/Pages/Numbers — macOS | Quick Look read-only preview, including directory packages; no editing or presentation animations |
+| MP3/MP4/M4A/M4V/MOV/AAC/WAV/AIF/AIFF/CAF/FLAC — macOS | Embedded AVKit playback and ordered/shuffled folder playlists; decoding depends on system codecs |
+| TTF/OTF/TTC/OTC/DFONT — macOS | CoreText font/collection inspection, glyphs and custom samples; fonts are not installed |
+| DB/DB3/SQLite/SQLite3 and recognized SQLite headers — macOS | Read-only temporary snapshot; tables/views, schema, SQL definitions and paged records. Associated WAL/SHM/journal files resolve to the main database when available |
+| safetensors | Tensor names, shapes, dtypes, parameter counts and metadata from the header; weights are not loaded or executed |
+| `.diff`/`.patch`, working/staged changes and commit history | Read-only diffs, inline/side-by-side modes, explicit staging/unstaging and staged-only commits |
+| Binary dotfiles such as `.DS_Store` | Bounded hexadecimal/ASCII preview; no semantic decoding or editing |
 
-编程语言使用语法高亮；部分模板和配置采用轻量着色。GIF 自动播放（系统减少动态效果设置可能抑制动画），EXR / HDR 转为 SDR 预览，ICNS 需包含 PNG 图像。音视频实际解码能力取决于 macOS 支持的编码；压缩包内容暂不支持。
+A `.key` text file can be a cryptographic key: only ZIP containers and document packages enter the Keynote reader. File associations are based on extension/type and can affect both uses.
 
+## Partial previews
 
-## 渲染方式
-
-| 内容 | 当前行为 |
+| Formats | Current behavior and boundary |
 | --- | --- |
-| 常见编程语言 | Tree-sitter 高亮，普通源码支持行号、折叠、搜索和 Minimap |
-| Jinja / Nunjucks / Twig、Dockerfile、INI、dotenv、忽略规则、Nix | 可见行轻量着色，不提供完整跨行语义解析 |
-| Vue、XML / plist、SCSS / LESS、Cython、CUDA / Metal、GLSL / OSL | 分别复用 HTML、CSS、Python、C++、C 高亮，不提供专用语义校验 |
-| HTML / HTM | 工作台内静态排版预览与源码切换，不执行 JavaScript；不等同于完整浏览器 CSS 布局 |
-| Markdown | 原生排版、GFM 表格／任务列表／删除线／脚注、GitHub Alerts、YAML frontmatter、离线图表与 LaTeX 公式、相对图片、本地链接及源码编辑 |
-| JSON / JSONC / GeoJSON / Notebook | 源码高亮与只读可折叠树；JSONC 支持注释和尾随逗号。GeoJSON 显示类型提示，Notebook 显示单元类型和文本数组摘要；不绘制地图、不执行 Notebook。JSONL 使用源码 |
-| Apple 办公 | `.key`、`.pages`、`.numbers`，通过 Quick Look 预览，兼容目录形式的文档包；不提供编辑或幻灯片动画播放 |
-| Office | DOC / DOCX、PPT / PPTX、RTF 使用系统 Quick Look 只读预览；XLS / XLSX 使用本地只读表格，显示缓存公式值，不还原完整图表或原始样式 |
-| SQLite | 识别 SQLite 文件头及 DB / DB3 / SQLite / SQLite3；WAL / SHM / journal 通过同名主库打开，只剩 sidecar 时显示关联说明。表结构、定义 SQL、只读记录分页，支持视图 |
-| 字体 | TTF / OTF / TTC / OTC / DFONT，CoreText 原生只读预览，集合内切换字体，自定义样例文字与多字号展示 |
-| PDF | 原生 PDFKit 窗口，翻页、缩放、文字选择；加密文档可输入密码 |
-| 音视频 | 原生 AVKit 窗口；MP3、MP4、M4A、M4V、MOV、AAC、WAV、AIF/AIFF、CAF、FLAC，具体编码取决于系统解码器 |
-| 图片 | PNG、JPEG、WebP、GIF 动画、BMP、TIFF 多页翻页、ICO、SVG、含 PNG 表示的 ICNS；EXR/HDR 转 SDR |
-| safetensors | 仅读取头部，展示张量、shape、参数数量、精度和元数据；不加载权重或执行模型 |
-| CSV | 可切换虚拟化只读表格与可编辑原文；支持引号、跨行字段、BOM 和不齐列 |
-| RST、日志等 UTF-8 文件 | 文本阅读与基础编辑，不提供专用排版 |
-| 二进制点文件（如 .DS_Store） | 有界十六进制/ASCII 预览，不提供语义解析或编辑 |
+| AsciiDoc/Org/RST | Basic headings, lists and code-block reading projection with editable original text; not complete dialect rendering |
+| SRT/VTT | Read subtitles by timestamp; edit source. Not synchronized with media playback |
+| MATLAB/Stan/HTTP/HCL/Dhall/KDL | Basic lexical coloring and editing; scripts, requests and configurations are not executed |
+| D2/Pikchr/`*.vega.json` | Offline static diagrams; source editing. External imports, datasets and images disabled |
+| OBJ/STL | Static mesh projection; OBJ faces and ASCII/binary STL. No interactive rotation, materials or textures |
+| GPX/KML | Offline coordinate table and XML source; no map tiles or external resources |
+| BDF | First 64 bitmap glyphs, at most 64×64 each; no font installation |
+| ZIP/TAR | Entry names and sizes, with unsafe paths identified; no extraction |
+| GZ/BZ2/XZ | Bounded decompression of UTF-8 text into a read-only view |
+| EPUB/ODT/ODS/ODP | Container listing and selected chapter/document text extraction. EPUB currently has no spine-ordered book navigation, original styling, images or dedicated reader controls |
+| NPY | v1/v2/v3 headers and up to 10,000 basic little-endian f8/f4/i8/i4/u1 values; other types retain metadata, no pickle execution |
 
-## Markdown 扩展语法
+XMind uses a consistent reading layout, not the original manual positions or styles. Images, attachments, boundaries and summaries are not reproduced. Encrypted/damaged documents show an error; links are never opened automatically.
 
-| 内容 | 写法 |
+## Markdown diagrams and formulas
+
+| Engine | Fences and supported syntax |
 | --- | --- |
-| Mermaid | `mermaid` / `mmd` 代码块；支持引擎提供的流程图（含 `flowchart TB` 和 `subgraph`）、时序图、类图、状态图、ER、甘特图、饼图、思维导图、Journey、Radar、Treemap、ZenUML 等；ZenUML 也可使用 `zenuml` 代码块 |
-| Graphviz | `dot` / `graphviz` 代码块 |
-| PlantUML | `plantuml` / `puml` / `uml` 代码块，可省略 `@startuml` / `@enduml`；随应用提供 C4、主题、emoji 与 OpenIconic；Salt 常用线框通过本地 SVG 适配器绘制，`@startdot` 封装交给 Graphviz；`@startchen` 常用 Chen ER 语法转换为 Graphviz |
-| flowchart.js | `flow` / `flowchart` / `flowchart.js` 代码块；`flowchart` 块以 Mermaid `flowchart` / `graph` 声明开头时自动交给 Mermaid |
-| WaveDrom | `wavedrom` / `wavejson` 代码块，接受 JSON / JSON5（单引号、无引号键、尾逗号），不执行 JavaScript |
-| LaTeX | `$…$` / `$$…$$` 行内公式，单独成行的 `$$` 块公式、独立段落的 `\[ … \]` 块公式；`math` / `latex` / `tex` / `katex` 代码块 |
-| GitHub Alerts | 引用块首行使用 `[!NOTE]`、`[!TIP]`、`[!IMPORTANT]`、`[!WARNING]`、`[!CAUTION]` |
+| Mermaid | `mermaid`/`mmd`; flowcharts, subgraphs, sequence/class/state/ER diagrams, Gantt, pie, mind maps, Journey, Radar, Treemap and engine-supported types. `zenuml` also supported |
+| Graphviz | `dot`/`graphviz` |
+| PlantUML | `plantuml`/`puml`/`uml`; `@startuml` wrappers optional. Bundled C4/themes/emoji/OpenIconic; basic Salt and Chen ER adapters; `@startdot` routes to Graphviz |
+| flowchart.js | `flow`/`flowchart`/`flowchart.js`; explicit Mermaid `flowchart`/`graph` declarations route to Mermaid |
+| WaveDrom | `wavedrom`/`wavejson`; JSON/JSON5 input, not JavaScript |
+| LaTeX | `$…$`/`$$…$$`, separate `$$` block lines, standalone `\[ … \]`, and `math`/`latex`/`tex`/`katex` fences |
+| GitHub Alerts | Blockquotes beginning `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` |
 
-未标注语言的代码块可通过明确的 Mermaid 或 PlantUML 开头声明，以及 Graphviz `digraph` / `strict` 声明识别；普通代码块继续显示源码。图表与公式在工作台内显示为静态图片，源码和保存内容不改写，图表内部交互不执行。失败块显示错误并保留源码；PlantUML 返回的已识别错误说明图也按错误处理。Chen ER 支持实体、关系、属性、复合属性、key／derived／multi 标记、弱实体／识别关系、中文标签与别名、基数和全参与连接；不提供完整 EER 方言（继承、union、notes、预处理等）。无法识别的语句会明确报错。Salt 支持嵌套行列、窗口、按钮、输入框、下拉框、单选／复选、表格、树和滚动框，不提供完整 PlantUML Salt 方言兼容：富文本、图标、内嵌图像和预处理／include／skinparam／scale 指令会显示错误。PlantUML 外部 include、未内置的云厂商图标库，以及图表中的外部图片不加载；引擎输出的 HTML 标签（`foreignObject`）不能转成原生图片时显示错误。Windows 需要系统 WebView2 Runtime，缺失时图表回退为错误及源码，普通 Markdown 保持可读。
+Explicit Mermaid, PlantUML and Graphviz declarations can identify unlabelled fences. Diagrams become static images; source and saved contents stay unchanged. Failed blocks show their error and source. Engines are bundled for offline use; Windows needs WebView2 Runtime for diagram rendering, while ordinary Markdown remains readable without it.
 
-## 资源预算
+Salt and Chen ER are partial adapters, not complete PlantUML dialects. Unsupported preprocessing/includes, rich content, external resources and incompatible `foreignObject` output fail visibly. Salt supports common wireframe controls; Chen supports common entities, attributes, relationships, cardinality and participation, not the full EER dialect. External images and unbundled includes are not loaded.
 
-| 模式 | 限制 |
+## Resource budgets
+
+| Reader | Limit |
 | --- | --- |
-| Markdown 图表 | 每文档 128 个不同块，每块 256 KiB；输出仍限制单块 SVG 8 MiB、总 SVG/PNG 各 64 MiB、解码 128 MiB，逐块显示；最长等待预算随块数计算 |
-| 普通文本编辑 | 32 MiB；超过 40 万换行符或单行超过 64 KiB 时进入分页 |
-| 只读分页 | 约 1 MiB/页，补齐 UTF-8 字符；文件总大小不设固定上限，不提供编辑或全文搜索 |
-| 完整只读加载 | 用户确认后最多 256 MiB / 400 万换行符，虚拟文本，不做语法解析、编辑或 Minimap |
-| JSON 树 | 16 MiB / 250,000 节点，保留解析器默认嵌套深度限制 |
-| CSV 表格 | 16 MiB / 100,000 行 / 256 列 / 1,000,000 单元格 |
-| Excel 本地表格 | 输入 128 MiB，前 128 张工作表、每表 5000 行/256 列，HTML 总计 64 MiB |
-| SQLite | 快照 4 GiB；5000 张表/视图、500 行/页、256 列，字段/行长度 32 MiB，查询仍限 5 秒 |
-| 字体 | 输入 128 MiB，集合显示前 256 个字体；不安装字体 |
-| 图片 | 输入 128 MiB / 1 亿像素，解码 512 MiB；缩放预览最长 4000px。GIF 最多 2000 帧、总解码 512 MiB；TIFF 最多 500 页，预览 PNG 总计 256 MiB / 像素 512 MiB |
-| safetensors | 头部 32 MiB，张量列表最多 10,000 项 / 约 2 MiB；不读取整个权重文件 |
-| 二进制点文件 | 前 256 KiB，文件总大小不受摘要长度限制 |
-| Git | 单文件 diff 输出 256 MiB；显示最多 16 MiB、50,000 行、每行 64 KiB，截断明确提示；其他 Git 查询仍限 8 MiB |
-| PDF、音视频、Quick Look 文档 | 系统按需加载，无额外固定总文件大小限制，受系统解码器能力约束 |
+| Editable text | 32 MiB; over 400,000 newlines or a line over 64 KiB uses paging |
+| Read-only pages | Approximately 1 MiB/page with UTF-8 boundary completion; no whole-file size cap, editing or full-document search |
+| Explicit full loading | 256 MiB / 4 million newlines; read-only virtual text without syntax parsing or Minimap |
+| Markdown diagrams | 128 distinct blocks/document; 256 KiB source/block; SVG 8 MiB/block, aggregate SVG/PNG 64 MiB each, decoded images 128 MiB |
+| JSON tree | 16 MiB / 250,000 nodes; default parser nesting limits retained |
+| CSV/TSV table | 16 MiB / 100,000 rows / 256 columns / 1 million cells; cell display uses excerpts |
+| XLS/XLSX | 128 MiB input; first 128 sheets, 5,000 rows and 256 columns/sheet, 4,096 characters/cell; generated HTML 64 MiB |
+| XMind | 256 MiB archive, 16 MiB content, 100 sheets, 10,000 topics, depth ≤64 plus JSON parser limits; titles/links 16 KiB, notes 64 KiB, ≤128 labels with 16 KiB combined text/topic |
+| Images | 128 MiB input; static images ≤100 million pixels and 512 MiB decoded; previews up to 4,000px longest side. GIF ≤2,000 frames / 512 MiB decoded; TIFF ≤500 pages, 256 MiB preview PNGs / 512 MiB decoded |
+| SQLite | 4 GiB snapshot; native reader ≤5,000 tables/views, 500 rows/page, 256 columns, 32 MiB fields/rows and 5-second queries |
+| Fonts | 128 MiB input; first 256 collection fonts |
+| safetensors | 32 MiB header; displayed list ≤10,000 tensors / approximately 2 MiB |
+| Binary dotfiles | First 256 KiB |
+| Archive/compressed text | 32 MiB input, entry and extracted document text; ≤10,000 archive entries |
+| Mesh/bitmap font | 16 MiB input; ≤100,000 mesh vertices/faces; BDF limits above |
+| Git | Single-file diff command output 256 MiB; displayed diff ≤16 MiB / 50,000 lines / 64 KiB per line. Other Git command output ≤8 MiB |
+| PDF/AVKit/Quick Look | System-managed loading; no additional fixed total input-size budget |
 
-预算按打开的文件计算，多标签会累计内存占用。safetensors 只做头部和偏移范围检查，不等同于完整模型验证。SVG 不解析外部文件资源。非 UTF-8 文本暂不提供文字解码，归档首轮支持目录与压缩文本预览。Office 不提供编辑、公式重算或宏执行；复杂排版、加密文档或缺少系统预览器时，可从预览标签选择默认应用打开。文件夹播放只枚举直接子文件，最多 10,000 项，顺序采用自然文件名排序，随机播放将队列打乱；无法播放的条目跳过。PDF 和音视频通过系统框架按需加载，不读入 Rust 文本缓冲区。
+Budgets accumulate across tabs. Non-UTF-8 text is not currently decoded. Preview limits do not truncate source files or staged contents. Model metadata inspection is not full model validation. Office previews do not edit, run macros or recalculate formulas.
 
-## 格式维护工具
+SQLite copies the main database, WAL and rollback journal, checks source size/timestamps, and recovers the temporary copy; it never checkpoints the source. Missing-main sidecars show information only. Busy sources may need to be paused or copied consistently. SQLCipher/encrypted databases and arbitrary write SQL are unsupported.
 
-`cargo run -p glim-services --example audit_formats --locked -- /path/to/project` 可按格式抽样调用读取服务，仅输出计数，不输出文件路径与正文。此工具不替代 UI 验证，按需运行。
+Folder playlists enumerate only direct child files, at most 10,000, using natural filename order or shuffle. Unsupported tracks are skipped; restored media stays paused.
 
-`.key` 同时可能表示密钥文件：普通文本密钥仍按文本打开，仅 ZIP 容器或目录文档包进入 Keynote 预览。系统文件关联按后缀/类型工作，管理 `.key` 的默认应用时可能同时影响同后缀文件。
+## Maintenance
 
-SQLite 预览复制主库、WAL 和 rollback journal，在临时副本中进行恢复与查询，SHM 由副本重建，不修改或 checkpoint 源文件。复制前后检查文件大小与时间；忙碌数据库可能需要暂停写入或提供稳定备份。预览不是实时连接，重新打开以刷新；不提供写 SQL，也不支持 SQLCipher 等加密库。
+`cargo run -p glim-services --example audit_formats --locked -- /path/to/project` samples an explicit format allowlist and prints counts, not private paths or file contents. It is not an exhaustive support audit or a UI test.
 
-macOS XLS/XLSX 使用本地表格预览，支持工作表分组、行列滚动、单元格换行；公式显示缓存结果。预览限制：输入 128 MiB、128 个工作表、每表 5000 行/256 列、每单元格 4096 字符，生成 HTML 64 MiB。图表及原始样式通过默认应用查看。
-
-单文件工作区/暂存区 Git diff 输出上限 256 MiB；其他 Git 查询仍为 8 MiB。超大或超长行 diff 使用受限单栏预览，最多 16 MiB、50,000 行、每行 64 KiB，界面显示截断提示；原文件和整文件暂存内容不受预览截断影响。
-
-CSV 支持只读表格/原文切换，表格保留所有数据行，显示通用列编号；支持逗号分隔、引号转义、跨行字段、BOM、不齐列。表格预算 16 MiB、100000 行、256 列、1000000 单元格，单元格显示摘要；原文模式保留编辑保存。
-
-## 探索格式首轮支持
-
-| 格式 | 当前行为 |
-| --- | --- |
-| AsciiDoc / Org / RST | 基础标题、列表、代码块阅读投影与原文编辑；不提供完整方言兼容 |
-| SRT / VTT | 按时间段阅读字幕，保留原文编辑；不绑定媒体时间轴 |
-| MATLAB / Stan / HTTP / HCL / Dhall / KDL | 基础词法着色、原文编辑，不运行脚本、请求或配置 |
-| TSV / NDJSON / JSON5 | TSV 表格、逐行 JSON 数组树、JSON5 树，可切回原文编辑 |
-| D2 / Pikchr / *.vega.json | 官方离线引擎静态图表，支持原文编辑；外部导入/数据/图片禁用 |
-| OBJ / STL | 小型网格静态投影，支持 OBJ 面及 ASCII/二进制 STL；不旋转、不读取材质/纹理 |
-| GPX / KML | 离线坐标表与 XML 原文，不加载地图底图或外部资源 |
-| BDF | 前 64 个字形的位图预览，单字形最多 64×64，不安装字体 |
-| ZIP / TAR | 只读目录与条目大小；标出越界路径，不解压；损坏 ZIP 报错 |
-| GZ / BZ2 / XZ | 有界解压 UTF-8 文本，在只读阅读器内展示 |
-| EPUB / ODT / ODS / ODP | 容器目录及章节/文档文本提取，不还原样式、公式、图像或电子书阅读顺序 |
-| NPY | v1/v2/v3 头部及基础小端 f8/f4/i8/i4/u1 数值，最多 10000 项；其他类型保留元数据，不执行 pickle |
-| QOI | 静态图片，沿用图片预算 |
-
-容器输入、单项解压及文档提取限制 32 MiB，归档最多 10000 项；几何/字形输入 16 MiB，网格最多 100000 个顶点/面。D2、Pikchr、Vega 沿用图表预算与错误回退。
-
-XMind：输入最多 256 MiB、内部正文最多 16 MiB、100 张工作表、共 10000 个主题及最多 64 层（新版 JSON 另受解析器默认嵌套深度限制）；每个主题标题和标签文本最多 16 KiB，纯文本备注最多 64 KiB。支持主题树、游离主题、纯文本备注、标签、网页链接和关系端点详情；使用统一阅读布局，不复刻 XMind 原始样式、手绘布局、附件、图片、边界或概要。加密与损坏文件显示错误，不修改文件、不运行内容代码、不自动打开链接或加载外部资源。
+See [architecture](architecture.md), [build and release](releasing.md) and [roadmap](TODO.md).

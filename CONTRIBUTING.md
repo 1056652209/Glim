@@ -30,4 +30,6 @@ Contributions are provided under the project's [MIT license](LICENSE). Please fo
 
 ## 中文说明
 
+[格式与限制](docs/file-format-support.zh-CN.md) · [路线图](docs/TODO.zh-CN.md) · [架构](docs/architecture.zh-CN.md) · [构建与发布](docs/releasing.zh-CN.md)
+
 欢迎中文 Issue 和 PR。报告问题时请提供版本、系统、复现步骤与脱敏样例；新格式请说明希望看到的信息。大功能先讨论范围，小改动保持聚焦。代码提交前执行上面的检查，说明实测平台及尚未验证的交互；纯文档改动无需构建。
