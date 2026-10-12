@@ -2,6 +2,10 @@
   <img src="assets/branding/repository-banner.svg" alt="Glim — AI 时代的全能查看器" width="100%" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/NeoPanic/Glim/releases"><img src="https://img.shields.io/github/downloads/NeoPanic/Glim/total?style=flat-square&amp;color=268879&amp;label=%E6%80%BB%E4%B8%8B%E8%BD%BD%E9%87%8F" alt="发布附件总下载量" /></a>
+</p>
+
 <p align="center"><a href="README.md">English</a> · <b>简体中文</b></p>
 
 **The all-purpose viewer for the AI era.**
