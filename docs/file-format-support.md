@@ -1,5 +1,7 @@
 # 格式与限制
 
+AI 时代的全能文件查看器，一个应用打开多种格式。
+
 本文记录当前支持的格式与实现边界。返回 [English](../README.md) · [简体中文](../README.zh-CN.md)。
 
 **平台说明：** PDF、Office/iWork、音视频、字体与 SQLite 原生预览目前仅 macOS 提供；其余工作台功能支持 macOS 和 Windows。

@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory(prefix='glim-dmg-') as directory:
     (stage / 'Read Me.txt').write_text(
         f'Glim {version} — macOS {architecture}\n\n'
         'Drag Glim.app to Applications.\n'
-        'The all-purpose viewer for the AI era.\n\n'
+        'The all-purpose viewer for the AI era, opening a wide range of file formats in one app.\n\n'
         'This release is ad-hoc signed, without Developer ID signing or notarization.\n'
         'macOS Gatekeeper may require explicit approval in System Settings > Privacy & Security.\n\n'
         'Source and issues: https://github.com/NeoPanic/Glim\n', encoding='utf-8')

@@ -41,8 +41,8 @@ impl Render for About {
                                 crate::app::updates::command("check", cx);
                             }),
                     )
-                    .child(div().text_color(cx.theme().muted_foreground).child(
-                        glim_services::locale::tr("The all-purpose viewer for the AI era."),
+                    .child(div().max_w(px(340.)).text_center().whitespace_normal().text_color(cx.theme().muted_foreground).child(
+                        glim_services::locale::tr("The all-purpose viewer for the AI era, opening a wide range of file formats in one app."),
                     )),
             )
     }
