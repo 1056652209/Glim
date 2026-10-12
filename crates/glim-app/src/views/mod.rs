@@ -1,3 +1,4 @@
+pub(crate) mod about;
 mod changes;
 pub mod explorer;
 mod minimap;

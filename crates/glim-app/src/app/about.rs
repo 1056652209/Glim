@@ -1,40 +1,8 @@
-use super::actions::{CloseWindow, CloseWorkspace};
-use gpui_kit::{
-    component::{ActiveTheme, TitleBar, v_flex},
-    *,
-};
+use gpui_kit::{component::TitleBar, *};
 
 #[derive(Default)]
 struct AboutWindow(Option<AnyWindowHandle>);
 impl Global for AboutWindow {}
-
-struct About {
-    focus: FocusHandle,
-}
-
-impl Render for About {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .track_focus(&self.focus)
-            .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
-            .on_action(cx.listener(|_, _: &CloseWorkspace, window, _| window.remove_window()))
-            .child(TitleBar::new().child(glim_services::locale::tr("About Glim")))
-            .child(
-                v_flex()
-                    .flex_1()
-                    .items_center()
-                    .justify_center()
-                    .gap_3()
-                    .child(img("branding/glim.png").w(px(88.)).h(px(88.)))
-                    .child(div().text_3xl().child("Glim"))
-                    .child(env!("CARGO_PKG_VERSION"))
-                    .child(div().text_color(cx.theme().muted_foreground).child(
-                        glim_services::locale::tr("The all-purpose viewer for the AI era."),
-                    )),
-            )
-    }
-}
 
 pub fn open(cx: &mut App) {
     if let Some(handle) = cx.try_global::<AboutWindow>().and_then(|state| state.0)
@@ -54,11 +22,7 @@ pub fn open(cx: &mut App) {
         ..TitleBar::window_options()
     };
     match gpui_kit::open_window(options, cx, |window, cx| {
-        cx.new(|cx| {
-            let focus = cx.focus_handle();
-            window.focus(&focus, cx);
-            About { focus }
-        })
+        cx.new(|cx| crate::views::about::About::new(window, cx))
     }) {
         Ok((handle, _)) => {
             cx.set_global(AboutWindow(Some(handle)));
