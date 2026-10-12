@@ -30,6 +30,11 @@ impl Render for Workspace {
                 reader.set_side_by_side(mode);
             }
         }
+        for (index, reader) in self.tabs.iter().enumerate() {
+            if self.active != Some(index) {
+                reader.hide_native(cx);
+            }
+        }
         let path = self.active_reader().map(|r| {
             r.path
                 .strip_prefix(self.root.as_deref().unwrap_or(std::path::Path::new("")))

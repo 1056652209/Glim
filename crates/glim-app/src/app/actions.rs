@@ -3,6 +3,7 @@ gpui_kit::actions!(
     [
         NewWindow,
         About,
+        CheckForUpdates,
         LanguageSystem,
         LanguageChinese,
         LanguageEnglish,

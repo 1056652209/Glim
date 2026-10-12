@@ -4,16 +4,19 @@ mod assets;
 pub(crate) mod diagram_engine;
 pub(crate) mod languages;
 mod shortcuts;
+#[cfg(all(target_os = "macos", feature = "macos-updater"))]
+mod updater_bridge;
+pub(crate) mod updates;
 
 use anyhow::{Result, bail};
 use gpui_kit::*;
 
 use crate::views::workspace::Workspace;
 use actions::{
-    About, AddFolder, CloseWindow, CloseWorkspace, DefaultApplications, KeyboardShortcuts,
-    LanguageChinese, LanguageEnglish, LanguageSystem, NavigateBack, NavigateForward, NewWindow,
-    NextTab, OpenFile, OpenFolder, PreviousTab, Quit, Refresh, SaveFile, SearchWorkspace,
-    ToggleDarkMode, TogglePreview, ToggleSidebar, ToggleWordWrap,
+    About, AddFolder, CheckForUpdates, CloseWindow, CloseWorkspace, DefaultApplications,
+    KeyboardShortcuts, LanguageChinese, LanguageEnglish, LanguageSystem, NavigateBack,
+    NavigateForward, NewWindow, NextTab, OpenFile, OpenFolder, PreviousTab, Quit, Refresh,
+    SaveFile, SearchWorkspace, ToggleDarkMode, TogglePreview, ToggleSidebar, ToggleWordWrap,
 };
 
 pub struct ReaderPreferences {
@@ -55,6 +58,9 @@ pub(crate) fn remember_workspace(folders: Vec<std::path::PathBuf>, cx: &mut App)
 }
 
 pub(crate) fn toggle_dark_mode(cx: &mut App) {
+    if updates::busy(cx) {
+        return;
+    }
     use gpui_kit::component::{Theme, ThemeMode};
 
     let enabled = !Theme::global(cx).is_dark();
@@ -186,6 +192,7 @@ pub fn run() -> Result<()> {
         });
         cx.set_global(OpenWorkspaces::default());
         cx.set_global(DefaultApplicationsTask::default());
+        updates::init(cx);
         *context.borrow_mut() = Some(cx.to_async());
         gpui_kit::component::Theme::set_scrollbar_mode(
             gpui_kit::component::scroll::ScrollbarMode::Hover,
@@ -193,7 +200,12 @@ pub fn run() -> Result<()> {
         );
         crate::views::explorer::Explorer::init(cx);
         cx.on_action(|_: &Quit, cx| request_quit(cx));
-        cx.on_action(|_: &NewWindow, cx| open_workspace(None, cx));
+        cx.on_action(|_: &NewWindow, cx| {
+            if !updates::busy(cx) {
+                open_workspace(None, cx);
+            }
+        });
+        cx.on_action(|_: &CheckForUpdates, cx| updates::show_from_menu(cx));
         cx.on_action(|_: &DefaultApplications, cx| open_default_applications(cx));
         cx.on_action(|_: &ToggleDarkMode, cx| toggle_dark_mode(cx));
         cx.on_action(|_: &About, cx| show_about(cx));
@@ -231,16 +243,12 @@ pub fn run() -> Result<()> {
         .detach();
 
         let requested = std::mem::take(&mut *pending.borrow_mut());
-        if requested.is_empty() {
-            open_workspace(path.map(Into::into), cx);
-        } else {
-            open_system_files(requested, cx);
-        }
+        updates::start_application(path.map(Into::into), requested, cx);
     });
     Ok(())
 }
 
-pub(crate) fn reveal_existing_preview(
+pub(crate) fn reveal_existing_file(
     path: &std::path::Path,
     exclude: Option<EntityId>,
     cx: &mut App,
@@ -251,29 +259,32 @@ pub(crate) fn reveal_existing_preview(
     windows
         .into_iter()
         .filter(|(view, _)| Some(view.entity_id()) != exclude)
-        .any(|(view, _)| {
-            view.update(cx, |v, cx| v.reveal_native_path(path, cx))
+        .any(|(view, handle)| {
+            handle
+                .update(cx, |_, window, cx| {
+                    view.update(cx, |v, cx| v.reveal_file_path(path, window, cx))
+                        .unwrap_or(false)
+                })
                 .unwrap_or(false)
         })
 }
 
 fn open_system_files(urls: Vec<String>, cx: &mut App) {
+    updates::interrupt_for_files(cx);
     for value in urls {
         if let Ok(url) = url::Url::parse(&value)
             && url.scheme() == "file"
             && let Ok(path) = url.to_file_path()
         {
-            if reveal_existing_preview(&path, None, cx) {
+            if reveal_existing_file(&path, None, cx) {
                 continue;
             }
             let windows = cx.global::<OpenWorkspaces>().0.clone();
             let reused = windows.iter().rev().any(|(view, handle)| {
                 handle
                     .update(cx, |_, window, cx| {
-                        view.update(cx, |v, cx| {
-                            v.open_system_file_if_empty(path.clone(), window, cx)
-                        })
-                        .unwrap_or(false)
+                        view.update(cx, |v, cx| v.open_system_file(path.clone(), window, cx))
+                            .unwrap_or(false)
                     })
                     .unwrap_or(false)
             });
@@ -287,6 +298,13 @@ fn open_system_files(urls: Vec<String>, cx: &mut App) {
 }
 
 fn open_workspace(path: Option<std::path::PathBuf>, cx: &mut App) {
+    open_workspace_with_session(path, None, cx);
+}
+fn open_workspace_with_session(
+    path: Option<std::path::PathBuf>,
+    session: Option<glim_core::update::WorkspaceSession>,
+    cx: &mut App,
+) {
     // Use the usable screen rectangle directly. Maximized invokes macOS zoom,
     // which toggles an already full-size initial frame back to a smaller one.
     let bounds = cx
@@ -299,9 +317,14 @@ fn open_workspace(path: Option<std::path::PathBuf>, cx: &mut App) {
         ..gpui_kit::component::TitleBar::window_options()
     };
     match gpui_kit::open_window(options, cx, |window, cx| {
-        let restore = path.is_none() && cx.global::<OpenWorkspaces>().0.is_empty();
+        let restore =
+            session.is_none() && path.is_none() && cx.global::<OpenWorkspaces>().0.is_empty();
         let workspace = cx.new(|cx| Workspace::new(path, window, cx));
-        if restore {
+        if let Some(session) = session {
+            workspace.update(cx, |view, cx| {
+                view.restore_update_session(session, window, cx)
+            });
+        } else if restore {
             workspace.update(cx, |view, cx| view.restore_workspace(window, cx));
         }
         let windows = &mut cx.global_mut::<OpenWorkspaces>().0;
@@ -317,6 +340,13 @@ fn open_workspace(path: Option<std::path::PathBuf>, cx: &mut App) {
 #[derive(Default)]
 struct OpenWorkspaces(Vec<(WeakEntity<Workspace>, AnyWindowHandle)>);
 impl Global for OpenWorkspaces {}
+impl OpenWorkspaces {
+    fn windows(cx: &App) -> Vec<(WeakEntity<Workspace>, AnyWindowHandle)> {
+        cx.try_global::<Self>()
+            .map(|v| v.0.clone())
+            .unwrap_or_default()
+    }
+}
 
 pub(crate) fn any_other_saving(exclude: EntityId, cx: &App) -> bool {
     cx.global::<OpenWorkspaces>().0.iter().any(|(v, _)| {
@@ -325,6 +355,9 @@ pub(crate) fn any_other_saving(exclude: EntityId, cx: &App) -> bool {
     })
 }
 fn request_quit(cx: &mut App) {
+    if updates::busy(cx) || updates::prepare_quit(cx) {
+        return;
+    }
     let windows = cx.global::<OpenWorkspaces>().0.clone();
     let target = windows
         .iter()
@@ -347,7 +380,7 @@ fn request_quit(cx: &mut App) {
 struct GitEditorLock(bool);
 impl Global for GitEditorLock {}
 pub(crate) fn git_editors_locked(cx: &App) -> bool {
-    cx.try_global::<GitEditorLock>().is_some_and(|lock| lock.0)
+    updates::busy(cx) || cx.try_global::<GitEditorLock>().is_some_and(|lock| lock.0)
 }
 pub(crate) fn lock_git_editors(exclude: EntityId, cx: &mut App) -> Result<()> {
     anyhow::ensure!(
@@ -402,6 +435,11 @@ fn update_menus(cx: &mut App) {
             name: "Glim".into(),
             disabled: false,
             items: vec![
+                MenuItem::action(
+                    glim_services::locale::tr("Check for Updates…"),
+                    CheckForUpdates,
+                ),
+                MenuItem::separator(),
                 #[cfg(target_os = "macos")]
                 MenuItem::action(
                     glim_services::locale::tr("Default File Types…"),
@@ -463,6 +501,9 @@ fn update_menus(cx: &mut App) {
 struct LanguageSaveTask(Option<Task<()>>);
 impl Global for LanguageSaveTask {}
 fn change_language(language: &'static str, cx: &mut App) {
+    if updates::busy(cx) {
+        return;
+    }
     glim_services::locale::set(language);
     gpui_kit::component::set_locale(glim_services::locale::code());
     update_menus(cx);

@@ -384,6 +384,7 @@ impl Workspace {
                         div()
                             .relative()
                             .w(px(380.))
+                            .max_w(relative(0.35))
                             .child(Input::new(&self.search).small().focus_bordered(false))
                             .child(
                                 h_flex()
@@ -428,6 +429,21 @@ impl Workspace {
                             .right(px(12.))
                             .top_0()
                             .h_full()
+                            .when(
+                                crate::app::updates::state(cx)
+                                    .is_some_and(|s| s.read(cx).snapshot.has_update()),
+                                |v| {
+                                    v.child(
+                                        Button::new("update-available")
+                                            .ghost()
+                                            .small()
+                                            .label(glim_services::locale::tr("Update Available"))
+                                            .on_click(|_, window, cx| {
+                                                crate::app::updates::show(window, cx)
+                                            }),
+                                    )
+                                },
+                            )
                             .child(self.reader_controls(cx)),
                     ),
                 cx,

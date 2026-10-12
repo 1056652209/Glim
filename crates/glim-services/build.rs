@@ -3,6 +3,7 @@ use std::{env, path::PathBuf, process::Command};
 fn main() {
     println!("cargo:rerun-if-changed=../../native/Preview.swift");
     println!("cargo:rerun-if-changed=../../native/SQLitePreview.swift");
+    println!("cargo:rerun-if-changed=../../native/PreviewMain.swift");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
     }
@@ -13,7 +14,7 @@ fn main() {
     };
     let output = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("glim-preview");
     let main = output.with_file_name("main.swift");
-    std::fs::copy("../../native/Preview.swift", &main)
+    std::fs::copy("../../native/PreviewMain.swift", &main)
         .expect("Cannot prepare native preview entry point");
     let status = Command::new("xcrun")
         .args([
@@ -24,6 +25,7 @@ fn main() {
             "-target",
             &format!("{arch}-apple-macos11.0"),
             "../../native/SQLitePreview.swift",
+            "../../native/Preview.swift",
         ])
         .arg(main)
         .arg("-o")

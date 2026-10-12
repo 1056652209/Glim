@@ -1,4 +1,4 @@
-//! Native PDFKit / AVKit / Quick Look windows. Run from a retained background task.
+//! Prepare native preview data off the UI thread; launch the settings helper only.
 use anyhow::{Context, Result, ensure};
 use std::path::{Path, PathBuf};
 
@@ -116,13 +116,18 @@ fn playlist(path: &Path, folder: bool) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-pub fn open(
+pub struct PreparedPreview {
+    pub configuration: Vec<u8>,
+    // The native SQLite view must close before its private snapshot is removed.
+    _sqlite: Option<crate::sqlite::Snapshot>,
+}
+
+pub fn prepare(
     path: &Path,
     folder: bool,
     shuffle: bool,
-    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    show: std::sync::Arc<std::sync::atomic::AtomicBool>,
-) -> Result<()> {
+    autoplay: bool,
+) -> Result<PreparedPreview> {
     let paths = playlist(path, folder)?;
     let files = paths
         .iter()
@@ -143,13 +148,15 @@ pub fn open(
     } else {
         None
     };
-    launch(
-        serde_json::json!({"files": files, "shuffle": shuffle, "office": !folder && is_office(path), "font": !folder && is_font(path),
-            "sqlite": sqlite.as_ref().and_then(|s| s.database.as_ref()).and_then(|p| p.to_str()),
-            "sqliteInfo": sqlite.as_ref().map(|s| &s.information), "spreadsheet": spreadsheet}),
-        cancelled,
-        show,
-    )
+    let mut configuration = serde_json::json!({"files": files, "shuffle": shuffle, "autoplay": autoplay, "office": !folder && is_office(path), "font": !folder && is_font(path),
+        "sqlite": sqlite.as_ref().and_then(|s| s.database.as_ref()).and_then(|p| p.to_str()),
+        "sqliteInfo": sqlite.as_ref().map(|s| &s.information), "spreadsheet": spreadsheet});
+    configuration["language"] = serde_json::json!(crate::locale::code());
+    configuration["localizations"] = crate::locale::translations();
+    Ok(PreparedPreview {
+        configuration: serde_json::to_vec(&configuration)?,
+        _sqlite: sqlite,
+    })
 }
 
 pub fn open_associations(cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Result<()> {
@@ -167,14 +174,12 @@ pub fn open_associations(cancelled: std::sync::Arc<std::sync::atomic::AtomicBool
     launch(
         serde_json::json!({"files": [], "shuffle": false, "associations": bundle.to_str().context("Invalid application path")?}),
         cancelled,
-        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )
 }
 
 fn launch(
     mut configuration: serde_json::Value,
     cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    show: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<()> {
     configuration["language"] = serde_json::json!(crate::locale::code());
     configuration["localizations"] = crate::locale::translations();
@@ -185,44 +190,27 @@ fn launch(
             process::{Command, Stdio},
         };
         let directory = tempfile::tempdir()?;
-        // A real helper bundle prevents AppKit from adopting the parent's
-        // application identity and sharing its Dock/window activation behavior.
-        let settings = configuration.get("associations").is_some();
-        let helper_name = if settings {
-            "Glim Settings"
-        } else {
-            "Glim Preview"
-        };
-        let contents = directory.path().join(format!("{helper_name}.app/Contents"));
+        // Only default-file-type settings use an independent helper application.
+        let contents = directory.path().join("Glim Settings.app/Contents");
         let binaries = contents.join("MacOS");
         std::fs::create_dir_all(&binaries)?;
         let resources = contents.join("Resources");
         std::fs::create_dir_all(&resources)?;
-        let icon: &[u8] = if settings {
-            include_bytes!("../../../assets/macos/Glim.icns")
-        } else {
-            include_bytes!("../../../assets/macos/GlimPreview.icns")
-        };
-        std::fs::write(resources.join("Glim.icns"), icon)?;
+        std::fs::write(
+            resources.join("Glim.icns"),
+            include_bytes!("../../../assets/macos/Glim.icns"),
+        )?;
         let info = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleName</key><string>Glim Preview</string>
-<key>CFBundleDisplayName</key><string>Glim Preview</string>
-<key>CFBundleIdentifier</key><string>io.github.jony4.glim.preview</string>
+<key>CFBundleName</key><string>Glim Settings</string>
+<key>CFBundleDisplayName</key><string>Glim Settings</string>
+<key>CFBundleIdentifier</key><string>io.github.jony4.glim.settings</string>
 <key>CFBundleExecutable</key><string>glim-preview</string>
 <key>CFBundleIconFile</key><string>Glim</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>"#;
-        let info = if settings {
-            info.replace("Glim Preview", "Glim Settings").replace(
-                "io.github.jony4.glim.preview",
-                "io.github.jony4.glim.settings",
-            )
-        } else {
-            info.to_owned()
-        };
         std::fs::write(contents.join("Info.plist"), info)?;
         let executable = binaries.join("glim-preview");
         std::fs::write(
@@ -236,7 +224,7 @@ fn launch(
         let mut child = Command::new(executable)
             .arg(manifest)
             .env_remove("__CFBundleIdentifier")
-            .stdin(Stdio::piped())
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
@@ -253,20 +241,13 @@ fn launch(
                 );
                 break;
             }
-            if show.swap(false, std::sync::atomic::Ordering::AcqRel) {
-                use std::io::Write;
-                if let Some(input) = &mut child.stdin {
-                    // A closing helper may race this request; try_wait handles exit.
-                    let _ = input.write_all(b"show\n");
-                }
-            }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (configuration, cancelled, show);
+        let _ = (configuration, cancelled);
         anyhow::bail!("Native preview requires macOS")
     }
 }

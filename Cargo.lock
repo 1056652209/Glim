@@ -2590,12 +2590,13 @@ dependencies = [
 
 [[package]]
 name = "glim-app"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "glim-core",
  "glim-services",
  "gpui-kit",
+ "raw-window-handle",
  "serde_json",
  "tao",
  "tempfile",
@@ -2605,11 +2606,14 @@ dependencies = [
 
 [[package]]
 name = "glim-core"
-version = "0.1.11"
+version = "0.1.12"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "glim-services"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "anyhow",
  "bzip2",
@@ -2625,6 +2629,7 @@ dependencies = [
  "quick-xml 0.38.4",
  "resvg 0.45.1",
  "serde_json",
+ "sha2 0.10.9",
  "sys-locale",
  "tar",
  "tempfile",

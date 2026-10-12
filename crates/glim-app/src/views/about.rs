@@ -1,6 +1,6 @@
 use crate::app::actions::{CloseWindow, CloseWorkspace};
 use gpui_kit::{
-    component::{ActiveTheme, TitleBar, v_flex},
+    component::{ActiveTheme, TitleBar, button::Button, v_flex},
     *,
 };
 
@@ -33,6 +33,14 @@ impl Render for About {
                     .child(img("branding/glim.png").w(px(88.)).h(px(88.)))
                     .child(div().text_3xl().child("Glim"))
                     .child(env!("CARGO_PKG_VERSION"))
+                    .child(
+                        Button::new("about-check-update")
+                            .label(glim_services::locale::tr("Check for Updates…"))
+                            .on_click(|_, window, cx| {
+                                crate::app::updates::show(window, cx);
+                                crate::app::updates::command("check", cx);
+                            }),
+                    )
                     .child(div().text_color(cx.theme().muted_foreground).child(
                         glim_services::locale::tr("The all-purpose viewer for the AI era."),
                     )),

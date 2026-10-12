@@ -54,6 +54,7 @@ impl Workspace {
                     Err(error) => errors.push(format!("{error:#}")),
                 }
                 view.loading = false;
+                view.load_incoming_file(window, cx);
                 if !errors.is_empty() {
                     view.error =
                         Some(format!("Cannot restore workspace: {}", errors.join("; ")).into());
@@ -62,25 +63,92 @@ impl Workspace {
             });
         }));
     }
-    pub(crate) fn reveal_native_path(&self, path: &std::path::Path, cx: &mut App) -> bool {
-        self.tabs
+    pub(crate) fn reveal_file_path(
+        &mut self,
+        path: &std::path::Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let index = self
+            .tabs
             .iter()
-            .filter(|r| r.path == path && !r.historical && r.diff.is_none())
-            .any(|r| r.reveal_native(cx))
+            .position(|r| r.path == path && !r.historical && r.diff.is_none());
+        if let Some(index) = index {
+            self.activate_tab(index, window, cx);
+            self.tabs[index].reveal_native(cx);
+            window.activate_window();
+            cx.activate(true);
+            true
+        } else {
+            false
+        }
     }
-    pub(crate) fn open_system_file_if_empty(
+    pub(crate) fn open_system_file(
         &mut self,
         path: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if !self.tabs.is_empty() || !self.roots.is_empty() || self.loading {
-            return false;
+        // All Finder file types share one queue. Extension-based routing here
+        // would split ordinary text/images and native formats across windows.
+        if self.reveal_file_path(&path, window, cx) {
+            return true;
         }
-        self.open_path(path, window, cx);
+        if !self.incoming_files.contains(&path) {
+            self.incoming_files.push_back(path);
+        }
+        self.load_incoming_file(window, cx);
+        window.activate_window();
         true
     }
+    pub(super) fn load_incoming_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.incoming_file_task.is_some() || self.loading {
+            return;
+        }
+        let Some(path) = self.incoming_files.front().cloned() else {
+            return;
+        };
+        let work = cx.background_executor().spawn(async move {
+            if path.is_dir() && !glim_services::preview::is_iwork(&path) {
+                open_folder(&path).map(Opened::Folder)
+            } else {
+                let result = read_content(&path);
+                Ok(Opened::File(path, result))
+            }
+        });
+        self.incoming_file_task = Some(cx.spawn_in(window, async move |view, cx| {
+            let result = work.await;
+            let _ = view.update_in(cx, |view, window, cx| {
+                let path = view.incoming_files.pop_front();
+                view.incoming_file_task = None;
+                if let Some(index) = view.tabs.iter().position(|r| {
+                    Some(&r.path) == path.as_ref() && !r.historical && r.diff.is_none()
+                }) {
+                    view.activate_tab(index, window, cx);
+                } else {
+                    match result {
+                        Ok(Opened::Folder(folder)) => view.receive_folder(folder, window, cx),
+                        Ok(Opened::File(_, Ok(content))) => {
+                            view.install_content(content, window, cx)
+                        }
+                        Ok(Opened::File(path, Err(error))) => view.install_content(
+                            Content::Unavailable(path, format!("{error:#}")),
+                            window,
+                            cx,
+                        ),
+                        Err(error) => view.error = Some(format!("{error:#}").into()),
+                    }
+                }
+                view.load_incoming_file(window, cx);
+                cx.notify();
+            });
+        }));
+    }
+
     pub(super) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        if crate::app::updates::busy(cx) {
+            return;
+        }
         self.results.clear();
         self.search_task = None;
         self.pending_anchor = None;
@@ -93,7 +161,7 @@ impl Workspace {
             self.tabs[index].reveal_native(cx);
             return;
         }
-        if crate::app::reveal_existing_preview(&path, Some(cx.entity_id()), cx) {
+        if crate::app::reveal_existing_file(&path, Some(cx.entity_id()), cx) {
             return;
         }
         self.loading = true;
@@ -110,6 +178,7 @@ impl Workspace {
             let result = read.await;
             let _ = view.update_in(cx, |view, window, cx| {
                 view.loading = false;
+                view.load_incoming_file(window, cx);
                 match result {
                     Ok(Opened::Folder(folder)) => {
                         view.receive_folder(folder, window, cx);
@@ -148,6 +217,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if crate::app::updates::busy(cx) {
+            return;
+        }
         self.sidebar = super::Sidebar::Files;
         self.sidebar_visible = true;
         if self
@@ -333,6 +405,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if crate::app::updates::busy(cx) {
+            return;
+        }
         let path = root.join(format!("Commit {oid}"));
         if let Some(index) = self
             .tabs
@@ -357,6 +432,7 @@ impl Workspace {
             let result = work.await;
             let _ = view.update_in(cx, |v, window, cx| {
                 v.loading = false;
+                v.load_incoming_file(window, cx);
                 match result {
                     Ok(document) => v.install_content(Content::Commit(document, file), window, cx),
                     Err(e) => v.error = Some(format!("Commit: {e:#}").into()),
@@ -373,6 +449,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if crate::app::updates::busy(cx) {
+            return;
+        }
         self.pending_anchor = None;
         if let Some(i) = self.tabs.iter().position(|t| {
             t.path == root.join(&change.path)
@@ -393,6 +472,7 @@ impl Workspace {
             let content = read.await;
             let _ = view.update_in(cx, |view, window, cx| {
                 view.loading = false;
+                view.load_incoming_file(window, cx);
                 view.install_content(content, window, cx);
                 cx.notify();
             });
@@ -400,6 +480,10 @@ impl Workspace {
         cx.notify();
     }
     pub(super) fn choose_add_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if crate::app::updates::busy(cx) {
+            return;
+        }
+        self.picking = true;
         let selection = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
@@ -407,11 +491,19 @@ impl Workspace {
             prompt: Some("Add folders to workspace".into()),
         });
         self.picker_task = Some(cx.spawn_in(window, async move |view, cx| {
-            let paths = match selection.await {
+            let selection = selection.await;
+            let paths = match selection {
                 Ok(Ok(Some(paths))) => paths,
-                Ok(Ok(None)) => return,
+                Ok(Ok(None)) => {
+                    let _ = view.update(cx, |v, cx| {
+                        v.picking = false;
+                        cx.notify();
+                    });
+                    return;
+                }
                 other => {
                     let _ = view.update(cx, |v, cx| {
+                        v.picking = false;
                         v.error = Some(format!("Cannot choose folders: {other:?}").into());
                         cx.notify();
                     });
@@ -431,6 +523,10 @@ impl Workspace {
                     cx.notify();
                 });
             }
+            let _ = view.update(cx, |v, cx| {
+                v.picking = false;
+                cx.notify();
+            });
         }));
     }
 
@@ -440,6 +536,10 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if crate::app::updates::busy(cx) {
+            return;
+        }
+        self.picking = true;
         let selection = cx.prompt_for_paths(PathPromptOptions {
             files: !folder,
             directories: folder,
@@ -449,6 +549,7 @@ impl Workspace {
         self.picker_task = Some(cx.spawn_in(window, async move |view, cx| {
             let result = selection.await;
             let _ = view.update_in(cx, |view, window, cx| {
+                view.picking = false;
                 match result {
                     Ok(Ok(Some(paths))) => {
                         if let Some(path) = paths.into_iter().next() {
@@ -530,5 +631,67 @@ mod format_tests {
         let binary = dir.path().join(".DS_Store");
         std::fs::write(&binary, [0, 1, 2, 255]).unwrap();
         assert!(matches!(read_content(&binary).unwrap(), Content::Bytes(_)));
+    }
+}
+
+#[cfg(test)]
+mod incoming_file_tests {
+    use super::Workspace;
+    use gpui_kit::{AppContext, TestAppContext, WindowOptions};
+
+    #[gpui_kit::test]
+    fn incoming_files_queue_without_cancelling_or_replacing_existing_tabs(cx: &mut TestAppContext) {
+        let directory = tempfile::tempdir().unwrap();
+        let first = directory.path().join("notes.txt");
+        let second = directory.path().join("README.md");
+        let image = directory.path().join("picture.png");
+        let unsupported = directory.path().join("unknown.custom-format");
+        std::fs::write(&first, "ordinary text").unwrap();
+        std::fs::write(&second, "# Markdown").unwrap();
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../assets/file-icons/image.png"),
+            &image,
+        )
+        .unwrap();
+        std::fs::write(&unsupported, [0, 255, 0, 255]).unwrap();
+        cx.update(gpui_kit::init);
+        let (handle, view) = cx.update(|cx| {
+            gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                cx.new(|cx| Workspace::new(Some(first.clone()), window, cx))
+            })
+            .unwrap()
+        });
+        cx.update_window(handle, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                for path in [&first, &second, &image, &unsupported, &first] {
+                    assert!(view.open_system_file(path.clone(), window, cx));
+                }
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let editor = cx.update(|cx| {
+            let view = view.read(cx);
+            assert_eq!(view.tabs.len(), 4);
+            assert_eq!(view.tabs[0].path, first);
+            assert_eq!(view.tabs[1].path, second);
+            assert_eq!(view.tabs[2].path, image);
+            assert!(!view.tabs[2].is_unavailable());
+            assert_eq!(view.tabs[3].path, unsupported);
+            assert!(view.tabs[3].is_unavailable());
+            assert!(view.incoming_files.is_empty());
+            assert!(view.incoming_file_task.is_none());
+            view.tabs[0].editor().unwrap().entity_id()
+        });
+        cx.update_window(handle, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                assert!(view.open_system_file(first.clone(), window, cx));
+                assert_eq!(view.active, Some(0));
+                assert_eq!(view.tabs[0].editor().unwrap().entity_id(), editor);
+                assert!(view.incoming_file_task.is_none());
+            });
+        })
+        .unwrap();
     }
 }

@@ -50,17 +50,21 @@ SourceReader 持有长期 EditorState，支持基础输入、选择、撤销/重
 
 ## 文档与媒体
 
-`native/Preview.swift` 使用 PDFKit、AVKit、CoreText 和 Quick Look 提供独立原生窗口；`glim-services/build.rs` 在 macOS 构建时通过 xcrun/Swift 编译对应目标架构，将辅助程序内嵌到 Rust 二进制。正常运行不再调用编译器。`services/preview` 在后台验证文件、枚举有界队列、写入临时清单并启动辅助程序；辅助程序位于独立 `Glim Preview.app` 临时包，使用独立 bundle identifier，清除继承的主应用标识；主应用与预览使用同尺寸的静态 ICNS（1024 画布、824 图形、100 留白），由同一脚本生成；预览只额外包含角标，使用系统图标加载，不在运行时重绘覆盖 Dock 图标；其 Dock 重开操作唤回预览窗口。临时目录保留到预览窗口退出。`reader/native` 保留任务与取消标记，再次点击已打开文件或标签时，通过进程 stdin 控制通道唤回对应预览窗口并恢复最小化，保持播放进度；跨主窗口和 Finder 打开会复用已有预览。占位页提供 Show Preview 按钮。标签关闭时结束辅助进程，播放不进入文本编辑/刷新流程。Office 与 Apple iWork 格式通过 Quick Look 异步渲染，不在 Rust 中解压或解析文档；原生窗口提供默认应用打开入口作为复杂文档的备用方式。iWork 目录包在文件树中作为文档显示，加载前优先识别，Git 发现不深入扫描；`.key` 普通文件检查 ZIP 标记，避免把文本密钥送入 Keynote 预览。
+`native/Preview.swift` 使用 PDFKit、AVKit、CoreText 和 Quick Look 提供嵌入工作台标签的原生视图。PDF、音视频、Office、字体和 SQLite 不再启动独立预览应用，也不增加 Dock 图标。`glim-app/build.rs` 将视图和 `native/EmbeddedPreview.swift` 编译为静态库，使用系统 Swift 运行库。`reader/native_bridge` 是唯一允许 unsafe 的 UI 线程 FFI 边界，借助 GPUI 的 AppKit 句柄将 NSView 挂载到同一窗口，在布局阶段同步标签内容区的逻辑坐标。桥接所有权不可跨线程；其余 app 代码为 unsafe deny，core/services 仍为 forbid。原生视图在窗口级注册可访问性子节点，隐藏时恢复原树，快捷键通过 responder chain 交回 GPUI。工具包菜单或对话框打开时暂时隐藏原生视图，避免遮住浮层。
+
+`services/preview::prepare` 在保留的后台任务中验证文件、枚举有界播放队列，并准备 SQLite 快照和表格 HTML，不导入 UI 或启动预览进程。`reader/native` 每个标签持有一个持续存活的控制器与准备数据；系统框架加载在主线程队列中调度，不在 GPUI render/layout 中读取文件。切换标签隐藏旧视图并暂停播放，返回保留页码和播放位置；关闭时释放视图、观察者和播放器，再清理临时数据。从 Finder 打开的所有文件格式都使用同一保留任务和队列，加入已有工作台标签，不按扩展名决定是否新建窗口，也不取消前一个打开请求；无法预览的文件同样在标签内显示错误。重复打开文件会激活已有标签和所属主窗口。Office/iWork 保留 Quick Look 及显式的默认应用打开入口。iWork 目录包按文档识别，`.key` 普通文件检查 ZIP 标记，避免将文本密钥交给 Keynote。
+
+`bash scripts/test-native-preview.sh` 在 macOS 验证桥接布局、页码保留、可访问性树恢复、播放与暂停、关闭释放、加载前关闭，以及错误不退出主应用。
 
 Explorer 在悬停或右键目录时后台检查直接子文件，只有确认存在可播放媒体才显示播放菜单；未知、空目录或读取失败均不显示。检查结果缓存并在文件刷新时失效，渲染不扫描目录。顺序/随机播放仅处理直接子文件，按自然文件名排序或打乱队列；解码交给系统。纯音频在 AVKit 控件下显示封面、标题、歌手、专辑与渐变背景，无封面时绘制唱片。元数据异步读取，切歌取消旧请求并校验播放项；封面数据最多 8 MiB，解码为最长 600px 缩略图。背景按视图边界裁剪；音频曲目信息下方提供随播放时间变化的装饰律动条，暂停静止，遵循系统减少动态效果设置，并在窗口不可见时停止重绘。该动效不表示真实音频频谱。视频隐藏该背景。所有菜单构建只读缓存。Files 的添加文件夹菜单绑定到末行下方的独立空白区域，不包裹文件/目录行；行级菜单与空白菜单不存在嵌套关系。
 
-字体通过 CoreText 在后台读取描述符，在独立窗口显示字体名称、字形数、多字号示例及集合切换；使用文件描述符直接渲染，不向系统安装字体。
+字体通过 CoreText 在后台读取描述符，在标签内显示字体名称、字形数、多字号示例及集合切换；使用文件描述符直接渲染，不向系统安装字体。
 
 ## SQLite
 
-`services/sqlite` 识别主库及 sidecar，使用固定缓冲区复制有界主库/WAL/journal 快照并检查源文件状态；源 SHM 不复制，副本自行重建。`native/SQLitePreview.swift` 使用系统 SQLite3 在串行后台队列恢复临时副本、启用 query_only，并提供表/视图选择、结构与分页表格；所有查询由应用生成，关闭扩展加载。副本活到预览进程退出，原文件不写入。独立 WAL/SHM 缺少主库时只显示有界文件信息。
+`services/sqlite` 识别主库及 sidecar，使用固定缓冲区复制有界主库/WAL/journal 快照并检查源文件状态；源 SHM 不复制，副本自行重建。`native/SQLitePreview.swift` 使用系统 SQLite3 在串行后台队列恢复临时副本、启用 query_only，并提供表/视图选择、结构与分页表格；所有查询由应用生成，关闭扩展加载。副本保留到原生视图关闭、串行队列中的有界查询结束，原文件不写入。独立 WAL/SHM 缺少主库时只显示有界文件信息。
 
-Swift 入口在构建输出目录中命名为 main.swift，与独立原生视图文件共同编译。数据库、字体和文档均复用原生预览进程的唤回和关闭机制。
+`native/PreviewMain.swift` 仅是默认文件类型设置辅助程序的入口，由 services 构建；文档预览不使用此进程。
 
 ## 目录与仓库发现
 
@@ -86,7 +90,7 @@ Repositories、Changes、Graph 是同级可调高度面板。Graph 默认收起�
 
 Info.plist 声明支持的文档后缀，注册为候选查看器。应用接收系统 file URL 事件，解码路径并优先复用空白窗口；文件读取仍由原有后台加载任务负责。
 
-Glim 菜单中的 Default File Types 打开独立设置辅助窗口，显示各格式当前默认应用。仅在用户选择并确认后，通过 Launch Services 修改选定 UTI 的默认处理程序；记录旧处理程序供恢复，恢复时不覆盖用户已经改为其他应用的设置。设置窗口与预览窗口使用不同 bundle identifier。窗口不会自动将所有格式关联到 Glim。
+Glim 菜单中的 Default File Types 打开独立设置辅助窗口，显示各格式当前默认应用。仅在用户选择并确认后，通过 Launch Services 修改选定 UTI 的默认处理程序；记录旧处理程序供恢复，恢复时不覆盖用户已经改为其他应用的设置。设置辅助程序保留独立 bundle identifier。窗口不会自动将所有格式关联到 Glim。
 
 ## 品牌与偏好
 
@@ -114,3 +118,14 @@ CSV 由 services/csv 在后台解析带引号、转义与跨行字段；reader/c
 `services/text_formats` 将 AsciiDoc、Org、RST、字幕和地理坐标投影到基础 Markdown 阅读视图，源码编辑器保留原始内容。D2、Pikchr、Vega 文件投影为专用图表块，复用已有后台渲染任务与隔离 WebView；官方 D2/Pikchr WASM 和 Vega 资源内嵌，Vega 外部加载禁用。TSV 复用 CSV 虚拟表格，JSON5 与逐行 JSON 复用 JSON 树。
 
 首轮不还原复杂 AsciiDoc/Org/RST 排版、ODF 样式或 EPUB 阅读顺序，不提供地图底图、网格交互旋转、字体安装或归档提取。D2 导入仅使用当前文档的内存文件系统；图表外部资源不加载。
+
+
+## 应用更新
+
+`glim-core/update` 定义更新快照、模式、退出检查与会话描述，不做 I/O。`glim-services/updates` 在后台校验当前签名 bundle、生成带摘要的完整恢复归档、原子写入与一次性读取会话记录。会话保存文件/播放列表/diff/commit 标签的顺序与模式，不包含未保存正文。
+
+`app/updates` 持有单一 GPUI 更新实体、轮询任务和准备/退出任务，所有窗口共用状态；`views/updates` 只展示已缓存状态，关于页、菜单和标题栏连接到同一个居中更新窗口，复用“关于”的标题栏与窗口生命周期；重复打开会激活已有窗口，关闭窗口不取消后台更新。安装前检查所有工作台，锁定编辑及 Git 写入、等待已有偏好写入、验证备份并持久化会话后，才允许原生安装 continuation。准备期间新到达的 Finder 打开请求撤回退出授权，通过世代编号使旧回调失效并保留文件请求；队列等待会话恢复完成再打开新文件。
+
+macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Updater.swift` 的 Sparkle 控制器和自定义 user driver。FFI 生命周期限定在主线程，独立模块允许必要的 unsafe。Sparkle 管理网络、签名验证、安装组件与应用替换。原生桥接为固定 GPUI delegate 增加缺少的可取消退出方法，不替换 delegate；没有匹配的安全退出契约时关闭自动更新。普通未配置构建、Windows 构建只提供手动下载。
+
+更新包与 feed 同时要求 EdDSA 签名，公钥内置于发行包，私钥仅用于受保护的发布任务。SDK 下载脚本固定版本及 SHA-256；打包保留 framework 符号链接、辅助程序权限与正确的嵌套签名顺序。配置、验收和发布步骤见[构建与发布](releasing.md#自动更新配置)。

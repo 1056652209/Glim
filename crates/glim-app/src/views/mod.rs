@@ -8,3 +8,5 @@ pub mod workspace;
 
 mod file_icons;
 mod split_diff;
+
+pub(crate) mod updates;

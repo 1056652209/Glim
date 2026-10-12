@@ -4,6 +4,7 @@ mod git;
 mod header;
 mod loading;
 mod render;
+mod session;
 mod tabs;
 mod updates;
 
@@ -51,7 +52,10 @@ pub struct Workspace {
     last_scan_warning: Option<String>,
     loading: bool,
     load_task: Option<Task<()>>,
+    incoming_files: std::collections::VecDeque<PathBuf>,
+    incoming_file_task: Option<Task<()>>,
     picker_task: Option<Task<()>>,
+    picking: bool,
     save_task: Option<Task<()>>,
     saving: Option<EntityId>,
     git_busy: bool,
@@ -90,6 +94,9 @@ impl Workspace {
         });
         let weak = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
+            if crate::app::updates::intercept_last_window_close(cx) {
+                return false;
+            }
             weak.update(cx, |v, cx| {
                 if v.has_unsaved() || v.is_saving() {
                     v.request_close_window(window, cx);
@@ -134,7 +141,10 @@ impl Workspace {
             last_scan_warning: None,
             loading: false,
             load_task: None,
+            incoming_files: std::collections::VecDeque::new(),
+            incoming_file_task: None,
             picker_task: None,
+            picking: false,
             save_task: None,
             saving: None,
             git_busy: false,

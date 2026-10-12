@@ -1,0 +1,110 @@
+name: Prepare signed release draft
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Built stable tag, e.g. v0.1.12'
+        required: true
+        type: string
+      notes:
+        description: 'Equivalent release notes under ## English and ## 中文 headings'
+        required: true
+        type: string
+      bootstrap:
+        description: 'First updater release only: allow the previous release to have no appcast'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: signed-release
+  cancel-in-progress: false
+jobs:
+  draft:
+    runs-on: macos-15
+    environment: release
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_NOTES: ${{ inputs.notes }}
+      BOOTSTRAP: ${{ inputs.bootstrap }}
+      GLIM_UPDATE_PUBLIC_KEY: ${{ vars.GLIM_UPDATE_PUBLIC_KEY }}
+    steps:
+      - name: Validate tag
+        run: |
+          python3 - <<'PY'
+          import os, re
+          assert re.fullmatch(r'v\d+\.\d+\.\d+', os.environ['RELEASE_TAG']), 'Invalid stable tag'
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Download successful builds for this exact commit
+        run: |
+          commit=$(git rev-parse HEAD)
+          run_id=$(gh run list --workflow ci.yml --commit "$commit" --status success --json databaseId --jq '.[0].databaseId')
+          [[ -n "$run_id" && "$run_id" != null ]]
+          gh run download "$run_id" --dir dist/artifacts
+          mkdir -p dist/release
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          for path in Path('dist/artifacts').rglob('*'):
+              if path.is_file():
+                  target = Path('dist/release') / path.name
+                  assert not target.exists(), 'Duplicate artifact name'
+                  shutil.copy2(path, target)
+          PY
+      - name: Prepare signing tools and notes
+        run: |
+          scripts/fetch-sparkle.sh
+          echo "GLIM_SPARKLE_DIR=$PWD/target/sparkle/2.10.0" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          Path('dist/release-notes.md').write_text(os.environ['RELEASE_NOTES'])
+          PY
+      - name: Sign and verify feeds
+        env:
+          GLIM_UPDATE_PRIVATE_KEY: ${{ secrets.GLIM_UPDATE_PRIVATE_KEY }}
+        run: |
+          key_file=$(mktemp)
+          trap 'rm -f "$key_file"' EXIT
+          export GLIM_UPDATE_PRIVATE_KEY_FILE="$key_file"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          key = os.environ['GLIM_UPDATE_PRIVATE_KEY']
+          assert key, 'Release signing key is not configured'
+          path = Path(os.environ['GLIM_UPDATE_PRIVATE_KEY_FILE'])
+          path.chmod(0o600)
+          path.write_text(key)
+          PY
+          args=()
+          if [[ "$BOOTSTRAP" == true ]]; then args+=(--bootstrap); fi
+          python3 scripts/create-update-feeds.py --archives dist/release --tag "$RELEASE_TAG" --notes dist/release-notes.md "${args[@]}"
+      - name: Upload a draft; never modify a published release
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft > dist/existing-release.json 2>/dev/null; then
+            python3 - <<'PY'
+          import json
+          assert json.load(open('dist/existing-release.json'))['isDraft'], 'Published release is immutable'
+          PY
+            gh release edit "$RELEASE_TAG" --notes-file dist/release-notes.md
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "Glim $RELEASE_TAG" --notes-file dist/release-notes.md
+          fi
+          gh release upload "$RELEASE_TAG" dist/release/*
+      - name: Verify uploaded bytes
+        run: |
+          gh release download "$RELEASE_TAG" --dir dist/roundtrip
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          for source in Path('dist/release').iterdir():
+              uploaded = Path('dist/roundtrip') / source.name
+              assert hashlib.sha256(source.read_bytes()).digest() == hashlib.sha256(uploaded.read_bytes()).digest(), source.name
+          PY

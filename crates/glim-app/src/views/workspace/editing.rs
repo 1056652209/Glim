@@ -55,7 +55,12 @@ impl Workspace {
         }
     }
 
-    fn save_editor(&mut self, id: EntityId, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn save_editor(
+        &mut self,
+        id: EntityId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.git_edit_locked {
             return;
         }
@@ -171,6 +176,9 @@ impl Workspace {
         self.confirm_discard(DiscardAction::Quit, window, cx);
     }
     pub(super) fn request_close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if crate::app::updates::intercept_last_window_close(cx) {
+            return;
+        }
         if self.has_unsaved() || self.is_saving() {
             self.confirm_discard(DiscardAction::CloseWindow, window, cx);
         } else {

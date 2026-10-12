@@ -1,78 +1,143 @@
 use gpui_kit::{
     component::{
-        ActiveTheme,
+        ActiveTheme, WindowExt,
         button::{Button, ButtonVariants},
         v_flex,
     },
     prelude::FluentBuilder,
     *,
 };
-use std::{
-    path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::path::PathBuf;
 
 pub(super) struct NativeReader {
     path: PathBuf,
     folder: bool,
     shuffle: bool,
+    autoplay: bool,
     task: Option<Task<()>>,
-    cancelled: Arc<AtomicBool>,
-    show: Arc<AtomicBool>,
+    // Drop the native controller before its prepared data (including SQLite snapshots).
+    #[cfg(target_os = "macos")]
+    preview: Option<super::native_bridge::NativePreview>,
+    prepared: Option<glim_services::preview::PreparedPreview>,
     error: Option<String>,
+    obscured: bool,
 }
 impl NativeReader {
     pub fn new(path: PathBuf, folder: bool, shuffle: bool, cx: &mut Context<Self>) -> Self {
+        Self::with_playback(path, folder, shuffle, true, cx)
+    }
+    pub fn new_paused(path: PathBuf, folder: bool, shuffle: bool, cx: &mut Context<Self>) -> Self {
+        Self::with_playback(path, folder, shuffle, false, cx)
+    }
+    pub fn playlist_shuffle(&self) -> Option<bool> {
+        self.folder.then_some(self.shuffle)
+    }
+    fn with_playback(
+        path: PathBuf,
+        folder: bool,
+        shuffle: bool,
+        autoplay: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut view = Self {
             path,
             folder,
             shuffle,
+            autoplay,
             task: None,
-            cancelled: Arc::new(AtomicBool::new(false)),
-            show: Arc::new(AtomicBool::new(false)),
+            #[cfg(target_os = "macos")]
+            preview: None,
+            prepared: None,
             error: None,
+            obscured: false,
         };
         view.open(cx);
         view
     }
     pub(super) fn open(&mut self, cx: &mut Context<Self>) {
-        if self.task.is_some() {
-            self.show.store(true, Ordering::Release);
+        if self.task.is_some() || self.prepared.is_some() {
             return;
         }
-        self.show.store(false, Ordering::Release);
         self.error = None;
         let path = self.path.clone();
         let folder = self.folder;
         let shuffle = self.shuffle;
-        let cancelled = self.cancelled.clone();
-        let show = self.show.clone();
+        let autoplay = self.autoplay;
         let work = cx.background_executor().spawn(async move {
-            glim_services::preview::open(&path, folder, shuffle, cancelled, show)
+            glim_services::preview::prepare(&path, folder, shuffle, autoplay)
         });
         self.task = Some(cx.spawn(async move |view, cx| {
             let result = work.await;
             let _ = view.update(cx, |v, cx| {
                 v.task = None;
-                if let Err(e) = result {
-                    v.error = Some(format!("{e:#}"));
+                match result {
+                    Ok(prepared) => {
+                        #[cfg(target_os = "macos")]
+                        {
+                            v.preview = Some(super::native_bridge::NativePreview::new(
+                                &prepared.configuration,
+                            ));
+                            v.prepared = Some(prepared);
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            let _ = prepared;
+                            v.error = Some("Native preview requires macOS".into());
+                        }
+                    }
+                    Err(e) => v.error = Some(format!("{e:#}")),
                 }
                 cx.notify();
             });
         }));
         cx.notify();
     }
-}
-impl Drop for NativeReader {
-    fn drop(&mut self) {
-        self.cancelled.store(true, Ordering::Release);
+    pub(super) fn hide(&self) {
+        #[cfg(target_os = "macos")]
+        if let Some(preview) = &self.preview {
+            preview.hide();
+        }
     }
 }
 impl Render for NativeReader {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Native views sit above GPUI's Metal surface. Hide them while a toolkit
+        // menu/dialog is open so the overlay remains visible and clickable.
+        let view = cx.entity().downgrade();
+        window.on_next_frame(move |window, cx| {
+            let obscured = window.has_active_dialog(cx)
+                || window.has_active_sheet(cx)
+                || window
+                    .context_stack()
+                    .iter()
+                    .any(|context| context.contains("PopupMenu"));
+            let _ = view.update(cx, |view, cx| {
+                if view.obscured != obscured {
+                    view.obscured = obscured;
+                    if obscured {
+                        view.hide();
+                    }
+                    cx.notify();
+                }
+            });
+        });
+        if self.obscured {
+            return div().size_full().into_any_element();
+        }
+        #[cfg(target_os = "macos")]
+        if self.preview.is_some() {
+            let view = cx.entity();
+            return canvas(
+                move |bounds, window, cx| {
+                    if let Some(preview) = &view.read(cx).preview {
+                        preview.layout(bounds, window);
+                    }
+                },
+                |_, _, _, _| {},
+            )
+            .size_full()
+            .into_any_element();
+        }
         v_flex()
             .size_full()
             .items_center()
@@ -88,28 +153,18 @@ impl Render for NativeReader {
                         .into_owned(),
                 ),
             )
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(if self.task.is_some() {
-                        "Open in the Glim preview window. Close this tab to close the preview."
-                    } else {
-                        "Documents and media use a native preview window."
-                    }),
-            )
+            .when(self.task.is_some(), |view| {
+                view.child(glim_services::locale::tr("Loading preview…"))
+            })
             .when_some(self.error.clone(), |view, error| {
                 view.child(div().text_sm().text_color(cx.theme().danger).child(error))
+                    .child(
+                        Button::new("retry-native-preview")
+                            .primary()
+                            .label(glim_services::locale::tr("Retry"))
+                            .on_click(cx.listener(|v, _, _, cx| v.open(cx))),
+                    )
             })
-            .child(
-                Button::new("open-native-preview")
-                    .primary()
-                    .label(if self.task.is_some() {
-                        "Show Preview"
-                    } else {
-                        "Open Preview"
-                    })
-                    .on_click(cx.listener(|v, _, _, cx| v.open(cx))),
-            )
+            .into_any_element()
     }
 }

@@ -6,6 +6,8 @@ mod lexical;
 mod markup;
 mod media;
 mod native;
+#[cfg(target_os = "macos")]
+mod native_bridge;
 mod paged;
 mod source;
 use diff::DiffReader;
@@ -123,6 +125,15 @@ impl Reader {
         }
     }
     pub fn from_native(path: PathBuf, folder: bool, shuffle: bool, cx: &mut App) -> Self {
+        Self::from_native_playback(path, folder, shuffle, true, cx)
+    }
+    fn from_native_playback(
+        path: PathBuf,
+        folder: bool,
+        shuffle: bool,
+        autoplay: bool,
+        cx: &mut App,
+    ) -> Self {
         Self {
             repository_root: None,
             snapshot: "native-preview".into(),
@@ -134,9 +145,46 @@ impl Reader {
             commit_file: None,
             json: None,
             csv: None,
-            renderer: Renderer::Native(
-                cx.new(|cx| native::NativeReader::new(path, folder, shuffle, cx)),
-            ),
+            renderer: Renderer::Native(cx.new(|cx| {
+                if autoplay {
+                    native::NativeReader::new(path, folder, shuffle, cx)
+                } else {
+                    native::NativeReader::new_paused(path, folder, shuffle, cx)
+                }
+            })),
+        }
+    }
+
+    pub fn from_native_paused(path: PathBuf, folder: bool, shuffle: bool, cx: &mut App) -> Self {
+        Self::from_native_playback(path, folder, shuffle, false, cx)
+    }
+    pub(crate) fn session_tab(&self, cx: &App) -> glim_core::update::SessionTab {
+        use glim_core::update::SessionTab;
+        if let (Some(root), Some(commit)) = (&self.repository_root, &self.commit_id) {
+            return SessionTab::Commit {
+                root: root.clone(),
+                commit: commit.clone(),
+                file: self.commit_file.clone(),
+            };
+        }
+        if let (Some(root), Some(change)) = (&self.repository_root, &self.diff) {
+            return SessionTab::Diff {
+                root: root.clone(),
+                change: change.clone(),
+                side_by_side: self.side_by_side(),
+            };
+        }
+        if let Renderer::Native(native) = &self.renderer
+            && let Some(shuffle) = native.read(cx).playlist_shuffle()
+        {
+            return SessionTab::Playlist {
+                path: self.path.clone(),
+                shuffle,
+            };
+        }
+        SessionTab::File {
+            path: self.path.clone(),
+            preview: self.toggle_label() == "Source",
         }
     }
 
@@ -322,6 +370,12 @@ impl Reader {
             renderer,
         }
     }
+    pub fn hide_native(&self, cx: &App) {
+        if let Renderer::Native(view) = &self.renderer {
+            view.read(cx).hide();
+        }
+    }
+
     pub fn reveal_native(&self, cx: &mut App) -> bool {
         if let Renderer::Native(view) = &self.renderer {
             view.update(cx, |v, cx| v.open(cx));

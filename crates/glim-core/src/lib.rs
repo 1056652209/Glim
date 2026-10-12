@@ -4,6 +4,7 @@ mod diff;
 mod document;
 mod git_management;
 pub mod split_diff;
+pub mod update;
 mod workspace;
 
 pub use diff::{DiffSpan, changed_lines, commit_content, diff_content};

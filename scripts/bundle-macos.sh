@@ -17,6 +17,12 @@ esac
 if [[ -n "$build_target" ]]; then
     cargo_args+=(--target "$build_target")
 fi
+if [[ "${GLIM_ENABLE_UPDATER:-0}" == 1 ]]; then
+    : "${GLIM_UPDATE_PUBLIC_KEY:?Set the release Ed25519 public key before enabling updates}"
+    export GLIM_SPARKLE_DIR="${GLIM_SPARKLE_DIR:-$PWD/target/sparkle/2.10.0}"
+    scripts/fetch-sparkle.sh >/dev/null
+    cargo_args+=(--features macos-updater)
+fi
 cargo "${cargo_args[@]}"
 # Respect Cargo target-dir overrides without assuming a checkout-local target directory.
 target_dir="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
@@ -32,5 +38,11 @@ renderer_dir="$bundle_dir/Contents/Helpers/GlimRenderer.app"
 mkdir -p "$renderer_dir/Contents/MacOS"
 cp "$target_dir/$build_profile/glim" "$renderer_dir/Contents/MacOS/glim-renderer"
 cp assets/macos/RendererInfo.plist "$renderer_dir/Contents/Info.plist"
-codesign --force --sign - --timestamp=none "$renderer_dir"
+if [[ "${GLIM_ENABLE_UPDATER:-0}" == 1 ]]; then
+    mkdir -p "$bundle_dir/Contents/Frameworks"
+    ditto "$GLIM_SPARKLE_DIR/Sparkle.framework" "$bundle_dir/Contents/Frameworks/Sparkle.framework"
+    cp "$GLIM_SPARKLE_DIR/LICENSE" "$bundle_dir/Contents/Resources/Sparkle-LICENSE.txt"
+fi
+python3 scripts/configure-updater.py "$bundle_dir"
+python3 scripts/sign-macos.py "$bundle_dir"
 printf 'Created %s\n' "$bundle_dir"

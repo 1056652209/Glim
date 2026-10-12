@@ -18,7 +18,6 @@ version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$relea
 cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; d=json.load(sys.stdin); v=sys.argv[1]; assert all(p["version"] == v for p in d["packages"]), "Bundle/Cargo version mismatch"' "$version"
 [[ "$(lipo -archs "$release_bundle/Contents/MacOS/glim")" == "$release_arch" ]]
 # Ad-hoc signing provides local integrity, not Developer ID trust or notarization.
-codesign --force --sign - --timestamp=none "$release_bundle"
 codesign --verify --deep --strict "$release_bundle"
 plutil -lint "$release_bundle/Contents/Info.plist"
 dmg_name="Glim-$version-macos-$release_arch.dmg"

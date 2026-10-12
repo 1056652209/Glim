@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -7,7 +8,7 @@ pub struct DirectoryEntry {
     pub is_symlink: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DiffScope {
     Worktree,
     Index,
@@ -27,7 +28,7 @@ impl DiffScope {
 }
 
 /// Paths are relative to the repository root, including for linked worktrees.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitChange {
     pub path: PathBuf,
     pub original_path: Option<PathBuf>,

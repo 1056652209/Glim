@@ -10,6 +10,9 @@ repository.workspace = true
 name = "glim"
 path = "src/main.rs"
 
+[features]
+macos-updater = []
+
 [dependencies]
 glim-core.workspace = true
 glim-services.workspace = true
@@ -17,6 +20,9 @@ gpui-kit.workspace = true
 anyhow.workspace = true
 url = "2"
 serde_json = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+raw-window-handle = "0.6"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 wry = { version = "=0.57.0", default-features = false, features = ["os-webview"] }
@@ -26,5 +32,10 @@ tao = { version = "=0.34.5", default-features = false, features = ["rwh_06"] }
 gpui-kit = { workspace = true, features = ["test-support"] }
 tempfile = "3"
 
-[lints]
-workspace = true
+# Unsafe is confined to the main-thread native view and updater bridges.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"

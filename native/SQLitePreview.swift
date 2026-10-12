@@ -17,6 +17,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
     private var offset = 0
     private var more = false
     private var busy = false
+    private var closed = false
     private let pageSize = 500
 
     init(path: String?, information: String) {
@@ -51,7 +52,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
                 let result = try query("SELECT name, COALESCE(sql, '') FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name LIMIT 5001", limit: 5001, textLimit: 16384)
                 let values = result.rows.prefix(5000).map { (name: $0[0], sql: $0[1]) }
                 DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
+                    guard let self = self, !self.closed else { return }
                     self.tables = values
                     self.picker.addItems(withTitles: values.map { $0.name })
                     self.status.stringValue = values.isEmpty ? "No user tables or views." : "\(values.count) tables / views"
@@ -60,6 +61,13 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
                     if !values.isEmpty { self.loadPage() }
                 }
             } catch { fail(error.localizedDescription) }
+        }
+    }
+    func close() {
+        closed = true
+        // Drain the bounded queries before Rust removes the private snapshot.
+        queue.sync {
+            if let database = database { sqlite3_close(database); self.database = nil }
         }
     }
     deinit { if let database = database { sqlite3_close(database) } }
@@ -117,7 +125,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
     @objc func previousPage() { offset = max(0, offset - pageSize); loadPage() }
     @objc func nextPage() { offset += pageSize; loadPage() }
     private func loadPage() {
-        guard !busy, tables.indices.contains(picker.indexOfSelectedItem) else { return }
+        guard !closed, !busy, tables.indices.contains(picker.indexOfSelectedItem) else { return }
         let name = tables[picker.indexOfSelectedItem].name.replacingOccurrences(of: "\"", with: "\"\"")
         let schema = structure.state == .on
         let queryText = schema ? "PRAGMA table_xinfo(\"\(name)\")" : "SELECT * FROM \"\(name)\" LIMIT \(pageSize + 1) OFFSET \(offset)"
@@ -126,7 +134,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
             do {
                 let result = try query(queryText, limit: schema ? 256 : pageSize + 1)
                 DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
+                    guard let self = self, !self.closed else { return }
                     self.more = !schema && result.rows.count > self.pageSize
                     self.rows = Array(result.rows.prefix(schema ? 256 : self.pageSize))
                     for column in self.grid.tableColumns { self.grid.removeTableColumn(column) }

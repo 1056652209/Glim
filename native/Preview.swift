@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 import CoreServices
 import CoreText
 
-struct Playlist: Decodable { let files: [String]; let shuffle: Bool; let office: Bool?; let associations: String?; let font: Bool?; let sqlite: String?; let sqliteInfo: String?; let spreadsheet: String?; let language: String?; let localizations: [String: String]? }
+struct Playlist: Decodable { let files: [String]; let shuffle: Bool; let autoplay: Bool?; let office: Bool?; let associations: String?; let font: Bool?; let sqlite: String?; let sqliteInfo: String?; let spreadsheet: String?; let language: String?; let localizations: [String: String]? }
 
 var nativeTranslations: [String: String] = [:]
 func L(_ text: String) -> String { nativeTranslations[text] ?? text }
@@ -326,10 +326,31 @@ final class AudioBackdrop: NSView {
     }
 }
 
-final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
-    var window: NSWindow!
-    var associationWindow: AssociationWindow?
+final class NativePreviewHost: NSView {
+    weak var gpuiView: NSView?
+    private var originalAccessibilityChildren: [Any]?
+
+    func updateAccessibility() {
+        guard let window = window else { return }
+        if isHidden {
+            if let original = originalAccessibilityChildren {
+                window.setAccessibilityChildren(original)
+                originalAccessibilityChildren = nil
+            }
+        } else {
+            let original = (window.accessibilityChildren() ?? []).filter { !($0 is NativePreviewHost) }
+            originalAccessibilityChildren = original
+            window.setAccessibilityChildren(original + [self])
+        }
+        NSAccessibility.post(element: window, notification: .layoutChanged)
+    }
+}
+
+final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    var closed = false
+    let host = NativePreviewHost(frame: NSRect(x: 0, y: 0, width: 1000, height: 740))
     let player = AVPlayer()
+    var pendingPlayback = false
     var playbackObserver: Any?
     var playbackStateObserver: NSKeyValueObservation?
     let playerView = AVPlayerView()
@@ -352,139 +373,121 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
     func button(_ title: String, _ action: Selector) -> NSButton {
         NSButton(title: title, target: self, action: action)
     }
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
-            let playlist = try JSONDecoder().decode(Playlist.self, from: data)
-            nativeTranslations = playlist.localizations ?? [:]
-            if let menu = NSApp.mainMenu { localizeMenu(menu) }
-            if let path = playlist.associations {
-                associationWindow = try AssociationWindow(bundleURL: URL(fileURLWithPath: path))
-                window = associationWindow?.window
-                return
+    // Called on the application main thread, once per persistent reader tab.
+    func load(_ playlist: Playlist) throws {
+        nativeTranslations = playlist.localizations ?? [:]
+        host.setAccessibilityElement(true)
+        host.setAccessibilityRole(.group)
+        host.setAccessibilityLabel(playlist.files.first.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Preview")
+        urls = playlist.files.map { URL(fileURLWithPath: $0) }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        if playlist.shuffle { urls.shuffle() }
+        guard !urls.isEmpty else { throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "No media files found."]) }
+        pdf = urls.count == 1 && urls[0].pathExtension.lowercased() == "pdf"
+        if let info = playlist.sqliteInfo {
+            let preview = SQLitePreview(path: playlist.sqlite, information: info); sqlitePreview = preview
+            preview.view.frame = host.bounds
+            preview.view.autoresizingMask = [.width, .height]
+            host.addSubview(preview.view)
+            return
+        }
+        if playlist.font == true {
+            let preview = FontPreview(url: urls[0]); fontPreview = preview
+            preview.view.frame = host.bounds
+            preview.view.autoresizingMask = [.width, .height]
+            host.addSubview(preview.view)
+            return
+        }
+        if playlist.office == true {
+            showOffice(urls[0], spreadsheet: playlist.spreadsheet)
+            return
+        }
+        let content = NSStackView()
+        content.orientation = .vertical
+        content.spacing = 0
+        content.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: host.leadingAnchor), content.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            content.topAnchor.constraint(equalTo: host.topAnchor), content.bottomAnchor.constraint(equalTo: host.bottomAnchor)
+        ])
+        titleLabel.lineBreakMode = .byTruncatingMiddle
+        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        detailLabel.textColor = .secondaryLabelColor
+        let toolbar = NSStackView()
+        toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        toolbar.addArrangedSubview(button(L("Previous"), #selector(previous)))
+        toolbar.addArrangedSubview(button(L("Next"), #selector(next)))
+        if pdf {
+            toolbar.addArrangedSubview(button("−", #selector(zoomOut)))
+            toolbar.addArrangedSubview(button("+", #selector(zoomIn)))
+            toolbar.addArrangedSubview(button(L("Fit"), #selector(fit)))
+        } else {
+            toolbar.addArrangedSubview(button(L("Play / Pause"), #selector(togglePlay)))
+        }
+        toolbar.addArrangedSubview(titleLabel)
+        toolbar.addArrangedSubview(detailLabel)
+        content.addArrangedSubview(toolbar)
+        toolbar.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+        if pdf {
+            guard let document = PDFDocument(url: urls[0]) else { throw NSError(domain: "Glim", code: 2, userInfo: [NSLocalizedDescriptionKey: "This PDF could not be opened."]) }
+            if document.isLocked {
+                let alert = NSAlert(); alert.messageText = L("PDF password"); alert.addButton(withTitle: L("Open")); alert.addButton(withTitle: L("Cancel"))
+                let password = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24)); alert.accessoryView = password
+                guard alert.runModal() == .alertFirstButtonReturn && document.unlock(withPassword: password.stringValue) else { throw NSError(domain: "Glim", code: 3, userInfo: [NSLocalizedDescriptionKey: "PDF was not unlocked."]) }
             }
-            urls = playlist.files.map { URL(fileURLWithPath: $0) }
-                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-            if playlist.shuffle { urls.shuffle() }
-            guard !urls.isEmpty else { throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "No media files found."]) }
-            pdf = urls.count == 1 && urls[0].pathExtension.lowercased() == "pdf"
-            window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 740), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            window.title = "Glim"
-            window.minSize = NSSize(width: 640, height: 420)
-            window.delegate = self
-            window.isReleasedWhenClosed = false
-            if let info = playlist.sqliteInfo {
-                let preview = SQLitePreview(path: playlist.sqlite, information: info); sqlitePreview = preview
-                preview.view.frame = window.contentView!.bounds
-                preview.view.autoresizingMask = [.width, .height]
-                window.contentView!.addSubview(preview.view)
-                window.title = "\(urls[0].lastPathComponent) — Glim"
-                window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-                return
+            pdfView.document = document; pdfView.autoScales = true; pdfView.displayMode = .singlePageContinuous
+            content.addArrangedSubview(pdfView)
+            pdfView.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+            NotificationCenter.default.addObserver(self, selector: #selector(pageChanged), name: .PDFViewPageChanged, object: pdfView)
+            titleLabel.stringValue = urls[0].lastPathComponent; pageChanged()
+        } else {
+            playerView.player = player
+            playbackObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0 / 24.0, preferredTimescale: 600), queue: .main) { [weak self] time in
+                guard let self = self, !self.audioBackdrop.isHidden,
+                      self.host.window?.occlusionState.contains(.visible) == true,
+                      !self.host.isHidden,
+                      !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+                let seconds = time.seconds
+                if seconds.isFinite { self.audioBackdrop.motionTime = seconds }
+                self.audioBackdrop.needsDisplay = true
             }
-            if playlist.font == true {
-                let preview = FontPreview(url: urls[0]); fontPreview = preview
-                preview.view.frame = window.contentView!.bounds
-                preview.view.autoresizingMask = [.width, .height]
-                window.contentView!.addSubview(preview.view)
-                window.title = "\(urls[0].lastPathComponent) — Glim"
-                window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-                return
-            }
-            if playlist.office == true {
-                showOffice(urls[0], spreadsheet: playlist.spreadsheet)
-                window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-                return
-            }
-            let content = NSStackView()
-            content.orientation = .vertical
-            content.spacing = 0
-            content.translatesAutoresizingMaskIntoConstraints = false
-            window.contentView!.addSubview(content)
-            NSLayoutConstraint.activate([
-                content.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor), content.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
-                content.topAnchor.constraint(equalTo: window.contentView!.topAnchor), content.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor)
-            ])
-            titleLabel.lineBreakMode = .byTruncatingMiddle
-            titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-            detailLabel.textColor = .secondaryLabelColor
-            let toolbar = NSStackView()
-            toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
-            toolbar.addArrangedSubview(button(L("Previous"), #selector(previous)))
-            toolbar.addArrangedSubview(button(L("Next"), #selector(next)))
-            if pdf {
-                toolbar.addArrangedSubview(button("−", #selector(zoomOut)))
-                toolbar.addArrangedSubview(button("+", #selector(zoomIn)))
-                toolbar.addArrangedSubview(button(L("Fit"), #selector(fit)))
-            } else {
-                toolbar.addArrangedSubview(button(L("Play / Pause"), #selector(togglePlay)))
-            }
-            toolbar.addArrangedSubview(titleLabel)
-            toolbar.addArrangedSubview(detailLabel)
-            content.addArrangedSubview(toolbar)
-            toolbar.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-            if pdf {
-                guard let document = PDFDocument(url: urls[0]) else { throw NSError(domain: "Glim", code: 2, userInfo: [NSLocalizedDescriptionKey: "This PDF could not be opened."]) }
-                if document.isLocked {
-                    let alert = NSAlert(); alert.messageText = L("PDF password"); alert.addButton(withTitle: L("Open")); alert.addButton(withTitle: L("Cancel"))
-                    let password = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24)); alert.accessoryView = password
-                    guard alert.runModal() == .alertFirstButtonReturn && document.unlock(withPassword: password.stringValue) else { NSApp.terminate(nil); return }
+            playbackStateObserver = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
+                DispatchQueue.main.async {
+                    self?.audioBackdrop.playing = player.timeControlStatus == .playing
+                    self?.audioBackdrop.needsDisplay = true
                 }
-                pdfView.document = document; pdfView.autoScales = true; pdfView.displayMode = .singlePageContinuous
-                content.addArrangedSubview(pdfView)
-                pdfView.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-                NotificationCenter.default.addObserver(self, selector: #selector(pageChanged), name: .PDFViewPageChanged, object: pdfView)
-                titleLabel.stringValue = urls[0].lastPathComponent; pageChanged()
-            } else {
-                playerView.player = player
-                playbackObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0 / 24.0, preferredTimescale: 600), queue: .main) { [weak self] time in
-                    guard let self = self, !self.audioBackdrop.isHidden,
-                          self.window.occlusionState.contains(.visible),
-                          !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-                    let seconds = time.seconds
-                    if seconds.isFinite { self.audioBackdrop.motionTime = seconds }
-                    self.audioBackdrop.needsDisplay = true
-                }
-                playbackStateObserver = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] player, _ in
-                    DispatchQueue.main.async {
-                        self?.audioBackdrop.playing = player.timeControlStatus == .playing
-                        self?.audioBackdrop.needsDisplay = true
-                    }
-                }
-                playerView.controlsStyle = .inline
-                if let overlay = playerView.contentOverlayView {
-                    audioBackdrop.frame = overlay.bounds
-                    audioBackdrop.autoresizingMask = [.width, .height]
-                    audioBackdrop.isHidden = true
-                    audioBackdrop.setAccessibilityElement(true)
-                    audioBackdrop.setAccessibilityRole(.image)
-                    overlay.addSubview(audioBackdrop)
-                }
-                let body = NSStackView(); body.orientation = .horizontal; body.spacing = 0
-                body.addArrangedSubview(playerView)
-                playerView.setContentHuggingPriority(.defaultLow, for: .horizontal)
-                if urls.count > 1 {
-                    let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("file")); column.title = "Playlist"; table.addTableColumn(column)
-                    table.headerView = nil; table.delegate = self; table.dataSource = self; table.rowHeight = 28
-                    let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true
-                    scroll.widthAnchor.constraint(equalToConstant: 240).isActive = true
-                    body.addArrangedSubview(scroll)
-                    table.reloadData()
-                }
-                content.addArrangedSubview(body)
-                body.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-                NotificationCenter.default.addObserver(self, selector: #selector(finished(_:)), name: .AVPlayerItemDidPlayToEndTime, object: nil)
-                NotificationCenter.default.addObserver(self, selector: #selector(playbackFailed(_:)), name: .AVPlayerItemFailedToPlayToEndTime, object: nil)
-                play(0)
             }
-            window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-        } catch {
-            let alert = NSAlert(error: error); alert.runModal(); NSApp.terminate(nil)
+            playerView.controlsStyle = .inline
+            if let overlay = playerView.contentOverlayView {
+                audioBackdrop.frame = overlay.bounds
+                audioBackdrop.autoresizingMask = [.width, .height]
+                audioBackdrop.isHidden = true
+                audioBackdrop.setAccessibilityElement(true)
+                audioBackdrop.setAccessibilityRole(.image)
+                overlay.addSubview(audioBackdrop)
+            }
+            let body = NSStackView(); body.orientation = .horizontal; body.spacing = 0
+            body.addArrangedSubview(playerView)
+            playerView.widthAnchor.constraint(equalTo: body.widthAnchor, constant: urls.count > 1 ? -240 : 0).isActive = true
+            playerView.heightAnchor.constraint(equalTo: body.heightAnchor).isActive = true
+            playerView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            if urls.count > 1 {
+                let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("file")); column.title = "Playlist"; table.addTableColumn(column)
+                table.headerView = nil; table.delegate = self; table.dataSource = self; table.rowHeight = 28
+                let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true
+                scroll.widthAnchor.constraint(equalToConstant: 240).isActive = true
+                body.addArrangedSubview(scroll)
+                table.reloadData()
+            }
+            content.addArrangedSubview(body)
+            body.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+            NotificationCenter.default.addObserver(self, selector: #selector(finished(_:)), name: .AVPlayerItemDidPlayToEndTime, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(playbackFailed(_:)), name: .AVPlayerItemFailedToPlayToEndTime, object: nil)
+            play(0, autoplay: playlist.autoplay != false)
         }
     }
     func showOffice(_ url: URL, spreadsheet: String? = nil) {
-        window.title = "\(url.lastPathComponent) — Glim"
-        let host = window.contentView!
         let toolbar = NSStackView()
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         toolbar.spacing = 12
@@ -541,7 +544,7 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
     }
     @objc func openOfficeExternally() { if let url = urls.first { NSWorkspace.shared.open(url) } }
 
-    func play(_ next: Int) {
+    func play(_ next: Int, autoplay: Bool = true) {
         guard urls.indices.contains(next) else { player.pause(); return }
         token = nil; index = next
         let item = AVPlayerItem(url: urls[index])
@@ -549,7 +552,6 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
         updateAudioArtwork(urls[index], item: item)
         titleLabel.stringValue = urls[index].lastPathComponent
         detailLabel.stringValue = "\(index + 1) / \(urls.count)"
-        window.title = "\(urls[index].lastPathComponent) — Glim"
         if urls.count > 1 {
             table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
             table.scrollRowToVisible(index)
@@ -560,7 +562,14 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
                 if item.status == .failed { self.skipFailed(item) }
             }
         }
-        player.play()
+        pendingPlayback = autoplay
+        resumePendingPlayback()
+    }
+    func resumePendingPlayback() {
+        if pendingPlayback && !host.isHidden {
+            pendingPlayback = false
+            player.play()
+        }
     }
     func updateAudioArtwork(_ url: URL, item: AVPlayerItem) {
         metadataAsset?.cancelLoading()
@@ -620,43 +629,20 @@ final class PreviewApp: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTab
         let label = NSTextField(labelWithString: urls[row].lastPathComponent); label.lineBreakMode = .byTruncatingMiddle; label.toolTip = urls[row].lastPathComponent; return label
     }
     func tableViewSelectionDidChange(_ notification: Notification) { if table.selectedRow >= 0 && table.selectedRow != index { play(table.selectedRow) } }
-    func windowWillClose(_ notification: Notification) {
+    func close() {
+        closed = true
+        NotificationCenter.default.removeObserver(self)
+        sqlitePreview?.close()
+        officeView?.previewItem = nil
+        officeView?.close()
+        spreadsheetView?.stopLoading()
+        if !host.isHidden {
+            host.isHidden = true
+            host.updateAccessibility()
+        }
+        host.removeFromSuperview()
         metadataAsset?.cancelLoading(); token = nil; playbackStateObserver = nil
         if let observer = playbackObserver { player.removeTimeObserver(observer); playbackObserver = nil }
-        player.pause(); player.replaceCurrentItem(with: nil); NSApp.terminate(nil)
-    }
-    func showPreviewWindow() {
-        guard let window = window else { return }
-        NSApp.unhide(nil)
-        if window.isMiniaturized { window.deminiaturize(nil) }
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showPreviewWindow()
-        return true
-    }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
-}
-let app = NSApplication.shared
-app.setActivationPolicy(.regular)
-let delegate = PreviewApp()
-app.delegate = delegate
-FileHandle.standardInput.readabilityHandler = { [weak delegate] handle in
-    let data = handle.availableData
-    if data.isEmpty { handle.readabilityHandler = nil; return }
-    if String(data: data, encoding: .utf8)?.contains("show") == true {
-        DispatchQueue.main.async { delegate?.showPreviewWindow() }
+        player.pause(); player.replaceCurrentItem(with: nil)
     }
 }
-let menu = NSMenu(); let appItem = NSMenuItem(); let appMenu = NSMenu()
-appMenu.addItem(withTitle: L("Quit Glim Preview"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-appItem.submenu = appMenu; menu.addItem(appItem)
-let fileItem = NSMenuItem(); let fileMenu = NSMenu(title: "File")
-fileMenu.addItem(withTitle: L("Close Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-fileItem.submenu = fileMenu; menu.addItem(fileItem)
-let editItem = NSMenuItem(); let editMenu = NSMenu(title: "Edit")
-editMenu.addItem(withTitle: L("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-editMenu.addItem(withTitle: L("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-editItem.submenu = editMenu; menu.addItem(editItem); app.mainMenu = menu
-app.run()

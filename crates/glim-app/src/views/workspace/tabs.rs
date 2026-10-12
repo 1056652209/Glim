@@ -24,6 +24,7 @@ impl Workspace {
         if self.tabs.get(index).is_some() {
             self.load_task = None;
             self.loading = false;
+            self.load_incoming_file(window, cx);
             self.active = Some(index);
             window.focus(&self.focus, cx);
             self.tab_scroll.scroll_to_item(index);
@@ -72,10 +73,16 @@ impl Workspace {
         }
         let active = self.active_reader().map(super::header::Target::from_reader);
         let previous = self.active.unwrap_or(0);
-        self.tabs
-            .retain(|r| !targets.contains(&super::header::Target::from_reader(r)));
+        self.tabs.retain(|r| {
+            let keep = !targets.contains(&super::header::Target::from_reader(r));
+            if !keep {
+                r.hide_native(cx);
+            }
+            keep
+        });
         self.load_task = None;
         self.loading = false;
+        self.load_incoming_file(window, cx);
         self.active = active
             .and_then(|target| {
                 self.tabs
@@ -154,6 +161,7 @@ impl Workspace {
         }
         self.load_task = None;
         self.loading = false;
+        self.load_incoming_file(window, cx);
         self.active = selection_after_close(self.active, index, self.tabs.len());
         self.tabs.remove(index);
         self.observe_autosave(window, cx);
