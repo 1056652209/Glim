@@ -101,3 +101,7 @@ Folder playlists enumerate only direct child files, at most 10,000, using natura
 `cargo run -p glim-services --example audit_formats --locked -- /path/to/project` samples an explicit format allowlist and prints counts, not private paths or file contents. It is not an exhaustive support audit or a UI test.
 
 See [architecture](architecture.md), [build and release](releasing.md) and [roadmap](TODO.md).
+
+Markdown/HTML remote images load over HTTP(S) in the background, with a 16 MiB response budget and 20-second deadline. Failed downloads or decoding show a visible placeholder. Common picture light/dark candidates follow the theme; unknown media conditions retain the img fallback. SVG does not run scripts or read external resources. Relative local images retain existing path resolution. System curl is required; this is not full browser HTML/CSS compatibility.
+
+Mach-O (including universal), ELF and PE files are recognized by their headers and inspected read-only. The preview shows architecture, word size, byte order, entry point, segments/sections, available dependency names and the first 4 KiB of hex bytes. Inputs are limited to 256 MiB. Programs are never executed or decompiled; malformed and oversized inputs report errors, and dependencies are shown only where the corresponding headers can be parsed.

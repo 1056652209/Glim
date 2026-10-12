@@ -2,6 +2,7 @@ mod about;
 pub mod actions;
 mod assets;
 pub(crate) mod diagram_engine;
+mod image_http;
 pub(crate) mod languages;
 mod shortcuts;
 #[cfg(all(target_os = "macos", feature = "macos-updater"))]
@@ -157,6 +158,8 @@ pub fn run() -> Result<()> {
     let markdown_preview = glim_services::preferences::preview_mode("markdown");
     let diff_side_by_side = glim_services::preferences::diff_side_by_side();
     let application = gpui_kit::application().with_assets(assets::Assets);
+    let image_client = image_http::ImageHttpClient::new(application.background_executor());
+    let application = application.with_http_client(std::sync::Arc::new(image_client));
     let context = std::rc::Rc::new(std::cell::RefCell::new(None::<AsyncApp>));
     let pending = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
     let open_context = context.clone();

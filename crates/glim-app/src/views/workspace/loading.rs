@@ -569,6 +569,9 @@ impl Workspace {
 }
 
 pub(super) fn read_content(path: &std::path::Path) -> anyhow::Result<Content> {
+    if glim_services::executables::supports(path) {
+        return glim_services::executables::read_preview(path).map(Content::Bytes);
+    }
     if glim_services::xmind::supports(path) {
         return glim_services::xmind::read(path).map(Content::XMind);
     }
