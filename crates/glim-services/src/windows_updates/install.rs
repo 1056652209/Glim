@@ -322,7 +322,7 @@ pub fn run_installer(job_path: &Path, key: &str, version: &str, build: u64) -> R
     #[cfg(target_os = "windows")]
     {
         let script = format!(
-            "$glimOldProcess = Get-Process -Id {} -ErrorAction SilentlyContinue; if ($glimOldProcess -and !$glimOldProcess.WaitForExit(120000)) {{ exit 1 }}",
+            "$glimOldProcess = Get-Process -Id {} -ErrorAction SilentlyContinue; if ($glimOldProcess -and !$glimOldProcess.WaitForExit(120000)) {{ exit 1 }}; exit 0",
             job.parent_pid
         );
         let mut command = std::process::Command::new(super::powershell()?);
@@ -629,8 +629,12 @@ mod process_tests {
                 ])
                 .env("GLIM_TEST_UPDATE_JOB", &job_path)
                 .env("GLIM_TEST_UPDATE_KEY", &key)
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
+                .stdout(Stdio::from(
+                    fs::File::create(stage.join("helper-output.txt")).unwrap(),
+                ))
+                .stderr(Stdio::from(
+                    fs::File::create(stage.join("helper-error.txt")).unwrap(),
+                ))
                 .spawn()
                 .unwrap();
             let started = Instant::now();
@@ -662,7 +666,14 @@ mod process_tests {
                 );
                 std::thread::sleep(Duration::from_millis(50));
             };
-            assert_eq!(status.success(), !tamper);
+            assert_eq!(
+                status.success(),
+                !tamper,
+                "helper output: {}\nhelper error: {}\nresult: {}",
+                fs::read_to_string(stage.join("helper-output.txt")).unwrap_or_default(),
+                fs::read_to_string(stage.join("helper-error.txt")).unwrap_or_default(),
+                fs::read_to_string(stage.join("result.json")).unwrap_or_default()
+            );
             assert_eq!(
                 fs::read(target.join("my-book.epub")).unwrap(),
                 b"user content"
