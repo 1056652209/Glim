@@ -7,6 +7,8 @@
   <a href="https://github.com/NeoPanic/Glim/releases"><img src="https://img.shields.io/github/downloads/NeoPanic/Glim/total?style=flat-square&amp;color=268879" alt="Total release downloads" /></a>
   <a href="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml"><img src="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml/badge.svg" alt="Desktop builds" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" /></a>
+  <a href="#download"><img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-268879?style=flat-square" alt="Platforms: macOS and Windows" /></a>
+  <a href="https://github.com/NeoPanic/Glim/stargazers"><img src="https://img.shields.io/github/stars/NeoPanic/Glim?style=social" alt="GitHub stars" /></a>
 </p>
 
 <p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
@@ -65,3 +67,21 @@ Text editing supports up to 32 MiB; larger files open in bounded pages. Optional
 Found a file Glim should open better? [Report a bug](https://github.com/NeoPanic/Glim/issues/new?template=bug_report.yml), [request a format](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml), or [start a discussion](https://github.com/NeoPanic/Glim/discussions). English and Chinese are welcome.
 
 [Contributing](CONTRIBUTING.md) · [Build from source](docs/releasing.md) · [Roadmap](docs/TODO.md) · [Security](SECURITY.md) · [MIT License](LICENSE)
+
+## Contributors
+
+Thanks to everyone helping make Glim better.
+
+<a href="https://github.com/NeoPanic/Glim/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=NeoPanic/Glim" alt="Glim contributors" />
+</a>
+
+## Star history
+
+<a href="https://star-history.com/#NeoPanic/Glim&amp;Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=NeoPanic/Glim&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=NeoPanic/Glim&amp;type=Date" />
+    <img src="https://api.star-history.com/svg?repos=NeoPanic/Glim&amp;type=Date" alt="Glim GitHub star history" width="100%" />
+  </picture>
+</a>
