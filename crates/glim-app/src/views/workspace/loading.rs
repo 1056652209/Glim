@@ -24,6 +24,7 @@ pub(super) enum Content {
     Commit(glim_services::binary::BytePreview, Option<PathBuf>),
     Image(glim_services::media::ImageDocument),
     XMind(glim_services::xmind::MindMap),
+    Book(glim_services::books::Book),
     Native(PathBuf, bool, bool),
     Diff(DiffDocument, PathBuf),
     Unavailable(PathBuf, String),
@@ -353,6 +354,7 @@ impl Workspace {
             Content::Commit(d, file) => Reader::from_commit(d.path, d.text, file, window, cx),
             Content::Image(d) => Reader::from_image(d, window, cx),
             Content::XMind(d) => Reader::from_xmind(d, cx),
+            Content::Book(d) => Reader::from_book(d, window, cx),
             Content::Diff(d, r) => Reader::from_diff(d, &r, window, cx),
             Content::Native(path, folder, shuffle) => {
                 Reader::from_native(path, folder, shuffle, cx)
@@ -571,6 +573,9 @@ impl Workspace {
 pub(super) fn read_content(path: &std::path::Path) -> anyhow::Result<Content> {
     if glim_services::executables::supports(path) {
         return glim_services::executables::read_preview(path).map(Content::Bytes);
+    }
+    if glim_services::books::supports(path) {
+        return glim_services::books::read(path).map(Content::Book);
     }
     if glim_services::xmind::supports(path) {
         return glim_services::xmind::read(path).map(Content::XMind);

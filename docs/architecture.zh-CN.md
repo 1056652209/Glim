@@ -44,7 +44,7 @@ Workspace 管理标签、Explorer/Changes 实体、导航历史及异步加载�
 
 Mermaid、Graphviz、PlantUML、flowchart.js、WaveDrom 和 MathJax 及许可证均内嵌；本地 Salt/Chen 适配器仅覆盖部分语法。禁用图表外部资源、导航和下载，失败时保留源码。引擎维护见 [assets/markdown/README.md](../assets/markdown/README.md)。
 
-`services/formats`、`text_formats` 与 `vector_formats` 提供有界容器目录／文本提取、基础阅读投影和静态网格／位图字体图片，不是完整 EPUB 阅读器，也不执行文档代码。`services/media` 负责有界图片解码。各阅读器预算和边界见[格式与限制](file-format-support.zh-CN.md)。
+`services/formats`、`text_formats` 与 `vector_formats` 提供有界容器目录／文本提取、基础阅读投影和静态网格／位图字体图片，专用电子书阅读由 `services/books` 和 `reader/books` 提供，通用投影不执行文档代码。`services/media` 负责有界图片解码。各阅读器预算和边界见[格式与限制](file-format-support.zh-CN.md)。
 
 `services/xmind` 从有界 ZIP 正文中读取新版 JSON 或旧版 XML，不提取附件；不依赖 UI 的工作表／主题模型包含备注、标签、游离根和关系端点。`reader/xmind` 持有工作表选择、折叠、缩放、滚动和详情；缓存布局，使用 GPUI 主题绘制可见节点／连接。阅读器只读，复用普通加载、刷新及更新会话路径。
 
@@ -89,3 +89,9 @@ macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Upd
 `services/windows_updates` 验证不可变 Release 清单的独立 Ed25519 签名，将 ZIP 地址、SHA-256、版本与 Windows x64 Glim 身份绑定，仅解压和替换便携发行包的四个受管理文件。`manifest` 定义验签协议，`install` 实现有界解压、备份、同卷替换及失败回退；后台 runner 使用系统 HTTPS 下载程序并保留可取消的进程句柄，仅向 UI 共享缓存的更新快照。
 
 应用的 `windows-updater` 可选 feature 将后端接入现有更新弹窗、保存／Git／加载检查及一次性会话记录。复制的 `--install-update` 辅助程序先验证更新包并确认就绪，再等待原进程退出后替换应用；撤回退出授权会取消辅助程序。保留便携目录内其他文件和 AppData 用户偏好，受保护的不可写目录仍需手动更新。正式 Windows 发行构建启用该 feature 并发布签名清单，普通开发构建默认关闭。
+
+## 电子书阅读
+
+`services/books` 读取有界 EPUB 元数据／spine 与 EPUB3 nav 或 EPUB2 NCX、FB2／FB2 ZIP 结构及嵌入插图、自然排序的 CBZ 漫画页。章节在后台加载和净化；拒绝 XML 实体声明、压缩包路径越界、脚本与自动外部资源加载。图片按章节限制编码／解码预算，资源仅保留在内存，不提取到文档目录。
+
+`reader/books` 跨 render 保留章节解析实体、资源图片、焦点／滚动句柄和可取消加载任务。阅读页提供衬线／无衬线字体、字号、行距、页宽、纸张色、目录、章节／翻页导航、书签及位置恢复。偏好通过保留的任务和合并状态缓冲区串行写入；更新退出检查等待阅读偏好写入。`books/preferences` 按内容指纹在应用偏好目录保存书籍状态，不改写原书。

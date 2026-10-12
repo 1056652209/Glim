@@ -13,6 +13,13 @@ fn wrap_path_for(application: &str) -> Result<PathBuf> {
     Ok(base.join(application).join("word-wrap"))
 }
 
+pub(crate) fn directory() -> Result<PathBuf> {
+    Ok(wrap_path_for("Glim")?
+        .parent()
+        .expect("Preference path has a parent")
+        .to_path_buf())
+}
+
 fn wrap_path() -> Result<PathBuf> {
     wrap_path_for("Glim")
 }

@@ -2669,7 +2669,7 @@ dependencies = [
 
 [[package]]
 name = "glim-app"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "anyhow",
  "glim-core",
@@ -2685,14 +2685,14 @@ dependencies = [
 
 [[package]]
 name = "glim-core"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "glim-services"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2700,6 +2700,7 @@ dependencies = [
  "calamine",
  "csv",
  "ed25519-dalek",
+ "encoding_rs",
  "flate2",
  "glim-core",
  "html5ever 0.27.0",
@@ -2712,6 +2713,7 @@ dependencies = [
  "object",
  "quick-xml 0.38.4",
  "resvg 0.45.1",
+ "roxmltree 0.21.1",
  "semver",
  "serde",
  "serde_json",

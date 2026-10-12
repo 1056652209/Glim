@@ -47,7 +47,8 @@ AI 时代的全能文件查看器，一个应用打开多种格式。
 | BDF | 前 64 个位图字形，每个最多 64×64，不安装字体 |
 | ZIP/TAR | 条目名称与大小，标识越界路径，不解压 |
 | GZ/BZ2/XZ | 有界解压 UTF-8 文本，使用只读视图展示 |
-| EPUB/ODT/ODS/ODP | 容器目录与部分章节／文档文本提取；EPUB 目前没有按 spine 排序的整书导航、原始样式、图片或专用阅读控件 |
+| EPUB / FB2 / FB2 ZIP / CBZ | 专用只读书籍阅读器：spine／目录导航、章节或漫画页、插图、字号／行距／纸张控件、书签和位置保存；不复刻出版者 CSS 或 EPUB 固定版式 |
+| ODT/ODS/ODP | 容器目录与部分文档文本提取 |
 | NPY | v1/v2/v3 头部及最多 10000 个基础小端 f8/f4/i8/i4/u1 数值；其他类型保留元数据，不执行 pickle |
 
 XMind 使用统一阅读布局，不还原原始手动位置或样式，也不展示图片、附件、边界和概要。加密或损坏文档显示错误；链接不会自动打开。
@@ -101,3 +102,5 @@ SQLite 复制主库、WAL 与 rollback journal，检查源文件大小／时间�
 `cargo run -p glim-services --example audit_formats --locked -- /path/to/project` 仅对明确的格式白名单抽样读取，输出计数，不输出私有路径或正文。它不是完整格式审计，也不能替代界面测试。
 
 参见[架构](architecture.zh-CN.md)、[构建与发布](releasing.zh-CN.md)和[待完成事项](TODO.zh-CN.md)。
+
+电子书预算：压缩包 256 MiB、20000 个条目、2000 个章节／漫画页，单次章节正文 4 MiB，FB2 文档及图片输入 64 MiB，每章 128 张图及合计 128 MiB 解码插图。只加载本地书内资源，不请求远程图片或执行活动内容。暂不支持 DRM EPUB、MOBI/AZW、PDF 书籍版式、出版者 CSS 的完整还原及 EPUB 固定版式。Space／Page Down 与 Shift-Space／Page Up 按视口翻页，Left／Right 切换章节。阅读偏好与最多 100 个书签单独保存，不改写原书。

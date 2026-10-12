@@ -195,5 +195,16 @@
   "Related topic": "关联主题",
   "Mind maps": "思维导图",
   "Expand topic": "展开主题",
-  "Collapse topic": "折叠主题"
+  "Collapse topic": "折叠主题",
+  "Loading chapter…": "正在加载章节…",
+  "Contents": "目录",
+  "Bookmarks": "书签",
+  "Serif": "衬线字体",
+  "Sans serif": "无衬线字体",
+  "Spacing": "行距",
+  "Page width": "页宽",
+  "Paper": "纸张",
+  "Add bookmark": "添加书签",
+  "Remove bookmark": "移除书签",
+  "Ebooks": "电子书"
 }

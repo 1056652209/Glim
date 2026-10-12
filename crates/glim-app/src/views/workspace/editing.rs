@@ -14,7 +14,10 @@ impl Workspace {
         self.tabs.iter().any(|r| r.is_dirty())
     }
     pub fn is_saving(&self) -> bool {
-        self.saving.is_some() || self.git_busy || self.git_edit_locked
+        self.saving.is_some()
+            || self.git_busy
+            || self.git_edit_locked
+            || self.tabs.iter().any(|r| r.is_persisting_book())
     }
 
     pub(super) fn save_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {

@@ -37,6 +37,8 @@ base64 = "0.22"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
 time = { version = "0.3", features = ["formatting"] }
+roxmltree = "0.21"
+encoding_rs = "0.8"
 
 [lints]
 workspace = true

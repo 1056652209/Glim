@@ -1,3 +1,4 @@
+mod books;
 mod csv;
 mod diagrams;
 mod diff;
@@ -47,6 +48,10 @@ enum Renderer {
     Diff(DiffReader),
     Image(ImageReader),
     XMind(Entity<xmind::XMindReader>),
+    Book(
+        Entity<books::BookReader>,
+        Arc<std::sync::atomic::AtomicBool>,
+    ),
     Native(Entity<native::NativeReader>),
     Unavailable(UnavailableReader),
 }
@@ -357,6 +362,39 @@ impl Reader {
             }),
         }
     }
+    pub fn from_book(
+        document: glim_services::books::Book,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
+        let path = document.path.clone();
+        let fingerprint = document.fingerprint.clone();
+        let view = cx.new(|cx| books::BookReader::new(document, window, cx));
+        let writing = view.read(cx).writing.clone();
+        Self {
+            title: path.display().to_string().into(),
+            path,
+            snapshot: fingerprint,
+            repository_root: None,
+            diff: None,
+            historical: false,
+            commit_id: None,
+            commit_file: None,
+            json: None,
+            csv: None,
+            renderer: Renderer::Book(view, writing),
+        }
+    }
+    pub fn is_persisting_book(&self) -> bool {
+        matches!(&self.renderer, Renderer::Book(_, writing) if writing.load(std::sync::atomic::Ordering::SeqCst))
+    }
+    pub(crate) fn take_book_write(&mut self, cx: &mut App) -> Option<Task<()>> {
+        if let Renderer::Book(view, _) = &self.renderer {
+            view.update(cx, |view, _| view.take_write())
+        } else {
+            None
+        }
+    }
     pub fn from_xmind(document: glim_services::xmind::MindMap, cx: &mut App) -> Self {
         Self {
             title: document.path.display().to_string().into(),
@@ -645,6 +683,7 @@ impl Reader {
             Renderer::Diff(d) => d.render(cx),
             Renderer::Image(i) => i.render(cx),
             Renderer::XMind(v) => v.clone().into_any_element(),
+            Renderer::Book(v, _) => v.clone().into_any_element(),
             Renderer::Native(n) => n.clone().into_any_element(),
             Renderer::Paged(p) => p.clone().into_any_element(),
             Renderer::Unavailable(e) => e.render(cx),

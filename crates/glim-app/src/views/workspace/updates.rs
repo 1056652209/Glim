@@ -134,6 +134,7 @@ impl Workspace {
                         Content::File(d) => view.tabs[index].snapshot == d.text,
                         Content::Image(d) => view.tabs[index].snapshot == d.fingerprint,
                         Content::XMind(d) => view.tabs[index].snapshot == d.fingerprint,
+                        Content::Book(d) => view.tabs[index].snapshot == d.fingerprint,
                         Content::Diff(d, _) => view.tabs[index].snapshot == d.patch,
                         Content::Bytes(d) | Content::Commit(d, _) => {
                             view.tabs[index].snapshot == d.text

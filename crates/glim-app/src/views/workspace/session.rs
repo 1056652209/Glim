@@ -17,7 +17,9 @@ impl Workspace {
     pub(crate) fn update_activity(&self, cx: &App) -> UpdateActivity {
         UpdateActivity {
             dirty: self.has_unsaved(),
-            saving: self.saving.is_some() || !self.save_queue.is_empty(),
+            saving: self.saving.is_some()
+                || !self.save_queue.is_empty()
+                || self.tabs.iter().any(|r| r.is_persisting_book()),
             git: self.git_busy || self.has_running_git(cx),
             loading: self.picking
                 || self.loading
@@ -44,6 +46,12 @@ impl Workspace {
         for id in ids {
             self.save_editor(id, window, cx);
         }
+    }
+    pub(crate) fn take_book_writes(&mut self, cx: &mut App) -> Vec<Task<()>> {
+        self.tabs
+            .iter_mut()
+            .filter_map(|r| r.take_book_write(cx))
+            .collect()
     }
     pub(crate) fn take_preference_write(&mut self) -> Option<Task<()>> {
         self.preference_task.take()

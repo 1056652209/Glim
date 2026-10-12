@@ -35,7 +35,7 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
         ("Shell / SQL", ["sh", "sql"]), ("CSS", ["css"]),
         ("SQLite", ["sqlite", "sqlite3", "db", "db3"]),
         ("Fonts", ["ttf", "otf", "ttc", "otc", "dfont"]),
-        ("PDF", ["pdf"]), ("Mind maps", ["xmind"]), ("Images", ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "tiff"]),
+        ("PDF", ["pdf"]), ("Mind maps", ["xmind"]), ("Ebooks", ["epub", "fb2", "cbz"]), ("Images", ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "tiff"]),
         ("Audio", ["mp3", "m4a", "wav", "aac", "flac", "aiff", "caf"]),
         ("Video", ["mp4", "mov", "m4v"]),
         ("Keynote", ["key"]), ("Pages", ["pages"]), ("Numbers", ["numbers"]),

@@ -25,6 +25,11 @@ gpui_kit::actions!(
         AddFolder,
         SaveFile,
         Refresh,
-        CloseWindow
+        CloseWindow,
+        BookNextPage,
+        BookPreviousPage,
+        BookNextChapter,
+        BookPreviousChapter,
+        BookContents
     ]
 );

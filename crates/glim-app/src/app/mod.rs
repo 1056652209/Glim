@@ -202,6 +202,15 @@ pub fn run() -> Result<()> {
             cx,
         );
         crate::views::explorer::Explorer::init(cx);
+        cx.bind_keys([
+            KeyBinding::new("space", actions::BookNextPage, Some("Ebook")),
+            KeyBinding::new("shift-space", actions::BookPreviousPage, Some("Ebook")),
+            KeyBinding::new("pagedown", actions::BookNextPage, Some("Ebook")),
+            KeyBinding::new("pageup", actions::BookPreviousPage, Some("Ebook")),
+            KeyBinding::new("right", actions::BookNextChapter, Some("Ebook")),
+            KeyBinding::new("left", actions::BookPreviousChapter, Some("Ebook")),
+            KeyBinding::new("secondary-shift-t", actions::BookContents, Some("Ebook")),
+        ]);
         cx.on_action(|_: &Quit, cx| request_quit(cx));
         cx.on_action(|_: &NewWindow, cx| {
             if !updates::busy(cx) {

@@ -47,7 +47,8 @@ A `.key` text file can be a cryptographic key: only ZIP containers and document 
 | BDF | First 64 bitmap glyphs, at most 64×64 each; no font installation |
 | ZIP/TAR | Entry names and sizes, with unsafe paths identified; no extraction |
 | GZ/BZ2/XZ | Bounded decompression of UTF-8 text into a read-only view |
-| EPUB/ODT/ODS/ODP | Container listing and selected chapter/document text extraction. EPUB currently has no spine-ordered book navigation, original styling, images or dedicated reader controls |
+| EPUB / FB2 / FB2 ZIP / CBZ | Dedicated read-only book reader: spine/TOC navigation, chapters or comic pages, inline illustrations, typography/paper controls, bookmarks and saved position. Publisher CSS and fixed-layout EPUB are not reproduced |
+| ODT/ODS/ODP | Container listing and selected document text extraction |
 | NPY | v1/v2/v3 headers and up to 10,000 basic little-endian f8/f4/i8/i4/u1 values; other types retain metadata, no pickle execution |
 
 XMind uses a consistent reading layout, not the original manual positions or styles. Images, attachments, boundaries and summaries are not reproduced. Encrypted/damaged documents show an error; links are never opened automatically.
@@ -105,3 +106,5 @@ See [architecture](architecture.md), [build and release](releasing.md) and [road
 Markdown/HTML remote images load over HTTP(S) in the background, with a 16 MiB response budget and 20-second deadline. Failed downloads or decoding show a visible placeholder. Common picture light/dark candidates follow the theme; unknown media conditions retain the img fallback. SVG does not run scripts or read external resources. Relative local images retain existing path resolution. System curl is required; this is not full browser HTML/CSS compatibility.
 
 Mach-O (including universal), ELF and PE files are recognized by their headers and inspected read-only. The preview shows architecture, word size, byte order, entry point, segments/sections, available dependency names and the first 4 KiB of hex bytes. Inputs are limited to 256 MiB. Programs are never executed or decompiled; malformed and oversized inputs report errors, and dependencies are shown only where the corresponding headers can be parsed.
+
+Ebooks: 256 MiB archive, 20,000 entries, 2,000 chapters/pages, 4 MiB text per loaded chapter, 64 MiB FB2 document/image input, 128 images per chapter and 128 MiB aggregate decoded illustration memory. Text and image resources are loaded locally; remote images and active content are not fetched or executed. DRM EPUB, MOBI/AZW, PDF book layout, publisher stylesheet fidelity and fixed-layout EPUB are outside this reader. Space/Page Down and Shift-Space/Page Up turn viewport pages; Left/Right switch chapters. Reading preferences and up to 100 bookmarks are stored separately from book files.
