@@ -11,6 +11,7 @@ use gpui_kit::{
         ActiveTheme, FocusableExt, Icon,
         button::{Button, ButtonCustomVariant, ButtonVariants},
         menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
+        tooltip::Tooltip,
     },
     prelude::FluentBuilder,
     *,
@@ -266,6 +267,8 @@ impl Explorer {
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
+        let tooltip_name = name.clone();
+        let tooltip_path = row.entry.path.display().to_string();
         let row_path = row.entry.path.clone();
         let right_click_path = row_path.clone();
         let menu_path = row.entry.path.clone();
@@ -286,6 +289,31 @@ impl Explorer {
                 if sticky { "sticky-row" } else { "tree-row" },
             ))
             .relative()
+            .tooltip(move |window, cx| {
+                let name = tooltip_name.clone();
+                let path = tooltip_path.clone();
+                let width = (f32::from(window.viewport_size().width) - 48.).clamp(120., 480.);
+                Tooltip::element(move |_, cx| {
+                    gpui_kit::component::v_flex()
+                        .w(px(width))
+                        .gap_1()
+                        .py_1()
+                        .child(
+                            div()
+                                .whitespace_normal()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(name.clone()),
+                        )
+                        .child(
+                            div()
+                                .whitespace_normal()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(path.clone()),
+                        )
+                })
+                .build(window, cx)
+            })
             .on_hover(cx.listener(move |view, hovered: &bool, _, cx| {
                 if *hovered && menu_is_dir {
                     view.check_folder_media(hover_path.clone(), cx);
