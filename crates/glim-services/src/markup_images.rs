@@ -42,7 +42,8 @@ pub fn picture_sources(text: &str, html: bool) -> HashMap<String, PictureSources
             continue;
         }
         let dom = parse_document(RcDom::default(), Default::default()).one(fragment);
-        let mut pending = vec![dom.document];
+        // Keep the DOM root alive: its iterative destructor clears descendant children.
+        let mut pending = vec![dom.document.clone()];
         while let Some(node) = pending.pop() {
             pending.extend(node.children.borrow().iter().cloned());
             if !is_tag(&node, "picture") {
@@ -225,7 +226,7 @@ fn svg_png(bytes: &[u8]) -> Result<Vec<u8>> {
             .checked_mul(u64::from(height))?
             .checked_mul(4)?;
         embedded_budget
-            .fetch_update(
+            .try_update(
                 std::sync::atomic::Ordering::Relaxed,
                 std::sync::atomic::Ordering::Relaxed,
                 |old| {
