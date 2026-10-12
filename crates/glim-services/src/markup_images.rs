@@ -124,7 +124,7 @@ pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
     );
     let downloader = if cfg!(target_os = "windows") {
         std::path::PathBuf::from(
-            std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()),
+            std::env::var_os("SystemRoot").unwrap_or_else(|| "C:/Windows".into()),
         )
         .join("System32")
         .join("curl.exe")
