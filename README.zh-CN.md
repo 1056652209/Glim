@@ -122,3 +122,15 @@ Office 排版和音视频编码支持取决于 macOS。XLS/XLSX 显示本地表�
     <img src="https://api.star-history.com/svg?repos=NeoPanic/Glim&amp;type=Date" alt="Glim 在 GitHub 上的 Star 增长曲线" width="100%" />
   </picture>
 </a>
+
+## 下载量增长曲线
+
+<a href="https://github.com/NeoPanic/Glim/tree/codex/download-stats">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/NeoPanic/Glim/refs/heads/codex/download-stats/downloads-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/NeoPanic/Glim/refs/heads/codex/download-stats/downloads.svg" />
+    <img src="https://raw.githubusercontent.com/NeoPanic/Glim/refs/heads/codex/download-stats/downloads.svg" alt="Glim 发布附件累计下载量曲线" width="100%" />
+  </picture>
+</a>
+
+每日记录 GitHub 发布附件的累计下载次数，包含校验文件。从 **2026-10-12** 开始积累数据，不补造此前历史；下载次数不等于独立用户数或安装量。

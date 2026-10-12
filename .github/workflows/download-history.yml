@@ -1,0 +1,52 @@
+name: Download history
+
+on:
+  schedule:
+    # 00:17 Asia/Shanghai, away from the top-of-hour schedule peak.
+    - cron: '17 16 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/download-history.yml'
+      - 'scripts/update-download-history.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: download-history
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'NeoPanic/Glim'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check out the statistics branch
+        uses: actions/checkout@v4
+        with:
+          ref: codex/download-stats
+          path: download-stats
+      - name: Collect downloads and render the chart
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/update-download-history.py --repository "$GITHUB_REPOSITORY" --output download-stats
+      - name: Publish the daily snapshot
+        working-directory: download-stats
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads.json downloads.svg downloads-dark.svg
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'docs: update daily download history'
+          git push origin HEAD:codex/download-stats

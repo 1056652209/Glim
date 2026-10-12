@@ -122,3 +122,15 @@ Thanks to everyone helping make Glim better.
     <img src="https://api.star-history.com/svg?repos=NeoPanic/Glim&amp;type=Date" alt="Glim GitHub star history" width="100%" />
   </picture>
 </a>
+
+## Download history
+
+<a href="https://github.com/NeoPanic/Glim/tree/codex/download-stats">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/NeoPanic/Glim/refs/heads/codex/download-stats/downloads-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/NeoPanic/Glim/refs/heads/codex/download-stats/downloads.svg" />
+    <img src="https://raw.githubusercontent.com/NeoPanic/Glim/refs/heads/codex/download-stats/downloads.svg" alt="Glim release download history" width="100%" />
+  </picture>
+</a>
+
+Daily snapshots of cumulative GitHub release-asset downloads, including checksum files. Tracking starts on **2026-10-12**; earlier history is unavailable. These counts are downloads, not unique users or installs.
