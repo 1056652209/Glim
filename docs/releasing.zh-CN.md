@@ -47,7 +47,7 @@ Windows Developer PowerShell 中执行：
 scripts/package-windows.ps1
 ```
 
-输出 `dist/Glim-<version>-windows-x64.zip` 和 `.sha256`，使用静态 CRT 和内嵌 ICO。解压后运行 `Glim.exe`；目前未使用 Authenticode 签名；已发布的 Windows 包使用手动安装，自动更新正在开发。
+输出 `dist/Glim-<version>-windows-x64.zip` 和 `.sha256`，使用静态 CRT 和内嵌 ICO。解压后运行 `Glim.exe`；目前未使用 Authenticode 签名；Windows 0.1.14 及以后发行版支持签名便携目录更新，旧版需手动安装一次。
 
 `target/` 与 `dist/` 是忽略的产物。正常构建使用已提交的图标及离线图表资源，不需要 Node.js。修改图表引擎源码／依赖时，在 `scripts/markdown/` 执行 `npm ci --ignore-scripts` 和 `npm run bundle`，同时提交生成资源及许可证。
 
@@ -101,3 +101,13 @@ python3 scripts/test-updater-install.py
 专项检查覆盖原生批准／取消、两种部署指令格式及未签名 Intel 嵌套包签名。安装测试使用临时 app／密钥和 loopback feed，检查篡改拒绝、手动重启与正常退出安装，不替换用户已安装 app 或生成正式密钥；它不能证明所有实机／管理员授权场景。
 
 参见[更新行为与恢复](auto-update-design.zh-CN.md)、[架构](architecture.zh-CN.md)和[未完成事项](TODO.zh-CN.md)。
+
+## Windows 便携版自动更新
+
+正式 Windows 包启用 `windows-updater` 并内置 `GLIM_UPDATE_PUBLIC_KEY`。`windows-update.json` 与不可变版本地址的 `.sig` 验证版本、build、Windows x64 身份、ZIP 地址、大小和 SHA-256，复用受保护 release 环境中的现有 Ed25519 密钥，不向客户端分发 token 或私钥。
+
+0.1.13 及更早 Windows 版本需先手动安装一次 0.1.14 ZIP。后续支持手动检查、每日检查提醒、自动下载并在正常退出时安装。请从可写便携目录运行 `Glim.exe`；受保护目录仍需手动替换，不自动提权。应用仍无 Authenticode 签名，更新验签不等于 SmartScreen 信誉认证。
+
+更新器备份应用文件，验证更新包并确认安装程序就绪，再等待原程序退出。仅替换 `Glim.exe`、`LICENSE.txt`、`Read Me.txt`、`glim-release.json`，保留其他文件与 AppData 用户偏好；同卷文件替换失败时回退。复用现有会话记录及未保存内容、保存、Git、加载活动检查。
+
+`Windows updater validation` 在 Windows 中验证真实进程退出等待、手动重启、退出安装不重启、篡改包拒绝与文件事务回退；macOS 的 `scripts/test-windows-feeds.py` 验证签名互操作和包元数据。

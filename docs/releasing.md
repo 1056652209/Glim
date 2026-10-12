@@ -47,7 +47,7 @@ In Windows Developer PowerShell:
 scripts/package-windows.ps1
 ```
 
-This produces `dist/Glim-<version>-windows-x64.zip` and `.sha256`, using static CRT and embedded ICO resources. Extract and run `Glim.exe`; it is not Authenticode signed. Published Windows packages currently use manual installation; automatic updating is under development.
+This produces `dist/Glim-<version>-windows-x64.zip` and `.sha256`, using static CRT and embedded ICO resources. Extract and run `Glim.exe`; it is not Authenticode signed. Windows 0.1.14 and later releases support authenticated portable-folder updates; older versions need a one-time manual installation.
 
 `target/` and `dist/` are ignored outputs. Normal builds use committed icons and offline diagram assets, not Node.js. To update diagram engine sources/dependencies, run `npm ci --ignore-scripts` and `npm run bundle` in `scripts/markdown/`, then commit the generated assets and licenses.
 
@@ -101,3 +101,13 @@ python3 scripts/test-updater-install.py
 The focused checks cover native approval/cancellation, both deployment-command formats and unsigned nested Intel signing. The installer test uses temporary apps/keys and a loopback feed to exercise tamper rejection, manual restart and installation on normal quit; it does not replace the user's installed app or create production keys. Those checks do not prove every real hardware/admin-permission scenario.
 
 See [update behavior and recovery](auto-update-design.md), [architecture](architecture.md) and [remaining work](TODO.md).
+
+## Windows portable automatic updates
+
+Official Windows packages enable `windows-updater` and embed `GLIM_UPDATE_PUBLIC_KEY`. The signed `windows-update.json` manifest and immutable-version `.sig` authenticate the version, build, Windows x64 identity, ZIP URL, size and SHA-256. These reuse the protected release environment and the existing Ed25519 key; no token or private key is shipped to clients.
+
+Users on 0.1.13 or earlier install the 0.1.14 Windows ZIP manually once. Subsequent versions support manual checks, daily notifications, and automatic download with installation on normal quit. Run `Glim.exe` from a writable portable folder. Protected folders still require manual replacement; this updater does not elevate privileges. Windows apps remain unsigned by Authenticode, so update integrity does not imply SmartScreen reputation.
+
+The updater backs up managed application files, verifies the archive before signalling installer readiness, and waits for the original process to quit. It replaces only `Glim.exe`, `LICENSE.txt`, `Read Me.txt`, and `glim-release.json`, preserving other files and AppData preferences. Same-volume replacements roll back on failure. The existing session checkpoint and dirty/save/Git/loading gates apply on Windows as well.
+
+`Windows updater validation` runs Windows-specific process tests: old executable locking, package verification, manual relaunch, install without relaunch, tampered-package rejection, and file transaction rollback. macOS `scripts/test-windows-feeds.py` checks signing interoperability and package metadata before publication.

@@ -11,7 +11,6 @@
 
 ## Remaining implementation
 
-- Complete Windows signed automatic updating, app/release integration and file-lock/permission/recovery validation. This is under development; published Windows packages currently use manual ZIP downloads.
 - A complete ebook reader: EPUB reading-order navigation, table of contents, styles/images, reading preferences and persistent progress; additional dedicated ebook formats. Current EPUB support is limited container/text extraction.
 - Developer ID signing and Apple notarization; Windows Authenticode signing. Certificates/credentials are required.
 - General session recovery for tabs, scroll/playback positions and unsaved drafts.

@@ -330,7 +330,9 @@ impl Runner {
     fn dispatch(&mut self, command: &str, generation: u64) -> Result<()> {
         match command {
             "start"
-                if self.client.snapshot().mode != UpdateMode::Manual && self.pending.is_none() =>
+                if self.client.snapshot().mode != UpdateMode::Manual
+                    && self.pending.is_none()
+                    && now().saturating_sub(self.preferences.last_check) >= 86400 =>
             {
                 self.check(false, generation)
             }

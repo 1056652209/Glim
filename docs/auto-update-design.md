@@ -4,7 +4,7 @@
 
 ## Current implementation
 
-macOS release builds use **GitHub Releases + Sparkle 2.10.0 + Glim's shared update window**. The updater was introduced in 0.1.12. Unconfigured local builds offer manual GitHub downloads. Windows automatic updating is under development; current published Windows packages use manual downloads.
+macOS release builds use **GitHub Releases + Sparkle 2.10.0 + Glim's shared update window**. The updater was introduced in 0.1.12. Unconfigured local builds offer manual GitHub downloads. Windows 0.1.14 and later use an Ed25519-signed manifest and a separate portable-folder installer; older Windows builds require manual installation once.
 
 This page describes implemented behavior and remaining boundaries, not a promise of future Windows/ebook releases. Deployment commands and secrets belong in [build and release](releasing.md#automatic-updates).
 

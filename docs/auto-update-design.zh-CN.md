@@ -4,7 +4,7 @@
 
 ## 当前实现
 
-macOS 发行构建使用 **GitHub Releases + Sparkle 2.10.0 + Glim 共用更新窗口**，从 0.1.12 开始提供更新器。未配置的本地构建提供 GitHub 手动下载。Windows 自动更新正在开发，当前已发布的 Windows 包仍使用手动下载。
+macOS 发行构建使用 **GitHub Releases + Sparkle 2.10.0 + Glim 共用更新窗口**，从 0.1.12 开始提供更新器。未配置的本地构建提供 GitHub 手动下载。Windows 0.1.14 及以后使用 Ed25519 签名清单和独立便携目录安装进程；旧版需手动安装一次。
 
 本文描述已实现行为及剩余边界，不承诺未来 Windows／电子书版本。部署命令与密钥配置见[构建与发布](releasing.zh-CN.md#automatic-updates)。
 

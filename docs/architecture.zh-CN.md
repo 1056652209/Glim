@@ -80,7 +80,7 @@ macOS 保留 `io.github.jony4.glimpse` 身份以兼容已有安装。偏好位�
 
 `glim-core/update` 定义快照、模式、活动检查和会话值；`services/updates` 校验／复制备份并写入／消费有界检查点；`app/updates` 持有单一全局 `UpdateState`、任务、编辑锁和退出世代检查；`views/updates` 展示复用的居中窗口。菜单／关于／标题栏共用状态。退出准备期间收到 Finder 打开请求会撤回授权并保留文件请求。
 
-macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Updater.swift` 的 Sparkle 2.10.0。自定义 user driver 将安装批准交给 Rust。桥接给固定 GPUI delegate 添加缺少的可取消终止方法，不替换 delegate；未来不兼容的退出契约会禁用更新。Sparkle 负责签名下载、解包、权限和替换。未配置构建及当前已发布的 Windows 包提供手动下载，Windows 自动更新正在开发。
+macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Updater.swift` 的 Sparkle 2.10.0。自定义 user driver 将安装批准交给 Rust。桥接给固定 GPUI delegate 添加缺少的可取消终止方法，不替换 delegate；未来不兼容的退出契约会禁用更新。Sparkle 负责签名下载、解包、权限和替换。未配置构建提供手动下载；Windows 0.1.14 及以后便携发行版使用下述验签更新后端。
 
 参见[更新行为与信任](auto-update-design.zh-CN.md)、[发布配置](releasing.zh-CN.md#automatic-updates)和[未完成事项](TODO.zh-CN.md)。
 
@@ -88,4 +88,4 @@ macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Upd
 
 `services/windows_updates` 验证不可变 Release 清单的独立 Ed25519 签名，将 ZIP 地址、SHA-256、版本与 Windows x64 Glim 身份绑定，仅解压和替换便携发行包的四个受管理文件。`manifest` 定义验签协议，`install` 实现有界解压、备份、同卷替换及失败回退；后台 runner 使用系统 HTTPS 下载程序并保留可取消的进程句柄，仅向 UI 共享缓存的更新快照。
 
-应用的 `windows-updater` 可选 feature 将后端接入现有更新弹窗、保存／Git／加载检查及一次性会话记录。复制的 `--install-update` 辅助程序先验证更新包并确认就绪，再等待原进程退出后替换应用；撤回退出授权会取消辅助程序。保留便携目录内其他文件和 AppData 用户偏好，受保护的不可写目录仍需手动更新。正式打包和 Windows feed 发布正在接入，普通开发构建默认关闭该 feature。
+应用的 `windows-updater` 可选 feature 将后端接入现有更新弹窗、保存／Git／加载检查及一次性会话记录。复制的 `--install-update` 辅助程序先验证更新包并确认就绪，再等待原进程退出后替换应用；撤回退出授权会取消辅助程序。保留便携目录内其他文件和 AppData 用户偏好，受保护的不可写目录仍需手动更新。正式 Windows 发行构建启用该 feature 并发布签名清单，普通开发构建默认关闭。
