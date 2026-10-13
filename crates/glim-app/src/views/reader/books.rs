@@ -35,6 +35,7 @@ pub(super) struct BookReader {
     images: Arc<HashMap<String, Arc<Image>>>,
     missing: Arc<Image>,
     comic: Option<Arc<Image>>,
+    comic_ratio: f32,
     anchors: HashMap<String, std::ops::Range<usize>>,
     restore: Option<f32>,
     anchor: Option<String>,
@@ -84,6 +85,7 @@ impl BookReader {
             images: Arc::new(HashMap::new()),
             missing: Arc::new(Image::from_bytes(ImageFormat::Png, books::missing_image())),
             comic: None,
+            comic_ratio: 1.,
             anchors: HashMap::new(),
             restore: None,
             anchor: None,
@@ -110,6 +112,15 @@ impl BookReader {
                 .map(|(name, data)| (name, Arc::new(Image::from_bytes(ImageFormat::Png, data))))
                 .collect(),
         );
+        self.comic_ratio = content
+            .comic
+            .as_ref()
+            .and_then(|data| {
+                let width = u32::from_be_bytes(data.get(16..20)?.try_into().ok()?);
+                let height = u32::from_be_bytes(data.get(20..24)?.try_into().ok()?);
+                (width > 0 && height > 0).then_some(width as f32 / height as f32)
+            })
+            .unwrap_or(1.);
         self.comic = content
             .comic
             .map(|data| Arc::new(Image::from_bytes(ImageFormat::Png, data)));
@@ -332,6 +343,8 @@ impl Render for BookReader {
         } else if let Some(image) = &self.comic {
             content = img(image.clone())
                 .w_full()
+                .h(px((self.state.page_width - 64.) / self.comic_ratio))
+                .aspect_ratio(self.comic_ratio)
                 .object_fit(ObjectFit::Contain)
                 .into_any_element();
         } else if let Some(text) = &self.text {

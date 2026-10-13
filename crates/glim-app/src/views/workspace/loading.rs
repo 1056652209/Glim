@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 enum Opened {
     Folder(FolderSnapshot),
-    File(PathBuf, anyhow::Result<Content>),
+    File(PathBuf, anyhow::Result<Box<Content>>),
 }
 pub(super) enum Content {
     File(Document),
@@ -114,7 +114,7 @@ impl Workspace {
             if path.is_dir() && !glim_services::preview::is_iwork(&path) {
                 open_folder(&path).map(Opened::Folder)
             } else {
-                let result = read_content(&path);
+                let result = read_content(&path).map(Box::new);
                 Ok(Opened::File(path, result))
             }
         });
@@ -131,7 +131,7 @@ impl Workspace {
                     match result {
                         Ok(Opened::Folder(folder)) => view.receive_folder(folder, window, cx),
                         Ok(Opened::File(_, Ok(content))) => {
-                            view.install_content(content, window, cx)
+                            view.install_content(*content, window, cx)
                         }
                         Ok(Opened::File(path, Err(error))) => view.install_content(
                             Content::Unavailable(path, format!("{error:#}")),
@@ -172,7 +172,7 @@ impl Workspace {
             if path.is_dir() && !glim_services::preview::is_iwork(&path) {
                 open_folder(&path).map(Opened::Folder)
             } else {
-                let result = read_content(&path);
+                let result = read_content(&path).map(Box::new);
                 Ok(Opened::File(path, result))
             }
         });
@@ -185,7 +185,9 @@ impl Workspace {
                     Ok(Opened::Folder(folder)) => {
                         view.receive_folder(folder, window, cx);
                     }
-                    Ok(Opened::File(_, Ok(document))) => view.install_content(document, window, cx),
+                    Ok(Opened::File(_, Ok(document))) => {
+                        view.install_content(*document, window, cx)
+                    }
                     Ok(Opened::File(path, Err(error))) => view.install_content(
                         Content::Unavailable(path, format!("{error:#}")),
                         window,
