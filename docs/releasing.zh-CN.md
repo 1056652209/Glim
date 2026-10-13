@@ -70,13 +70,21 @@ GLIM_ENABLE_UPDATER=1 GLIM_UPDATE_PUBLIC_KEY='<public-key>' scripts/package-dmg.
 ### 准备与发布版本
 
 1. 提交最终源码及一致版本，推送稳定 `vX.Y.Z` tag。
-2. 等待同一提交的两个 macOS `macOS builds` 工作全部成功；CI 包含 fmt、Clippy、测试、构建、macOS 更新器检查及打包，仅由版本标签推送触发，不由普通分支／PR 触发。
+2. 等待同一提交、同一版本标签的两个 `macOS builds` 工作全部成功。ARM 执行一次 fmt、release Clippy／测试及原生更新器检查；ARM 与 Intel 分别构建 release 并校验打包架构和签名。
 3. 从发布 tag 手动运行 `Prepare signed release draft`，输入同一 tag 和含 `## English`／`## 中文` 的等价说明，并批准受保护环境。`bootstrap` 只用于前一版没有 appcast 的首次更新器发布，后续关闭。
 4. 工作流下载同一提交的成功产物，核对全部 SHA-256、两种 DMG 的身份／公钥／feed／架构／build，验证上一版 feed，保留兼容历史并生成、验证新签名 feed 与安装包。
 5. 将两个 Mac 安装包、两个校验文件和两个 appcast（共六个附件） 上传草稿，回下载核对字节，不修改已公开 Release，不覆盖既有资产。
 6. 检查完整草稿，公开并标记 Latest，再检查两个公开 feed 地址、签名及版本／build。CI 成功本身不会自动公开版本。
 
 feed 地址是 `/releases/latest/download/appcast-macos-<arch>.xml`，安装包使用固定 `/releases/download/<tag>/Glim-<version>-macos-<arch>.dmg`。运行时 macOS 客户端不需要 GitHub Token，也不查询 Releases API。自动更新下载会进入附件计数；README 曲线每天记录全部公开附件下载量，包含 feed、校验文件和核验请求，不等于用户数或安装量。
+
+### 发布构建与缓存
+
+CI 的 Cargo 步骤统一使用 `--release --target <arch> --features macos-updater --locked`，不构建 dev／debug，不在打包前执行 `cargo clean`。CI 保持 release 优化，设置 `CARGO_PROFILE_RELEASE_LTO=false` 和 `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16` 以缩短链接／代码生成；本地默认 release profile 不受影响。
+
+main 上相关源码／构建资源变更会预热两个架构的发布缓存，手动运行工作流也可预热；这些运行不上传安装包。版本 tag 复用默认分支的可见缓存并生成 DMG。不同 tag 的缓存不能直接互用，因此应在创建发布 tag 前让 main 预热完成。发布工作流只选择同一 tag 的成功 push 运行，避免误选没有安装包的 main 预热运行。
+
+缓存按架构和工具链／Cargo 配置区分，保留依赖及工作空间编译产物；Sparkle 仅缓存固定压缩包，每次从验过摘要的字节重新解压。DMG 已压缩，上传不再重复压缩，构建附件保留七天。Job Summary 记录缓存命中和磁盘占用，Actions 步骤记录耗时。目标是热缓存下约 1–5 分钟，冷缓存、工具链／依赖变化、排队和网络波动不保证五分钟内完成。Intel 通过实际 release 构建和包校验，ARM 测试不能视为 Intel 实机交互验收。
 
 ### 隔离更新验证
 

@@ -45,7 +45,7 @@ jobs:
       - name: Download successful builds for this exact commit
         run: |
           commit=$(git rev-parse HEAD)
-          run_id=$(gh run list --workflow ci.yml --commit "$commit" --status success --json databaseId --jq '.[0].databaseId')
+          run_id=$(gh run list --workflow ci.yml --commit "$commit" --branch "$RELEASE_TAG" --event push --status success --json databaseId --jq '.[0].databaseId')
           [[ -n "$run_id" && "$run_id" != null ]]
           gh run download "$run_id" --dir dist/artifacts
           mkdir -p dist/release

@@ -70,13 +70,21 @@ The bundle script enables `macos-updater`, embeds Sparkle and its license, write
 ### Prepare and publish a release
 
 1. Commit final sources and aligned versions; push a stable `vX.Y.Z` tag.
-2. Wait for both macOS `macOS builds` jobs to succeed for that exact commit. CI runs fmt, Clippy, tests, build, macOS updater checks and packaging. It runs on version-tag pushes, not ordinary branch pushes or PRs.
+2. Wait for both `macOS builds` jobs from the exact commit and version tag to succeed. ARM runs formatting, release Clippy/tests and native updater checks once; ARM and Intel each build an optimized release and verify the packaged architecture and signature.
 3. Dispatch `Prepare signed release draft` from the release tag, provide that tag and equivalent notes under `## English` and `## 中文`, and approve the protected environment. Enable `bootstrap` only for the first updater release whose predecessor has no appcast; leave it off thereafter.
 4. The workflow downloads successful same-commit artifacts, checks all archive SHA-256 files and both DMGs' identity/key/feed/architecture/build metadata, verifies predecessor feeds, retains compatible history, and signs/verifies the new feeds and packages.
 5. It uploads two Mac installers, two checksum files and two appcasts (six assets total) to a draft, then downloads them to verify exact bytes. It neither modifies published releases nor overwrites existing assets.
 6. Inspect the complete draft, publish and mark it Latest. Check both public feed URLs, signatures and release/build values. CI success alone never publishes a release.
 
 Feeds use `/releases/latest/download/appcast-macos-<arch>.xml`; enclosures use immutable `/releases/download/<tag>/Glim-<version>-macos-<arch>.dmg` URLs. Runtime macOS clients need no GitHub token or Releases API calls. Downloads include automatic updates; README history is a daily snapshot of all public asset download counts, including feeds/checksums/verification requests, not users or installations.
+
+### Release builds and caching
+
+CI Cargo steps consistently use `--release --target <arch> --features macos-updater --locked`. There are no dev/debug builds or pre-packaging `cargo clean` steps. CI keeps release optimization and sets `CARGO_PROFILE_RELEASE_LTO=false` and `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16` to shorten linking/code generation; the default local release profile is unchanged.
+
+Relevant source/build-resource pushes to main warm both architecture caches; manual workflow runs can also warm them. These runs do not upload installers. Version tags reuse visible default-branch caches and produce DMGs. Caches from different tags cannot be reused directly, so let main warmup finish before creating a release tag. The signing workflow selects a successful push run for the exact tag, avoiding a main warmup run with no installers.
+
+Caches distinguish architectures and toolchain/Cargo configuration, retaining dependencies and workspace outputs. Only the pinned Sparkle archive is cached; extraction always follows checksum verification. DMGs are already compressed, so artifact upload uses no additional compression and retains build artifacts for seven days. Job summaries record cache hits and disk usage; Actions steps record durations. Aim for roughly 1–5 minutes with warm caches; cold caches, toolchain/dependency changes, queueing and network delays are not guaranteed to fit five minutes. Intel's actual release build and package checks remain required; ARM tests do not certify Intel hardware interactions.
 
 ### Isolated updater validation
 
