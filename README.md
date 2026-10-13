@@ -8,13 +8,9 @@
 
 <p align="center">Free and open source · macOS &amp; Windows · <b>English</b> / <a href="README.zh-CN.md">简体中文</a></p>
 
-<p align="center">
-  <a href="https://github.com/NeoPanic/Glim/releases/download/v0.1.13/Glim-0.1.13-macos-arm64.dmg"><img src="assets/readme/download-macos-arm64.svg" alt="Download Glim for Mac with Apple Silicon" width="222" height="56" /></a>
-  <a href="https://github.com/NeoPanic/Glim/releases/download/v0.1.13/Glim-0.1.13-macos-x86_64.dmg"><img src="assets/readme/download-macos-x86_64.svg" alt="Download Glim for Intel Mac" width="222" height="56" /></a>
-  <a href="https://github.com/NeoPanic/Glim/releases/download/v0.1.13/Glim-0.1.13-windows-x64.zip"><img src="assets/readme/download-windows-x64.svg" alt="Download Glim for Windows x64" width="222" height="56" /></a>
-</p>
+<p align="center"><a href="https://github.com/NeoPanic/Glim/releases/latest"><strong>Download Glim →</strong></a></p>
 
-<p align="center"><a href="https://github.com/NeoPanic/Glim/releases/latest">Current release: 0.1.13 · Release notes &amp; checksums</a> · <a href="#download">Installation help</a></p>
+<p align="center"><a href="https://github.com/NeoPanic/Glim/releases/latest">Latest release · Release notes &amp; checksums</a> · <a href="#download">Installation help</a></p>
 
 <p align="center"><sub>Mac downloads are not yet notarized by Apple. You may need to approve the first launch in System Settings. <a href="#macos">See instructions</a></sub></p>
 
@@ -23,7 +19,6 @@
 <p align="center"><sub>Different file formats in one tabbed workspace. Captured on macOS; click to zoom in.</sub></p>
 
 <p align="center">
-  <a href="https://github.com/NeoPanic/Glim/releases/latest"><img src="https://img.shields.io/github/v/release/NeoPanic/Glim?style=flat-square&amp;color=268879" alt="Latest release" /></a>
   <a href="https://github.com/NeoPanic/Glim/releases"><img src="https://img.shields.io/github/downloads/NeoPanic/Glim/total?style=flat-square&amp;color=268879" alt="Total release downloads" /></a>
   <a href="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml"><img src="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml/badge.svg" alt="Desktop builds" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" /></a>
@@ -72,11 +67,13 @@ Office layout and media codecs depend on macOS support. XLS/XLSX previews show l
 
 ## Download
 
-| Your device | Download Glim 0.1.13 |
+Open the [latest Release page](https://github.com/NeoPanic/Glim/releases/latest) and choose the matching installer under **Assets**. That page contains the current version, release notes and checksums.
+
+| Your device | Installer filename suffix |
 | --- | --- |
-| Mac · Apple Silicon (M series) | [Download ARM64 DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.13/Glim-0.1.13-macos-arm64.dmg) |
-| Mac · Intel | [Download Intel DMG](https://github.com/NeoPanic/Glim/releases/download/v0.1.13/Glim-0.1.13-macos-x86_64.dmg) |
-| Windows · Intel / AMD 64-bit | [Download x64 ZIP](https://github.com/NeoPanic/Glim/releases/download/v0.1.13/Glim-0.1.13-windows-x64.zip) |
+| Mac · Apple Silicon (M series) | `-macos-arm64.dmg` |
+| Mac · Intel | `-macos-x86_64.dmg` |
+| Windows · Intel / AMD 64-bit | `-windows-x64.zip` |
 
 Not sure which Mac download to choose? Open **Apple menu → About This Mac**. An Apple M-series chip means Apple Silicon; an Intel processor means Intel.
 
