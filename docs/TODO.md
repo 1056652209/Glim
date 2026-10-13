@@ -4,15 +4,15 @@
 
 ## Implemented baseline
 
-- Multiple file readers in workspace tabs, including macOS native previews and cross-platform XMind.
+- Multiple file readers in workspace tabs, including macOS native previews and XMind.
 - Ordinary UTF-8 editing/autosave, structured data previews and offline diagrams; [reader-specific limits](file-format-support.md) apply.
 - macOS signed updates, recovery app backups and one-time update-session tab restoration.
 - Normal startup restores workspace folders; it is not complete general tab/draft restoration.
 
 ## Remaining implementation
 
-- A complete ebook reader: EPUB reading-order navigation, table of contents, styles/images, reading preferences and persistent progress; additional dedicated ebook formats. Current EPUB support is limited container/text extraction.
-- Developer ID signing and Apple notarization; Windows Authenticode signing. Certificates/credentials are required.
+- Fuller EPUB publisher stylesheet and fixed-layout reproduction. Dedicated EPUB, FB2/FB2 ZIP and CBZ reading, TOC, illustrations, typography settings, bookmarks and progress restoration are implemented.
+- Developer ID signing and Apple notarization. Certificates/credentials are required.
 - General session recovery for tabs, scroll/playback positions and unsaved drafts.
 - Complete PlantUML Salt/Chen dialects and unrestricted diagram/HTML external-resource compatibility.
 - Full Office style/chart reproduction, formula recalculation and richer archive content readers.
@@ -20,7 +20,7 @@
 
 ## Remaining acceptance coverage
 
-- Intel and Windows GUI interactions on real hardware, supported graphics/drivers and Windows WebView2 availability.
+- Apple Silicon and Intel GUI interactions on real hardware, supported graphics/drivers and accessibility.
 - Real GitHub production upgrades, administrator-required install locations, multi-instance conflicts, canceled authorization and interrupted replacement/recovery.
 - Native document providers: password/corrupt documents, office packages, media codecs, font collections and accessibility behavior.
 - Active SQLite/WAL sources, source-stability rejection, missing-main sidecars and preservation of the source database.
@@ -30,6 +30,8 @@
 Existing Rust/native/isolated installer checks are useful but do not prove all of these scenarios. Run relevant checks when validating a change and report the actual coverage in its release notes.
 
 ## Outside current scope
+
+Windows maintenance, CI, packaging and new releases are paused. Existing public assets are retained; there is no committed return date.
 
 LSP, plugins, Git cloning, force push, rebase/reset/cherry-pick and a three-way merge editor are not part of the current product scope. Candidate work is not a release-date promise.
 

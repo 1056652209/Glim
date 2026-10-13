@@ -12,5 +12,3 @@ xcrun swiftc -swift-version 5 -F "$GLIM_SPARKLE_DIR" -framework Sparkle \
 
 python3 scripts/test-updater-configuration.py
 python3 scripts/test-macos-signing.py
-
-python3 scripts/test-windows-feeds.py

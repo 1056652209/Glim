@@ -42,7 +42,7 @@
   "双栏对比": "Side by side",
   "原文": "Source",
   "同步变更": "Sync Changes",
-  "AI 时代的全能文件查看器，一个应用打开多种格式。": "The all-purpose viewer for the AI era, opening a wide range of file formats in one app.",
+  "专注于 macOS 的文件查看器。": "A focused file viewer for macOS.",
   "此文件夹为空。": "This folder is empty.",
   "树形": "Tree",
   "查看文件": "View file",
@@ -63,7 +63,6 @@
   "追加工作空间目录": "Add workspace folder",
   "完整加载文件？": "Load the entire file?",
   "快捷键说明 — Glim": "Keyboard Shortcuts — Glim",
-  "操作                                      macOS                         Windows": "Operation                                      macOS                         Windows",
   "关闭错误提示": "Dismiss error",
   "在 GitHub 提交 Issue": "Report an issue on GitHub",
   "操作未完成": "Operation incomplete",
@@ -103,7 +102,6 @@
   "提交已暂存内容（提交输入框）": "Commit staged contents (commit input)",
   "文件树选择/展开/打开": "Select / expand / open in file tree",
   "独立原生预览窗口关闭": "Close native preview window",
-  "Windows 无此原生辅助窗口": "No native helper window on Windows",
   "打开": "Open",
   "播放 / 暂停": "Play / Pause",
   "PDF 密码": "PDF password",
@@ -199,5 +197,7 @@
   "Paper": "Paper",
   "Add bookmark": "Add bookmark",
   "Remove bookmark": "Remove bookmark",
-  "Ebooks": "Ebooks"
+  "Ebooks": "Ebooks",
+  "操作": "Operation",
+  "快捷键": "Shortcut"
 }

@@ -2,7 +2,7 @@
 
 [English](architecture.md) · **简体中文** · [文档目录](README.zh-CN.md)
 
-AI 时代的全能文件查看器，一个应用打开多种格式。阅读器共用标签工作台；普通 UTF-8 文本支持基础编辑和自动保存，差异、历史内容、图片及二进制／文档预览保持只读。
+专注于 macOS 的文件查看器。阅读器共用标签工作台；普通 UTF-8 文本支持基础编辑和自动保存，差异、历史内容、图片及二进制／文档预览保持只读。
 
 ## 模块与依赖方向
 
@@ -40,7 +40,7 @@ Workspace 管理标签、Explorer/Changes 实体、导航历史及异步加载�
 
 ## 图表与格式阅读器
 
-`services/markdown_preview` 解析并去重图表／公式，调用私有 `--render-markdown`，再将有界 SVG 转为图片。`app/diagram_engine` 在进程主线程使用 WebKit/WebView2 和内嵌离线引擎。结果增量发布，取消会终止渲染器。macOS 使用后台 `GlimRenderer.app`（`LSUIElement=true`），Windows／非打包构建沿用可执行文件的渲染模式，不依赖 Node、Java 或远程服务。
+`services/markdown_preview` 解析并去重图表／公式，调用私有 `--render-markdown`，再将有界 SVG 转为图片。`app/diagram_engine` 在进程主线程使用 WebKit 和内嵌离线引擎。结果增量发布，取消会终止渲染器。macOS 使用后台 `GlimRenderer.app`（`LSUIElement=true`），非打包构建沿用可执行文件的渲染模式，不依赖 Node、Java 或远程服务。
 
 Mermaid、Graphviz、PlantUML、flowchart.js、WaveDrom 和 MathJax 及许可证均内嵌；本地 Salt/Chen 适配器仅覆盖部分语法。禁用图表外部资源、导航和下载，失败时保留源码。引擎维护见 [assets/markdown/README.md](../assets/markdown/README.md)。
 
@@ -66,7 +66,7 @@ Explorer 展开时只读取直接子项，遵守 ignore，隐藏 `.git`，不递
 
 仓库发现在后台扫描所选根目录，不使用任意时间／深度／数量截断。排除生成目录和忽略目录；自动从主目录发现时跳过 macOS Library／废纸篓，明确选择这些路径时仍扫描。单路径失败不丢弃其他仓库；诊断有界且去重，监听刷新不反复弹警告。
 
-Git 使用参数数组和 literal pathspec，清理仓库位置环境覆盖，禁用 external diff/textconv/pager/fsmonitor，输出有界且独立排空 stderr。沿用用户凭据、hooks 与提交签名。暂存操作显式执行，提交只包含 index；Windows 需要 PATH 中的 Git for Windows。
+Git 使用参数数组和 literal pathspec，清理仓库位置环境覆盖，禁用 external diff/textconv/pager/fsmonitor，输出有界且独立排空 stderr。沿用用户凭据、hooks 与提交签名。暂存操作显式执行，提交只包含 index。
 
 写操作前服务重新检查 HEAD/index/源状态。应用内编辑和 Git 写入锁保护各窗口草稿，不构成与其他 Git 客户端之间的事务。Pull 仅快进，删除分支使用 `-d`，不增加克隆、强推或破坏性历史重写。
 
@@ -74,21 +74,21 @@ Core 根据提交及父提交 ID 计算 Graph 通道，每次增加 200 个提�
 
 ## 平台、偏好与更新边界
 
-主工作台使用 GPUI macOS/Windows 后端，映射 ⌘/Ctrl。Windows 工具栏位于原生标题栏拖动区外，Git 子进程隐藏控制台，打包使用静态 CRT。Swift 预览与默认文件类型设置仅 macOS 提供；Windows 图表需要 WebView2 Runtime。
+主工作台维护 GPUI macOS 后端，支持 Apple Silicon 与 Intel，快捷键使用 ⌘。Swift 提供原生预览与默认文件类型设置；图表使用系统 WebKit。Windows 分支保留在源码中，但不属于当前维护、CI 或发行范围。
 
-macOS 保留 `io.github.jony4.glimpse` 身份以兼容已有安装。偏好位于 macOS `~/Library/Application Support/Glim` 或 Windows `%APPDATA%/Glim`，在已实现的位置兼容旧 Glimpse 路径。语言字典内嵌，文档正文及技术诊断不翻译；每个文档主题都有英文／简体中文对应页。
+macOS 保留 `io.github.jony4.glimpse` 身份以兼容已有安装。偏好位于 `~/Library/Application Support/Glim`，在已实现的位置兼容旧 Glimpse 路径。语言字典内嵌，文档正文及技术诊断不翻译；每个文档主题都有英文／简体中文对应页。
 
 `glim-core/update` 定义快照、模式、活动检查和会话值；`services/updates` 校验／复制备份并写入／消费有界检查点；`app/updates` 持有单一全局 `UpdateState`、任务、编辑锁和退出世代检查；`views/updates` 展示复用的居中窗口。菜单／关于／标题栏共用状态。退出准备期间收到 Finder 打开请求会撤回授权并保留文件请求。
 
-macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Updater.swift` 的 Sparkle 2.10.0。自定义 user driver 将安装批准交给 Rust。桥接给固定 GPUI delegate 添加缺少的可取消终止方法，不替换 delegate；未来不兼容的退出契约会禁用更新。Sparkle 负责签名下载、解包、权限和替换。未配置构建提供手动下载；Windows 0.1.14 及以后便携发行版使用下述验签更新后端。
+macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Updater.swift` 的 Sparkle 2.10.0。自定义 user driver 将安装批准交给 Rust。桥接给固定 GPUI delegate 添加缺少的可取消终止方法，不替换 delegate；未来不兼容的退出契约会禁用更新。Sparkle 负责签名下载、解包、权限和替换。未配置构建提供手动下载；当前只发布两个 Mac 架构的签名更新源；下述 Windows 后端已暂停维护。
 
 参见[更新行为与信任](auto-update-design.zh-CN.md)、[发布配置](releasing.zh-CN.md#automatic-updates)和[未完成事项](TODO.zh-CN.md)。
 
-## Windows 便携更新后端
+## 保留的 Windows 后端（暂停维护）
 
 `services/windows_updates` 验证不可变 Release 清单的独立 Ed25519 签名，将 ZIP 地址、SHA-256、版本与 Windows x64 Glim 身份绑定，仅解压和替换便携发行包的四个受管理文件。`manifest` 定义验签协议，`install` 实现有界解压、备份、同卷替换及失败回退；后台 runner 使用系统 HTTPS 下载程序并保留可取消的进程句柄，仅向 UI 共享缓存的更新快照。
 
-应用的 `windows-updater` 可选 feature 将后端接入现有更新弹窗、保存／Git／加载检查及一次性会话记录。复制的 `--install-update` 辅助程序先验证更新包并确认就绪，再等待原进程退出后替换应用；撤回退出授权会取消辅助程序。保留便携目录内其他文件和 AppData 用户偏好，受保护的不可写目录仍需手动更新。正式 Windows 发行构建启用该 feature 并发布签名清单，普通开发构建默认关闭。
+应用的 `windows-updater` 可选 feature 将后端接入现有更新弹窗、保存／Git／加载检查及一次性会话记录。复制的 `--install-update` 辅助程序先验证更新包并确认就绪，再等待原进程退出后替换应用；撤回退出授权会取消辅助程序。保留便携目录内其他文件和 AppData 用户偏好，受保护的不可写目录仍需手动更新。该 feature 默认关闭，当前 CI 与发布流程不启用、不打包，也不生成 Windows 签名清单；既有公开附件继续保留。
 
 ## 电子书阅读
 

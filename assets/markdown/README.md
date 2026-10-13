@@ -10,7 +10,7 @@ PlantUML 生成代码保留官方原始 ES module，通过 `bootstrap.js` 加载
 
 PlantUML 的 themes / emoji / OpenIconic 来自固定的 `@plantuml/core` 包。C4 标准库 v2.14.0（MIT）来自 [PlantUML 官方生成资源](https://plantuml.github.io/plantuml/js-plantuml/c4.min.js)，库自身附带版本、来源和许可证信息；文件已提交，运行时不下载。标准库来源：[C4-PlantUML](https://github.com/plantuml-stdlib/C4-PlantUML/tree/release/v2.14.0)。其他云厂商图标库及外部 include 未内置。
 
-macOS 使用系统 WebKit；Windows 使用 WebView2。Windows 系统没有 WebView2 Runtime 时，图表块显示错误及源码，普通 Markdown 仍可阅读。
+当前维护的 macOS Apple Silicon 与 Intel 构建使用系统 WebKit。源码中保留的 WebView2 分支不属于当前维护与发行范围。
 
 Salt 常用线框由 `scripts/markdown/salt.js` 的本地 SVG 适配器绘制，不依赖 PlantUML TeaVM 中缺失的 Salt 模块。支持范围和限制见 `docs/file-format-support.md`。`@startdot` 使用已内置 Graphviz；Journey 指定纯 SVG 文字。
 

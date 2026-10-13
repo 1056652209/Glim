@@ -8,9 +8,8 @@
 | --- | --- |
 | macOS Apple Silicon — `aarch64-apple-darwin` | Rust, Apple Command Line Tools with Swift, Python 3 |
 | macOS Intel — `x86_64-apple-darwin` | Same macOS tooling and target toolchain |
-| Windows x64 — `x86_64-pc-windows-msvc` | Visual Studio C++ Build Tools and Windows SDK (`rc.exe`, `fxc.exe`) |
 
-Use the Rust version pinned in [CI](../.github/workflows/ci.yml). Git features use the installed Git executable; Windows diagrams need WebView2 Runtime and the workspace needs DirectX 11. Windows ARM packages are not currently produced.
+Use the Rust version pinned in [CI](../.github/workflows/ci.yml). Git features use the installed Git executable. Only macOS Apple Silicon and Intel are maintained and packaged. Windows maintenance and releases are paused; existing public assets are retained, and new drafts contain no Windows ZIP or update manifest.
 
 ## Development and validation
 
@@ -41,14 +40,6 @@ scripts/package-dmg.sh x86_64
 
 The unconfigured bundle command creates a local manual-download build, not an updater-enabled release. Default output is `dist/Glim.app`; architecture packages use `dist/release-<arch>/Glim.app`, `Glim-<version>-macos-<arch>.dmg` and `.sha256`. `GLIM_BUNDLE_DIR` overrides the bundle path; legacy `GLIMPSE_BUNDLE_DIR` remains accepted.
 
-In Windows Developer PowerShell:
-
-```powershell
-scripts/package-windows.ps1
-```
-
-This produces `dist/Glim-<version>-windows-x64.zip` and `.sha256`, using static CRT and embedded ICO resources. Extract and run `Glim.exe`; it is not Authenticode signed. Windows 0.1.14 and later releases support authenticated portable-folder updates; older versions need a one-time manual installation.
-
 `target/` and `dist/` are ignored outputs. Normal builds use committed icons and offline diagram assets, not Node.js. To update diagram engine sources/dependencies, run `npm ci --ignore-scripts` and `npm run bundle` in `scripts/markdown/`, then commit the generated assets and licenses.
 
 macOS signing proceeds inside-out through nested executables/bundles/frameworks, then the outer app. `GLIM_CODESIGN_IDENTITY` selects an identity; the default `-` is ad-hoc signing, not Developer ID signing or notarization. The package minimum OS is derived from supported Mach-O deployment commands, with the native Swift bridges requiring at least macOS 11. Verify the actual packaged architecture rather than assuming ARM64.
@@ -58,7 +49,7 @@ Local installation normally backs up the existing app before replacement, verifi
 <a id="automatic-updates"></a>
 ## Automatic update setup
 
-macOS release builds use pinned Sparkle 2.10.0, verified by `scripts/fetch-sparkle.sh`. The reusable centered update window shares state across workspaces. macOS updating first shipped in 0.1.12: 0.1.11 and older need one manual installation. Unconfigured local builds and Windows retain the GitHub download entry.
+macOS release builds use pinned Sparkle 2.10.0, verified by `scripts/fetch-sparkle.sh`. The reusable centered update window shares state across workspaces. macOS updating first shipped in 0.1.12: 0.1.11 and older need one manual installation. Unconfigured local builds retain the GitHub download entry.
 
 ### One-time signing configuration
 
@@ -79,10 +70,10 @@ The bundle script enables `macos-updater`, embeds Sparkle and its license, write
 ### Prepare and publish a release
 
 1. Commit final sources and aligned versions; push a stable `vX.Y.Z` tag.
-2. Wait for all three `Desktop builds` jobs to succeed for that exact commit. CI runs fmt, Clippy, tests, build, macOS updater checks and packaging. It runs on version-tag pushes, not ordinary branch pushes or PRs.
+2. Wait for both macOS `macOS builds` jobs to succeed for that exact commit. CI runs fmt, Clippy, tests, build, macOS updater checks and packaging. It runs on version-tag pushes, not ordinary branch pushes or PRs.
 3. Dispatch `Prepare signed release draft` from the release tag, provide that tag and equivalent notes under `## English` and `## 中文`, and approve the protected environment. Enable `bootstrap` only for the first updater release whose predecessor has no appcast; leave it off thereafter.
 4. The workflow downloads successful same-commit artifacts, checks all archive SHA-256 files and both DMGs' identity/key/feed/architecture/build metadata, verifies predecessor feeds, retains compatible history, and signs/verifies the new feeds and packages.
-5. It uploads three installers, three checksum files and two appcasts to a draft, then downloads them to verify exact bytes. It neither modifies published releases nor overwrites existing assets.
+5. It uploads two Mac installers, two checksum files and two appcasts (six assets total) to a draft, then downloads them to verify exact bytes. It neither modifies published releases nor overwrites existing assets.
 6. Inspect the complete draft, publish and mark it Latest. Check both public feed URLs, signatures and release/build values. CI success alone never publishes a release.
 
 Feeds use `/releases/latest/download/appcast-macos-<arch>.xml`; enclosures use immutable `/releases/download/<tag>/Glim-<version>-macos-<arch>.dmg` URLs. Runtime macOS clients need no GitHub token or Releases API calls. Downloads include automatic updates; README history is a daily snapshot of all public asset download counts, including feeds/checksums/verification requests, not users or installations.
@@ -101,13 +92,3 @@ python3 scripts/test-updater-install.py
 The focused checks cover native approval/cancellation, both deployment-command formats and unsigned nested Intel signing. The installer test uses temporary apps/keys and a loopback feed to exercise tamper rejection, manual restart and installation on normal quit; it does not replace the user's installed app or create production keys. Those checks do not prove every real hardware/admin-permission scenario.
 
 See [update behavior and recovery](auto-update-design.md), [architecture](architecture.md) and [remaining work](TODO.md).
-
-## Windows portable automatic updates
-
-Official Windows packages enable `windows-updater` and embed `GLIM_UPDATE_PUBLIC_KEY`. The signed `windows-update.json` manifest and immutable-version `.sig` authenticate the version, build, Windows x64 identity, ZIP URL, size and SHA-256. These reuse the protected release environment and the existing Ed25519 key; no token or private key is shipped to clients.
-
-Users on 0.1.13 or earlier install the 0.1.14 Windows ZIP manually once. Subsequent versions support manual checks, daily notifications, and automatic download with installation on normal quit. Run `Glim.exe` from a writable portable folder. Protected folders still require manual replacement; this updater does not elevate privileges. Windows apps remain unsigned by Authenticode, so update integrity does not imply SmartScreen reputation.
-
-The updater backs up managed application files, verifies the archive before signalling installer readiness, and waits for the original process to quit. It replaces only `Glim.exe`, `LICENSE.txt`, `Read Me.txt`, and `glim-release.json`, preserving other files and AppData preferences. Same-volume replacements roll back on failure. The existing session checkpoint and dirty/save/Git/loading gates apply on Windows as well.
-
-`Windows updater validation` runs Windows-specific process tests: old executable locking, package verification, manual relaunch, install without relaunch, tampered-package rejection, and file transaction rollback. macOS `scripts/test-windows-feeds.py` checks signing interoperability and package metadata before publication.

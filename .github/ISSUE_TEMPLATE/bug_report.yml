@@ -4,7 +4,7 @@ title: "[Bug]: "
 body:
   - type: markdown
     attributes:
-      value: "English / 中文均可。Please remove private paths, credentials, and document content from attachments."
+      value: "English / 中文均可。Current supported targets: macOS Apple Silicon and Intel. Other platforms are not maintained. Please remove private paths, credentials, and document content from attachments."
   - type: input
     id: version
     attributes:
@@ -19,8 +19,7 @@ body:
       options:
         - macOS Apple Silicon
         - macOS Intel
-        - Windows x64
-        - Other / source build
+        - Other / historical release (not maintained)
     validations:
       required: true
   - type: input

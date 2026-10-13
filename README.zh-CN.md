@@ -1,12 +1,6 @@
-<p align="center">
-  <img src="assets/branding/glim.png" alt="Glim" width="72" height="72" />
-</p>
+<p align="center"><img src="assets/branding/repository-banner.svg" alt="Glim — 专注于 macOS 的文件查看器，支持 Apple Silicon 与 Intel" width="100%" /></p>
 
-<h1 align="center">Glim</h1>
-
-<p align="center"><strong>AI 时代的全能文件查看器，一个应用打开多种格式。</strong></p>
-
-<p align="center">免费开源 · macOS 与 Windows · <a href="README.md">English</a> / <b>简体中文</b></p>
+<p align="center">免费开源 · macOS · Apple Silicon 与 Intel · <a href="README.md">English</a> / <b>简体中文</b></p>
 
 <p align="center"><a href="https://github.com/NeoPanic/Glim/releases/latest"><strong>下载 Glim →</strong></a></p>
 
@@ -14,15 +8,10 @@
 
 <p align="center"><sub>Mac 下载包目前尚未经过 Apple 公证，首次打开可能需要在系统设置中放行。<a href="#macos">查看步骤</a></sub></p>
 
-<a href="assets/screenshots/workspace.png"><img src="assets/screenshots/workspace.png" alt="Glim 的真实工作区：左侧项目文件树、多个文件标签，以及包含 Mermaid 流程图、表格和任务列表的 Markdown 预览" width="100%" /></a>
-
-<p align="center"><sub>多种文件格式，共用标签工作台。macOS 实际界面，点击图片可放大。</sub></p>
-
 <p align="center">
   <a href="https://github.com/NeoPanic/Glim/releases"><img src="https://img.shields.io/github/downloads/NeoPanic/Glim/total?style=flat-square&amp;color=268879&amp;label=%E6%80%BB%E4%B8%8B%E8%BD%BD%E9%87%8F" alt="发布附件总下载量" /></a>
   <a href="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml"><img src="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml/badge.svg" alt="桌面版构建状态" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT 许可证" /></a>
-  <a href="#下载与安装"><img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-268879?style=flat-square" alt="支持平台：macOS 和 Windows" /></a>
   <a href="https://github.com/NeoPanic/Glim/stargazers"><img src="https://img.shields.io/github/stars/NeoPanic/Glim?style=social" alt="GitHub Star 数量" /></a>
 </p>
 
@@ -32,25 +21,25 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/formats-dark.svg" />
     <source media="(prefers-color-scheme: light)" srcset="assets/readme/formats.svg" />
-    <img src="assets/readme/formats.svg" alt="Glim 支持的代表文件格式；星号为 macOS 专属，剑号为基础预览" width="100%" />
+    <img src="assets/readme/formats.svg" alt="Glim 支持的代表文件格式；剑号为基础预览" width="100%" />
   </picture>
 </a>
 
-*代表格式一览：\* 仅 macOS，† 基础预览；具体能力与限制见下表及完整格式文档。*
+*代表格式一览：† 基础预览；具体能力与限制见下表及完整格式文档。*
 
 | 内容 | 可以做什么 |
 | --- | --- |
 | 文档 | Markdown、静态 HTML、普通 UTF-8 文本、图表与公式 |
-| 原生文档 · macOS | PDF、Word、Excel、PowerPoint、Keynote、Pages、Numbers、RTF 只读预览 |
+| 原生文档 | PDF、Word、Excel、PowerPoint、Keynote、Pages、Numbers、RTF 只读预览 |
 | 图片 | PNG、JPEG、WebP、GIF 动画、SVG、多页 TIFF、BMP、ICO、ICNS、EXR / HDR |
-| 媒体与工具 · macOS | 音视频播放与文件夹队列；字体及字体集合；SQLite 表、结构和关联 WAL 文件 |
+| 媒体与工具 | 音视频播放与文件夹队列；字体及字体集合；SQLite 表、结构和关联 WAL 文件 |
 | 思维导图 | XMind 只读预览，支持工作表切换、主题折叠、缩放与详情 |
 | 代码与配置 | Rust、Python、JS/TS、Go、C/C++、Java、Swift、Ruby、INI 等；语法高亮与基础文本编辑 |
 | 数据 | JSON / JSONC、CSV / TSV、YAML、TOML、SQL、GeoJSON 和 Notebook；结构树、表格或文本预览 |
 | AI 模型元数据 | safetensors 张量名称、shape、精度和参数量，仅读取头部 |
 | 探索格式首轮 | AsciiDoc / Org / RST、字幕、TSV / NDJSON / JSON5、D2 / Pikchr / Vega、OBJ / STL、归档目录与部分文本预览等 |
 
-**平台范围：** macOS 和 Windows 都支持代码/文本、Markdown/HTML、JSON、图片、XMind、模型元数据和 Git 工作区。PDF、Office/iWork、音视频、字体、SQLite 原生预览及默认文件类型管理目前仅支持 macOS。
+**平台范围：** Glim 仅维护 Apple Silicon 与 Intel 两种 macOS 架构，共用本文描述的文件阅读器与 Git 工作区。
 
 <details>
 <summary>格式详情与限制</summary>
@@ -73,7 +62,6 @@ Office 排版和音视频编码支持取决于 macOS。XLS/XLSX 显示本地表�
 | --- | --- |
 | Mac · Apple Silicon（M 系列） | `-macos-arm64.dmg` |
 | Mac · Intel | `-macos-x86_64.dmg` |
-| Windows · Intel / AMD 64 位 | `-windows-x64.zip` |
 
 不确定 Mac 的类型？打开 **苹果菜单 → 关于本机**：看到 Apple M 系列芯片就选 Apple Silicon，看到 Intel 处理器就选 Intel。
 
@@ -81,9 +69,7 @@ Office 排版和音视频编码支持取决于 macOS。XLS/XLSX 显示本地表�
 
 打开 DMG，将 Glim 拖入“应用程序”。目前使用 ad-hoc 签名，尚无 Developer ID 签名与 Apple 公证。若系统拦截，先尝试打开一次，再到 **系统设置 → 隐私与安全性 → 仍要打开**。请确认安装包来自本项目发布页，无需关闭系统安全保护。[Apple 官方说明](https://support.apple.com/zh-cn/102445)
 
-### Windows
-
-解压 ZIP，运行 `Glim.exe`。Git 功能需要 [Git for Windows](https://gitforwindows.org/)。目前尚无 Authenticode 签名，需要 DirectX 11 图形环境；暂不提供 Windows ARM 安装包。快捷键使用 Ctrl，对应 Mac 的 ⌘。
+Windows 敬请期待。
 
 [更新说明与 SHA-256 校验文件](https://github.com/NeoPanic/Glim/releases/latest) · [历史版本](https://github.com/NeoPanic/Glim/releases) · [从源码构建](docs/releasing.zh-CN.md)
 

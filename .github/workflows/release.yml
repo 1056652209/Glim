@@ -51,12 +51,19 @@ jobs:
           mkdir -p dist/release
           python3 - <<'PY'
           from pathlib import Path
-          import shutil
+          import shutil, os
+          version = os.environ['RELEASE_TAG'][1:]
+          expected = {f'Glim-{version}-macos-{arch}.dmg' for arch in ('arm64', 'x86_64')}
+          expected |= {name + '.sha256' for name in list(expected)}
+          found = set()
           for path in Path('dist/artifacts').rglob('*'):
               if path.is_file():
+                  assert path.name in expected, 'Unexpected artifact: ' + path.name
+                  found.add(path.name)
                   target = Path('dist/release') / path.name
                   assert not target.exists(), 'Duplicate artifact name'
                   shutil.copy2(path, target)
+          assert found == expected, 'Both Mac installers and checksums are required'
           PY
       - name: Prepare signing tools and notes
         run: |
@@ -104,7 +111,10 @@ jobs:
           python3 - <<'PY'
           import hashlib
           from pathlib import Path
-          for source in Path('dist/release').iterdir():
+          sources = list(Path('dist/release').iterdir())
+          assert len(sources) == 6, 'Expected six macOS release assets'
+          assert {p.name for p in Path('dist/roundtrip').iterdir()} == {p.name for p in sources}, 'Unexpected uploaded assets'
+          for source in sources:
               uploaded = Path('dist/roundtrip') / source.name
               assert hashlib.sha256(source.read_bytes()).digest() == hashlib.sha256(uploaded.read_bytes()).digest(), source.name
           PY

@@ -20,7 +20,7 @@ body:
     id: platform
     attributes:
       label: Platform / 平台
-      placeholder: macOS / Windows / both
+      placeholder: macOS Apple Silicon / Intel
   - type: textarea
     id: sample
     attributes:

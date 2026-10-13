@@ -71,6 +71,7 @@ def validate_bundle(archive, stage, version, arch, public_key):
 
 
 
+# Historical Windows feed protocol; not invoked by the current macOS release flow.
 def create_windows_feed(archives, version, build, notes, tools, key_file, public_key):
     archive = archives / f'Glim-{version}-windows-x64.zip'
     expected = {f'Glim/{name}' for name in ('Glim.exe', 'LICENSE.txt', 'Read Me.txt', 'glim-release.json')}
@@ -121,8 +122,12 @@ def create_feeds(archives, tag, notes, tools, key_file, public_key, bootstrap=Fa
         raise ValueError('Release signing key does not match GLIM_UPDATE_PUBLIC_KEY')
     version = tag[1:]
     required = [f'Glim-{version}-macos-{arch}.dmg' for arch in ('arm64', 'x86_64')]
-    required.append(f'Glim-{version}-windows-x64.zip')
     archives.mkdir(parents=True, exist_ok=True)
+    allowed = set(required) | {name + '.sha256' for name in required} | {
+        f'appcast-macos-{arch}.xml' for arch in ('arm64', 'x86_64')}
+    unexpected = {path.name for path in archives.iterdir()} - allowed
+    if unexpected:
+        raise ValueError('Unexpected assets in macOS release: ' + ', '.join(sorted(unexpected)))
     for name in required:
         path = archives / name
         recorded = (archives / (name + '.sha256')).read_text().split()[0]
@@ -179,8 +184,7 @@ def create_feeds(archives, tag, notes, tools, key_file, public_key, bootstrap=Fa
             shutil.copy2(feed, archives / name)
     if len(set(builds)) != 1:
         raise ValueError('Architecture build versions differ')
-    create_windows_feed(archives, version, builds[0], notes, tools, key_file, public_key)
-    print('Verified signed macOS feeds, the signed Windows manifest and all release archives.')
+    print('Verified both macOS archives and signed feeds (six release assets).')
 
 
 if __name__ == '__main__':

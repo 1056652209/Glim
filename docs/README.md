@@ -2,9 +2,11 @@
 
 **English** · [简体中文](README.zh-CN.md) · [Glim home](../README.md)
 
+Glim is maintained for macOS on Apple Silicon and Intel. New releases contain only these two architectures and their update feeds. Windows maintenance and releases are paused; existing assets remain in [historical Releases](https://github.com/NeoPanic/Glim/releases). There is no committed return date.
+
 | Topic | Contents |
 | --- | --- |
-| [File formats and limits](file-format-support.md) | Implemented readers, platform differences, partial previews and resource budgets |
+| [File formats and limits](file-format-support.md) | Implemented readers, macOS capabilities, partial previews and resource budgets |
 | [Architecture](architecture.md) | Module boundaries, background work, reader lifetime, Git and native bridges |
 | [Build and release](releasing.md) | Toolchains, packaging, signing configuration and verified release drafts |
 | [Application updates](auto-update-design.md) | Current update behavior, trust, work protection and recovery |

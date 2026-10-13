@@ -30,7 +30,7 @@ pub fn welcome(show_open_folder: bool, cx: &App) -> impl IntoElement {
                 .whitespace_normal()
                 .text_color(cx.theme().muted_foreground)
                 .child(glim_services::locale::tr(
-                    "The all-purpose viewer for the AI era, opening a wide range of file formats in one app.",
+                    "A focused file viewer for macOS.",
                 )),
         )
         .when(show_open_folder, |view| {

@@ -2,9 +2,9 @@
 
 **English** · [简体中文](file-format-support.zh-CN.md) · [Home](../README.md)
 
-The all-purpose viewer for the AI era, opening a wide range of file formats in one app.
+A focused file viewer for macOS.
 
-Support means the behavior listed below, not full compatibility with every feature of a format. Files open in workspace tabs. PDF, Office/iWork, audio/video, fonts and SQLite native previews currently require macOS; the other readers work on macOS and Windows.
+Support means the behavior listed below, not full compatibility with every feature of a format. Files open in workspace tabs. The supported targets are macOS Apple Silicon and Intel; the table describes capabilities on those two architectures.
 
 ## Format catalog
 
@@ -65,7 +65,7 @@ XMind uses a consistent reading layout, not the original manual positions or sty
 | LaTeX | `$…$`/`$$…$$`, separate `$$` block lines, standalone `\[ … \]`, and `math`/`latex`/`tex`/`katex` fences |
 | GitHub Alerts | Blockquotes beginning `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` |
 
-Explicit Mermaid, PlantUML and Graphviz declarations can identify unlabelled fences. Diagrams become static images; source and saved contents stay unchanged. Failed blocks show their error and source. Engines are bundled for offline use; Windows needs WebView2 Runtime for diagram rendering, while ordinary Markdown remains readable without it.
+Explicit Mermaid, PlantUML and Graphviz declarations can identify unlabelled fences. Diagrams become static images; source and saved contents stay unchanged. Failed blocks show their error and source. Engines are bundled for offline use and render through system WebKit on macOS.
 
 Salt and Chen ER are partial adapters, not complete PlantUML dialects. Unsupported preprocessing/includes, rich content, external resources and incompatible `foreignObject` output fail visibly. Salt supports common wireframe controls; Chen supports common entities, attributes, relationships, cardinality and participation, not the full EER dialect. External images and unbundled includes are not loaded.
 

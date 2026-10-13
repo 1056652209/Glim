@@ -8,9 +8,8 @@
 | --- | --- |
 | macOS Apple Silicon — `aarch64-apple-darwin` | Rust、包含 Swift 的 Apple Command Line Tools、Python 3 |
 | macOS Intel — `x86_64-apple-darwin` | 同样的 macOS 工具及目标工具链 |
-| Windows x64 — `x86_64-pc-windows-msvc` | Visual Studio C++ Build Tools 和 Windows SDK（`rc.exe`、`fxc.exe`） |
 
-Rust 版本以 [CI](../.github/workflows/ci.yml) 固定值为准。Git 使用本机可执行文件，Windows 图表需要 WebView2 Runtime，工作台需要 DirectX 11；目前不提供 Windows ARM 包。
+Rust 版本以 [CI](../.github/workflows/ci.yml) 固定值为准。Git 使用本机可执行文件。当前仅维护并打包 macOS Apple Silicon 与 Intel；Windows 暂停维护与发布，既有公开附件保留，后续草稿不包含 Windows ZIP 或更新清单。
 
 ## 开发与验证
 
@@ -41,14 +40,6 @@ scripts/package-dmg.sh x86_64
 
 未配置的 bundle 命令生成手动下载构建，不是启用更新器的发行包。默认输出 `dist/Glim.app`；分架构包输出 `dist/release-<arch>/Glim.app`、`Glim-<version>-macos-<arch>.dmg` 和 `.sha256`。`GLIM_BUNDLE_DIR` 覆盖路径，兼容旧 `GLIMPSE_BUNDLE_DIR`。
 
-Windows Developer PowerShell 中执行：
-
-```powershell
-scripts/package-windows.ps1
-```
-
-输出 `dist/Glim-<version>-windows-x64.zip` 和 `.sha256`，使用静态 CRT 和内嵌 ICO。解压后运行 `Glim.exe`；目前未使用 Authenticode 签名；Windows 0.1.14 及以后发行版支持签名便携目录更新，旧版需手动安装一次。
-
 `target/` 与 `dist/` 是忽略的产物。正常构建使用已提交的图标及离线图表资源，不需要 Node.js。修改图表引擎源码／依赖时，在 `scripts/markdown/` 执行 `npm ci --ignore-scripts` 和 `npm run bundle`，同时提交生成资源及许可证。
 
 macOS 先签嵌套可执行文件／bundle／framework，再签外层 app。`GLIM_CODESIGN_IDENTITY` 选择身份，默认 `-` 是 ad-hoc 签名，不是 Developer ID 签名或公证。最低系统版本从支持的 Mach-O 部署指令推导，原生 Swift 桥接至少要求 macOS 11。应核对实际包架构，不能一概按 ARM64 验收。
@@ -58,7 +49,7 @@ macOS 先签嵌套可执行文件／bundle／framework，再签外层 app。`GLI
 <a id="automatic-updates"></a>
 ## 自动更新配置
 
-macOS 发行包使用固定 Sparkle 2.10.0，由 `scripts/fetch-sparkle.sh` 校验下载。各工作台共用复用的居中更新窗口。macOS 更新器从 0.1.12 开始提供，0.1.11 及更早版本需要先手动安装一次；未配置的本地构建与 Windows 保留 GitHub 下载入口。
+macOS 发行包使用固定 Sparkle 2.10.0，由 `scripts/fetch-sparkle.sh` 校验下载。各工作台共用复用的居中更新窗口。macOS 更新器从 0.1.12 开始提供，0.1.11 及更早版本需要先手动安装一次；未配置的本地构建保留 GitHub 下载入口。
 
 ### 一次性签名配置
 
@@ -79,10 +70,10 @@ GLIM_ENABLE_UPDATER=1 GLIM_UPDATE_PUBLIC_KEY='<public-key>' scripts/package-dmg.
 ### 准备与发布版本
 
 1. 提交最终源码及一致版本，推送稳定 `vX.Y.Z` tag。
-2. 等待同一提交的三个 `Desktop builds` 工作全部成功；CI 包含 fmt、Clippy、测试、构建、macOS 更新器检查及打包，仅由版本标签推送触发，不由普通分支／PR 触发。
+2. 等待同一提交的两个 macOS `macOS builds` 工作全部成功；CI 包含 fmt、Clippy、测试、构建、macOS 更新器检查及打包，仅由版本标签推送触发，不由普通分支／PR 触发。
 3. 从发布 tag 手动运行 `Prepare signed release draft`，输入同一 tag 和含 `## English`／`## 中文` 的等价说明，并批准受保护环境。`bootstrap` 只用于前一版没有 appcast 的首次更新器发布，后续关闭。
 4. 工作流下载同一提交的成功产物，核对全部 SHA-256、两种 DMG 的身份／公钥／feed／架构／build，验证上一版 feed，保留兼容历史并生成、验证新签名 feed 与安装包。
-5. 将三个安装包、三个校验文件和两个 appcast 上传草稿，回下载核对字节，不修改已公开 Release，不覆盖既有资产。
+5. 将两个 Mac 安装包、两个校验文件和两个 appcast（共六个附件） 上传草稿，回下载核对字节，不修改已公开 Release，不覆盖既有资产。
 6. 检查完整草稿，公开并标记 Latest，再检查两个公开 feed 地址、签名及版本／build。CI 成功本身不会自动公开版本。
 
 feed 地址是 `/releases/latest/download/appcast-macos-<arch>.xml`，安装包使用固定 `/releases/download/<tag>/Glim-<version>-macos-<arch>.dmg`。运行时 macOS 客户端不需要 GitHub Token，也不查询 Releases API。自动更新下载会进入附件计数；README 曲线每天记录全部公开附件下载量，包含 feed、校验文件和核验请求，不等于用户数或安装量。
@@ -101,13 +92,3 @@ python3 scripts/test-updater-install.py
 专项检查覆盖原生批准／取消、两种部署指令格式及未签名 Intel 嵌套包签名。安装测试使用临时 app／密钥和 loopback feed，检查篡改拒绝、手动重启与正常退出安装，不替换用户已安装 app 或生成正式密钥；它不能证明所有实机／管理员授权场景。
 
 参见[更新行为与恢复](auto-update-design.zh-CN.md)、[架构](architecture.zh-CN.md)和[未完成事项](TODO.zh-CN.md)。
-
-## Windows 便携版自动更新
-
-正式 Windows 包启用 `windows-updater` 并内置 `GLIM_UPDATE_PUBLIC_KEY`。`windows-update.json` 与不可变版本地址的 `.sig` 验证版本、build、Windows x64 身份、ZIP 地址、大小和 SHA-256，复用受保护 release 环境中的现有 Ed25519 密钥，不向客户端分发 token 或私钥。
-
-0.1.13 及更早 Windows 版本需先手动安装一次 0.1.14 ZIP。后续支持手动检查、每日检查提醒、自动下载并在正常退出时安装。请从可写便携目录运行 `Glim.exe`；受保护目录仍需手动替换，不自动提权。应用仍无 Authenticode 签名，更新验签不等于 SmartScreen 信誉认证。
-
-更新器备份应用文件，验证更新包并确认安装程序就绪，再等待原程序退出。仅替换 `Glim.exe`、`LICENSE.txt`、`Read Me.txt`、`glim-release.json`，保留其他文件与 AppData 用户偏好；同卷文件替换失败时回退。复用现有会话记录及未保存内容、保存、Git、加载活动检查。
-
-`Windows updater validation` 在 Windows 中验证真实进程退出等待、手动重启、退出安装不重启、篡改包拒绝与文件事务回退；macOS 的 `scripts/test-windows-feeds.py` 验证签名互操作和包元数据。

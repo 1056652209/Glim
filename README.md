@@ -1,12 +1,6 @@
-<p align="center">
-  <img src="assets/branding/glim.png" alt="Glim" width="72" height="72" />
-</p>
+<p align="center"><img src="assets/branding/repository-banner.svg" alt="Glim — A focused file viewer for macOS, on Apple Silicon and Intel" width="100%" /></p>
 
-<h1 align="center">Glim</h1>
-
-<p align="center"><strong>The all-purpose viewer for the AI era, opening a wide range of file formats in one app.</strong></p>
-
-<p align="center">Free and open source · macOS &amp; Windows · <b>English</b> / <a href="README.zh-CN.md">简体中文</a></p>
+<p align="center">Free and open source · macOS · Apple Silicon &amp; Intel · <b>English</b> / <a href="README.zh-CN.md">简体中文</a></p>
 
 <p align="center"><a href="https://github.com/NeoPanic/Glim/releases/latest"><strong>Download Glim →</strong></a></p>
 
@@ -14,15 +8,10 @@
 
 <p align="center"><sub>Mac downloads are not yet notarized by Apple. You may need to approve the first launch in System Settings. <a href="#macos">See instructions</a></sub></p>
 
-<a href="assets/screenshots/workspace.png"><img src="assets/screenshots/workspace.png" alt="Glim's real workspace with a project file tree, multiple file tabs, and a Markdown preview containing a Mermaid flowchart, table, and task list" width="100%" /></a>
-
-<p align="center"><sub>Different file formats in one tabbed workspace. Captured on macOS; click to zoom in.</sub></p>
-
 <p align="center">
   <a href="https://github.com/NeoPanic/Glim/releases"><img src="https://img.shields.io/github/downloads/NeoPanic/Glim/total?style=flat-square&amp;color=268879" alt="Total release downloads" /></a>
   <a href="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml"><img src="https://github.com/NeoPanic/Glim/actions/workflows/ci.yml/badge.svg" alt="Desktop builds" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" /></a>
-  <a href="#download"><img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-268879?style=flat-square" alt="Platforms: macOS and Windows" /></a>
   <a href="https://github.com/NeoPanic/Glim/stargazers"><img src="https://img.shields.io/github/stars/NeoPanic/Glim?style=social" alt="GitHub stars" /></a>
 </p>
 
@@ -32,25 +21,25 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/formats-dark.svg" />
     <source media="(prefers-color-scheme: light)" srcset="assets/readme/formats.svg" />
-    <img src="assets/readme/formats.svg" alt="Representative Glim file formats; asterisk marks macOS-only previews and dagger marks limited previews" width="100%" />
+    <img src="assets/readme/formats.svg" alt="Representative Glim file formats; dagger marks limited previews" width="100%" />
   </picture>
 </a>
 
-*Selected formats: \* macOS only, † limited preview. Capabilities and limits are listed below and in the full format guide.*
+*Selected formats: † limited preview. Capabilities and limits are listed below and in the full format guide.*
 
 | Content | What you can do |
 | --- | --- |
 | Documents | Markdown, static HTML, ordinary UTF-8 text, diagrams and formulas |
-| Native documents · macOS | Read-only PDF, Word, Excel, PowerPoint, Keynote, Pages, Numbers, and RTF previews |
+| Native documents | Read-only PDF, Word, Excel, PowerPoint, Keynote, Pages, Numbers, and RTF previews |
 | Images | PNG, JPEG, WebP, animated GIF, SVG, multipage TIFF, BMP, ICO, ICNS, EXR / HDR |
-| Media & tools · macOS | Audio/video and folder playlists; fonts and font collections; SQLite tables, schema, and associated WAL files |
+| Media & tools | Audio/video and folder playlists; fonts and font collections; SQLite tables, schema, and associated WAL files |
 | Mind maps | XMind previews with sheet switching, topic folding, zoom and topic details |
 | Code & configuration | Rust, Python, JS/TS, Go, C/C++, Java, Swift, Ruby, INI, and more; syntax highlighting and basic text editing |
 | Data | JSON / JSONC, CSV / TSV, YAML, TOML, SQL, GeoJSON and notebooks; trees, tables or text previews |
 | AI model metadata | safetensors names, shapes, dtypes, and parameter counts, read from the header only |
 | First-pass previews | AsciiDoc / Org / RST, subtitles, TSV / NDJSON / JSON5, D2 / Pikchr / Vega, OBJ / STL, archive listings and selected text previews, and more |
 
-**Platform scope:** macOS and Windows both support the main code/text, Markdown/HTML, JSON, image, XMind, model-metadata, and Git workspace. Native PDF, Office/iWork, media, font, and SQLite previews, plus default file-type management, currently require macOS.
+**Platform scope:** Glim is maintained for macOS on Apple Silicon and Intel. Both architectures share the file readers and Git workspace described here.
 
 <details>
 <summary>Format details and limits</summary>
@@ -73,7 +62,6 @@ Open the [latest Release page](https://github.com/NeoPanic/Glim/releases/latest)
 | --- | --- |
 | Mac · Apple Silicon (M series) | `-macos-arm64.dmg` |
 | Mac · Intel | `-macos-x86_64.dmg` |
-| Windows · Intel / AMD 64-bit | `-windows-x64.zip` |
 
 Not sure which Mac download to choose? Open **Apple menu → About This Mac**. An Apple M-series chip means Apple Silicon; an Intel processor means Intel.
 
@@ -81,9 +69,7 @@ Not sure which Mac download to choose? Open **Apple menu → About This Mac**. A
 
 Open the DMG and drag Glim into Applications. The app is ad-hoc signed, without Developer ID signing or notarization. If macOS blocks it, try opening it once, then go to **System Settings → Privacy & Security → Open Anyway**. Confirm the download came from this project's releases; there is no need to disable system security. [Apple's instructions](https://support.apple.com/en-us/102445).
 
-### Windows
-
-Extract the ZIP and run `Glim.exe`. Install [Git for Windows](https://gitforwindows.org/) to use Git features. The executable is not yet Authenticode signed. Requires DirectX 11; a Windows ARM build is not currently available. Shortcuts use Ctrl in place of the Mac's ⌘.
+Windows — coming soon.
 
 [Release notes & SHA-256 checksums](https://github.com/NeoPanic/Glim/releases/latest) · [All releases](https://github.com/NeoPanic/Glim/releases) · [Build from source](docs/releasing.md)
 

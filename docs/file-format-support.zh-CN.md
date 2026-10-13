@@ -2,9 +2,9 @@
 
 [English](file-format-support.md) · **简体中文** · [首页](../README.zh-CN.md)
 
-AI 时代的全能文件查看器，一个应用打开多种格式。
+专注于 macOS 的文件查看器。
 
-“支持”指下表中的实际行为，不代表完整兼容一种格式的全部功能。文件统一在工作空间标签中打开。PDF、Office/iWork、音视频、字体及 SQLite 原生预览目前仅支持 macOS，其他阅读器支持 macOS 和 Windows。
+“支持”指下表中的实际行为，不代表完整兼容一种格式的全部功能。文件统一在工作空间标签中打开。当前支持范围为 macOS Apple Silicon 与 Intel，下表描述这两个架构的能力。
 
 ## 格式目录
 
@@ -65,7 +65,7 @@ XMind 使用统一阅读布局，不还原原始手动位置或样式，也不�
 | LaTeX | `$…$`/`$$…$$`、独立 `$$` 块、独立段落 `\[ … \]` 及 `math`/`latex`/`tex`/`katex` 代码块 |
 | GitHub Alerts | 引用块以 `[!NOTE]`、`[!TIP]`、`[!IMPORTANT]`、`[!WARNING]` 或 `[!CAUTION]` 开头 |
 
-未标注语言的代码块可通过明确的 Mermaid、PlantUML 或 Graphviz 声明识别。图表转为静态图片，原文和保存内容不变；失败块显示错误与源码。引擎随应用离线提供；Windows 图表渲染需要 WebView2 Runtime，缺失时普通 Markdown 仍可阅读。
+未标注语言的代码块可通过明确的 Mermaid、PlantUML 或 Graphviz 声明识别。图表转为静态图片，原文和保存内容不变；失败块显示错误与源码。引擎随 macOS 应用离线提供，使用系统 WebKit 渲染。
 
 Salt 与 Chen ER 是部分适配器，并非完整 PlantUML 方言。暂不支持的预处理／include、富内容、外部资源及不兼容的 `foreignObject` 输出明确报错。Salt 支持常用线框控件；Chen 支持常见实体、属性、关系、基数与参与连接，不支持完整 EER 方言。不加载外部图片或未内置 include。
 

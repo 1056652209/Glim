@@ -14,7 +14,7 @@ File parsers, native preview helpers, HTML rendering, and Git command handling a
 
 ## Distribution
 
-Download binaries from [GitHub Releases](https://github.com/NeoPanic/Glim/releases). Releases include SHA-256 checksums. macOS builds currently use ad-hoc signing, without Developer ID notarization; Windows builds are not Authenticode signed. Checksums verify file integrity, not publisher identity.
+Download binaries from [GitHub Releases](https://github.com/NeoPanic/Glim/releases). Releases include SHA-256 checksums. Current releases target macOS Apple Silicon and Intel and use ad-hoc signing, without Developer ID notarization. Existing Windows releases remain historical downloads; Windows maintenance and new releases are paused. Checksums verify file integrity, not publisher identity.
 
 ## 中文说明
 

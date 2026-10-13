@@ -8,12 +8,12 @@ ROOT = Path(__file__).resolve().parents[1]
 NS = 'http://www.w3.org/2000/svg'
 ET.register_namespace('', NS)
 FORMATS = [
-    ('PDF*', 'pdf'), ('DOCX*', 'word'), ('XLSX*', 'sheet'), ('PPTX*', 'slides'),
+    ('PDF', 'pdf'), ('DOCX', 'word'), ('XLSX', 'sheet'), ('PPTX', 'slides'),
     ('Markdown', 'markdown'), ('HTML', 'html'), ('XMind', 'mindmap'), ('EPUB†', 'book'),
     ('PNG', 'image'), ('JPEG', 'image'), ('GIF', 'image'), ('SVG', 'image'),
     ('TIFF', 'image'), ('WebP', 'image'), ('EXR', 'image'), ('HDR', 'image'),
-    ('MP3*', 'audio'), ('MP4*', 'video'), ('MOV*', 'video'), ('FLAC*', 'audio'),
-    ('TTF*', 'font'), ('SQLite*', 'database'), ('CSV', 'sheet'), ('JSON', 'json'),
+    ('MP3', 'audio'), ('MP4', 'video'), ('MOV', 'video'), ('FLAC', 'audio'),
+    ('TTF', 'font'), ('SQLite', 'database'), ('CSV', 'sheet'), ('JSON', 'json'),
     ('YAML', 'yaml'), ('TOML', 'toml'), ('XML', 'xml'), ('AsciiDoc', 'document'),
     ('Org', 'document'), ('RST', 'document'), ('ZIP†', 'zip'), ('TAR†', 'zip'),
     ('GZ†', 'zip'), ('BZ2†', 'zip'), ('XZ†', 'zip'), ('ODT†', 'document'),
@@ -43,7 +43,7 @@ def build(dark=False):
     canvas_height = rows * height + (rows - 1) * gap + margin * 2
     svg = ET.Element(f'{{{NS}}}svg', {'width': str(canvas_width), 'height': str(canvas_height), 'viewBox': f'0 0 {canvas_width} {canvas_height}', 'role': 'img', 'aria-labelledby': 'title desc'})
     element(svg, 'title', id='title').text = 'Glim file format previews'
-    element(svg, 'desc', id='desc').text = 'Selected formats. * means macOS only; † means a limited preview. ' + ', '.join(label for label, _ in FORMATS)
+    element(svg, 'desc', id='desc').text = 'Selected macOS formats. † means a limited preview. ' + ', '.join(label for label, _ in FORMATS)
     element(svg, 'metadata').text = (ROOT / 'assets/file-icons/LICENSE').read_text()
     defs = element(svg, 'defs')
     for icon in sorted({icon for _, icon in FORMATS}):

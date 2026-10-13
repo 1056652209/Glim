@@ -1,4 +1,4 @@
-name: Desktop builds
+name: macOS builds
 on:
   push:
     tags: ['v*']
@@ -18,9 +18,6 @@ jobs:
             target: x86_64-apple-darwin
             platform: macos-x86_64
             arch: x86_64
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-            platform: windows-x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
@@ -32,8 +29,6 @@ jobs:
         with:
           components: rustfmt, clippy
           targets: ${{ matrix.target }}
-      - uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.platform }}
@@ -50,13 +45,6 @@ jobs:
           cargo clippy --workspace --all-targets --features macos-updater --locked -- -D warnings
           cargo test --workspace --features macos-updater --locked
           scripts/test-updater.sh
-      - name: Validate Windows updater
-        if: runner.os == 'Windows'
-        env:
-          GLIM_UPDATE_PUBLIC_KEY: ${{ vars.GLIM_UPDATE_PUBLIC_KEY }}
-        run: |
-          cargo clippy --workspace --all-targets --features windows-updater --locked -- -D warnings
-          cargo test --workspace --features windows-updater --locked
       - name: Free validation build space before packaging
         if: runner.os == 'macOS'
         run: |
@@ -68,19 +56,11 @@ jobs:
           GLIM_ENABLE_UPDATER: '1'
           GLIM_UPDATE_PUBLIC_KEY: ${{ vars.GLIM_UPDATE_PUBLIC_KEY }}
         run: scripts/package-dmg.sh ${{ matrix.arch }}
-      - name: Package Windows
-        if: runner.os == 'Windows'
-        env:
-          GLIM_ENABLE_UPDATER: '1'
-          GLIM_UPDATE_PUBLIC_KEY: ${{ vars.GLIM_UPDATE_PUBLIC_KEY }}
-        shell: pwsh
-        run: scripts/package-windows.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: Glim-${{ matrix.platform }}
           path: |
             dist/*.dmg
-            dist/*.zip
             dist/*.sha256
           if-no-files-found: error
           retention-days: 14
