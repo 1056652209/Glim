@@ -42,6 +42,7 @@ pub struct Explorer {
     media_presence: HashMap<PathBuf, bool>,
     media_tasks: HashMap<PathBuf, Task<()>>,
     rows: Vec<Row>,
+    clipped_labels: HashSet<(PathBuf, bool)>,
     selected: Option<usize>,
     focus: FocusHandle,
     scroll: UniformListScrollHandle,
@@ -69,6 +70,7 @@ impl Explorer {
             media_presence: HashMap::new(),
             media_tasks: HashMap::new(),
             rows: Vec::new(),
+            clipped_labels: HashSet::new(),
             selected: None,
             focus: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
@@ -267,6 +269,9 @@ impl Explorer {
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
+        let label_name = name.clone();
+        let label_key = (row.entry.path.clone(), sticky);
+        let label_view = cx.entity().downgrade();
         let tooltip_name = name.clone();
         let tooltip_path = row.entry.path.display().to_string();
         let row_path = row.entry.path.clone();
@@ -289,30 +294,32 @@ impl Explorer {
                 if sticky { "sticky-row" } else { "tree-row" },
             ))
             .relative()
-            .tooltip(move |window, cx| {
-                let name = tooltip_name.clone();
-                let path = tooltip_path.clone();
-                let width = (f32::from(window.viewport_size().width) - 48.).clamp(120., 480.);
-                Tooltip::element(move |_, cx| {
-                    gpui_kit::component::v_flex()
-                        .w(px(width))
-                        .gap_1()
-                        .py_1()
-                        .child(
-                            div()
-                                .whitespace_normal()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child(name.clone()),
-                        )
-                        .child(
-                            div()
-                                .whitespace_normal()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(path.clone()),
-                        )
+            .when(self.clipped_labels.contains(&label_key), |entry| {
+                entry.tooltip(move |window, cx| {
+                    let name = tooltip_name.clone();
+                    let path = tooltip_path.clone();
+                    let width = (f32::from(window.viewport_size().width) - 48.).clamp(120., 480.);
+                    Tooltip::element(move |_, cx| {
+                        gpui_kit::component::v_flex()
+                            .w(px(width))
+                            .gap_1()
+                            .py_1()
+                            .child(
+                                div()
+                                    .whitespace_normal()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(name.clone()),
+                            )
+                            .child(
+                                div()
+                                    .whitespace_normal()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(path.clone()),
+                            )
+                    })
+                    .build(window, cx)
                 })
-                .build(window, cx)
             })
             .on_hover(cx.listener(move |view, hovered: &bool, _, cx| {
                 if *hovered && menu_is_dir {
@@ -410,10 +417,47 @@ impl Explorer {
                                         &row.entry.path,
                                         if sticky { "sticky-label" } else { "label" },
                                     ))
+                                    .relative()
                                     .flex_1()
                                     .min_w_0()
                                     .truncate()
                                     .child(name)
+                                    .child(
+                                        canvas(
+                                            move |bounds, window, cx| {
+                                                let style = window.text_style();
+                                                let width = window
+                                                    .text_system()
+                                                    .layout_line(
+                                                        &label_name,
+                                                        style
+                                                            .font_size
+                                                            .to_pixels(window.rem_size()),
+                                                        &[style.to_run(label_name.len())],
+                                                        None,
+                                                    )
+                                                    .width;
+                                                let clipped = width > bounds.size.width + px(0.5);
+                                                let key = label_key.clone();
+                                                let view = label_view.clone();
+                                                window.defer(cx, move |_, cx| {
+                                                    let _ = view.update(cx, |view, cx| {
+                                                        let changed = if clipped {
+                                                            view.clipped_labels.insert(key)
+                                                        } else {
+                                                            view.clipped_labels.remove(&key)
+                                                        };
+                                                        if changed {
+                                                            cx.notify();
+                                                        }
+                                                    });
+                                                });
+                                            },
+                                            |_, _, _, _| {},
+                                        )
+                                        .absolute()
+                                        .size_full(),
+                                    )
                                     .test_support(),
                             ),
                     ),
@@ -777,6 +821,51 @@ mod interaction_tests {
         AppContext, Bounds, Point, TestAppContext, WindowBounds, WindowOptions, px, size,
         test::TestWindowExt,
     };
+
+    #[gpui_kit::test]
+    fn only_clipped_file_labels_enable_tooltips(cx: &mut TestAppContext) {
+        let short = std::path::PathBuf::from("/fixture/short.txt");
+        let long =
+            std::path::PathBuf::from(format!("/fixture/{}.txt", "long-filename-".repeat(12)));
+        cx.update(gpui_kit::init);
+        let (handle, view) = cx.update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds {
+                        origin: Point::default(),
+                        size: size(px(300.), px(300.)),
+                    })),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|cx| {
+                        Explorer::new(
+                            "/fixture".into(),
+                            vec![short.clone(), long.clone()]
+                                .into_iter()
+                                .map(|path| DirectoryEntry {
+                                    path,
+                                    is_dir: false,
+                                    is_symlink: false,
+                                })
+                                .collect(),
+                            cx,
+                        )
+                    })
+                },
+            )
+            .unwrap()
+        });
+        cx.update_window(handle, |_, window, cx| window.render_frame(cx))
+            .unwrap();
+        cx.run_until_parked();
+        cx.update(|cx| {
+            let labels = &view.read(cx).clipped_labels;
+            assert!(!labels.contains(&(short.clone(), false)));
+            assert!(labels.contains(&(long.clone(), false)));
+        });
+    }
 
     #[gpui_kit::test]
     fn loading_arrow_and_expanded_arrow_keep_label_in_place(cx: &mut TestAppContext) {
