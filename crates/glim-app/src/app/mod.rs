@@ -5,7 +5,7 @@ pub(crate) mod diagram_engine;
 mod image_http;
 pub(crate) mod languages;
 mod shortcuts;
-#[cfg(all(target_os = "macos", feature = "macos-updater"))]
+#[cfg(feature = "macos-updater")]
 mod updater_bridge;
 pub(crate) mod updates;
 
@@ -452,12 +452,10 @@ fn update_menus(cx: &mut App) {
                     CheckForUpdates,
                 ),
                 MenuItem::separator(),
-                #[cfg(target_os = "macos")]
                 MenuItem::action(
                     glim_services::locale::tr("Default File Types…"),
                     DefaultApplications,
                 ),
-                #[cfg(target_os = "macos")]
                 MenuItem::separator(),
                 MenuItem::action(glim_services::locale::tr("Quit Glim"), Quit),
             ],

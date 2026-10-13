@@ -2,9 +2,6 @@
 """Create verified signed feeds from built release archives. Does not publish."""
 import argparse
 import hashlib
-import json
-import zipfile
-from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
@@ -69,47 +66,6 @@ def validate_bundle(archive, stage, version, arch, public_key):
     finally:
         run('hdiutil', 'detach', mount)
 
-
-
-# Historical Windows feed protocol; not invoked by the current macOS release flow.
-def create_windows_feed(archives, version, build, notes, tools, key_file, public_key):
-    archive = archives / f'Glim-{version}-windows-x64.zip'
-    expected = {f'Glim/{name}' for name in ('Glim.exe', 'LICENSE.txt', 'Read Me.txt', 'glim-release.json')}
-    with zipfile.ZipFile(archive) as package:
-        files = [entry for entry in package.infolist() if not entry.is_dir()]
-        if len(files) != 4 or {entry.filename for entry in files} != expected:
-            raise ValueError('Unexpected Windows archive files')
-        if sum(entry.file_size for entry in files) > 512 * 1024 * 1024:
-            raise ValueError('Windows package exceeds extraction size limit')
-        metadata_entry = package.getinfo('Glim/glim-release.json')
-        if metadata_entry.file_size > 16 * 1024:
-            raise ValueError('Windows package metadata exceeds limit')
-        metadata = json.loads(package.read(metadata_entry))
-        required = {'schema': 1, 'application': 'io.github.neopanic.glim',
-                    'platform': 'windows-x64', 'version': version, 'build': build,
-                    'public_key': public_key.strip(), 'updates_enabled': True}
-        if metadata != required:
-            raise ValueError('Windows update identity, version or public key differs')
-        with package.open('Glim/Glim.exe') as executable:
-            header = executable.read(64)
-            if len(header) != 64 or header[:2] != b'MZ':
-                raise ValueError('Windows executable header is missing')
-            offset = int.from_bytes(header[60:64], 'little')
-            if offset + 6 > package.getinfo('Glim/Glim.exe').file_size:
-                raise ValueError('Windows PE header is outside the executable')
-            executable.seek(offset)
-            if executable.read(6) != b'PE\0\0\x64\x86':
-                raise ValueError('Windows update executable is not x64')
-    manifest = {'schema': 1, 'application': 'io.github.neopanic.glim',
-                'platform': 'windows-x64', 'version': version, 'build': build,
-                'url': f'{REPOSITORY}/releases/download/v{version}/{archive.name}',
-                'size': archive.stat().st_size, 'sha256': checksum(archive),
-                'published': datetime.now(timezone.utc).isoformat(), 'notes': notes}
-    feed = archives / 'windows-update.json'
-    feed.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
-    signature = run(tools / 'sign_update', '--ed-key-file', key_file, '-p', feed).strip()
-    run(tools / 'sign_update', '--verify', '--ed-key-file', key_file, feed, signature)
-    (archives / 'windows-update.json.sig').write_text(signature + '\n')
 
 def create_feeds(archives, tag, notes, tools, key_file, public_key, bootstrap=False):
     if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):

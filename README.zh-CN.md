@@ -69,8 +69,6 @@ Office 排版和音视频编码支持取决于 macOS。XLS/XLSX 显示本地表�
 
 打开 DMG，将 Glim 拖入“应用程序”。目前使用 ad-hoc 签名，尚无 Developer ID 签名与 Apple 公证。若系统拦截，先尝试打开一次，再到 **系统设置 → 隐私与安全性 → 仍要打开**。请确认安装包来自本项目发布页，无需关闭系统安全保护。[Apple 官方说明](https://support.apple.com/zh-cn/102445)
 
-Windows 敬请期待。
-
 [更新说明与 SHA-256 校验文件](https://github.com/NeoPanic/Glim/releases/latest) · [历史版本](https://github.com/NeoPanic/Glim/releases) · [从源码构建](docs/releasing.zh-CN.md)
 
 ## 参与项目

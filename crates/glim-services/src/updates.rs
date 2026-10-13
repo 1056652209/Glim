@@ -9,11 +9,6 @@ use std::{
 };
 
 pub fn state_directory() -> Result<PathBuf> {
-    #[cfg(target_os = "windows")]
-    let base = PathBuf::from(
-        std::env::var_os("APPDATA").context("Application data directory is unavailable")?,
-    );
-    #[cfg(not(target_os = "windows"))]
     let base = PathBuf::from(std::env::var_os("HOME").context("Home directory is unavailable")?)
         .join("Library/Application Support");
     Ok(base.join("Glim"))
@@ -31,7 +26,7 @@ fn digest(path: &Path) -> Result<String> {
     }
     Ok(format!("{:x}", hash.finalize()))
 }
-#[cfg(not(target_os = "windows"))]
+
 fn run(command: &mut std::process::Command) -> Result<()> {
     let output = command.output()?;
     ensure!(
@@ -45,20 +40,10 @@ fn run(command: &mut std::process::Command) -> Result<()> {
 /// Preserve the signed complete bundle, never user documents or preferences.
 /// Returns an immutable, verified archive; installation remains Sparkle's job.
 pub fn prepare_backup(bundle: &Path) -> Result<PathBuf> {
-    #[cfg(target_os = "windows")]
-    return crate::windows_updates::install::prepare_backup(
-        bundle,
-        &state_directory()?.join("UpdateBackups"),
-    );
-    #[cfg(not(target_os = "windows"))]
     prepare_backup_at(bundle, &state_directory()?.join("UpdateBackups"))
 }
-#[cfg(not(target_os = "windows"))]
+
 fn prepare_backup_at(bundle: &Path, backups: &Path) -> Result<PathBuf> {
-    ensure!(
-        cfg!(target_os = "macos"),
-        "Automatic installation requires macOS"
-    );
     let bundle = bundle.canonicalize()?;
     ensure!(
         bundle.extension().is_some_and(|v| v == "app"),
@@ -266,7 +251,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn signed_backup_survives_source_replacement_and_detects_tampering() -> Result<()> {
         let dir = tempfile::tempdir()?;

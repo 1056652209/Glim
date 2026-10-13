@@ -47,9 +47,6 @@ pub fn is_iwork(path: &Path) -> bool {
 /// `.key` is also used by plain-text cryptographic keys. Only document packages
 /// and ZIP containers should be handed to Keynote's Quick Look provider.
 pub fn can_open(path: &Path) -> bool {
-    if !cfg!(target_os = "macos") {
-        return false;
-    }
     if !supports(path) && !crate::sqlite::has_header(path) {
         return false;
     }
@@ -75,15 +72,14 @@ pub fn can_open(path: &Path) -> bool {
 }
 
 pub fn supports(path: &Path) -> bool {
-    cfg!(target_os = "macos")
-        && (crate::sqlite::supports(path)
-            || is_media(path)
-            || is_font(path)
-            || is_office(path)
-            || path
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .is_some_and(|s| s.eq_ignore_ascii_case("pdf")))
+    crate::sqlite::supports(path)
+        || is_media(path)
+        || is_font(path)
+        || is_office(path)
+        || path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("pdf"))
 }
 
 fn playlist(path: &Path, folder: bool) -> Result<Vec<PathBuf>> {
@@ -183,24 +179,23 @@ fn launch(
 ) -> Result<()> {
     configuration["language"] = serde_json::json!(crate::locale::code());
     configuration["localizations"] = crate::locale::translations();
-    #[cfg(target_os = "macos")]
-    {
-        use std::{
-            os::unix::fs::PermissionsExt,
-            process::{Command, Stdio},
-        };
-        let directory = tempfile::tempdir()?;
-        // Only default-file-type settings use an independent helper application.
-        let contents = directory.path().join("Glim Settings.app/Contents");
-        let binaries = contents.join("MacOS");
-        std::fs::create_dir_all(&binaries)?;
-        let resources = contents.join("Resources");
-        std::fs::create_dir_all(&resources)?;
-        std::fs::write(
-            resources.join("Glim.icns"),
-            include_bytes!("../../../assets/macos/Glim.icns"),
-        )?;
-        let info = r#"<?xml version="1.0" encoding="UTF-8"?>
+
+    use std::{
+        os::unix::fs::PermissionsExt,
+        process::{Command, Stdio},
+    };
+    let directory = tempfile::tempdir()?;
+    // Only default-file-type settings use an independent helper application.
+    let contents = directory.path().join("Glim Settings.app/Contents");
+    let binaries = contents.join("MacOS");
+    std::fs::create_dir_all(&binaries)?;
+    let resources = contents.join("Resources");
+    std::fs::create_dir_all(&resources)?;
+    std::fs::write(
+        resources.join("Glim.icns"),
+        include_bytes!("../../../assets/macos/Glim.icns"),
+    )?;
+    let info = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleName</key><string>Glim Settings</string>
@@ -211,43 +206,37 @@ fn launch(
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>"#;
-        std::fs::write(contents.join("Info.plist"), info)?;
-        let executable = binaries.join("glim-preview");
-        std::fs::write(
-            &executable,
-            include_bytes!(concat!(env!("OUT_DIR"), "/glim-preview")),
-        )?;
-        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
-        let manifest = directory.path().join("request.json");
-        std::fs::write(&manifest, serde_json::to_vec(&configuration)?)?;
-        // Keep the temporary executable and manifest alive until its window closes.
-        let mut child = Command::new(executable)
-            .arg(manifest)
-            .env_remove("__CFBundleIdentifier")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
-        loop {
-            if cancelled.load(std::sync::atomic::Ordering::Acquire) {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok(());
-            }
-            if let Some(status) = child.try_wait()? {
-                ensure!(
-                    status.success(),
-                    "The native preview could not open this file"
-                );
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+    std::fs::write(contents.join("Info.plist"), info)?;
+    let executable = binaries.join("glim-preview");
+    std::fs::write(
+        &executable,
+        include_bytes!(concat!(env!("OUT_DIR"), "/glim-preview")),
+    )?;
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))?;
+    let manifest = directory.path().join("request.json");
+    std::fs::write(&manifest, serde_json::to_vec(&configuration)?)?;
+    // Keep the temporary executable and manifest alive until its window closes.
+    let mut child = Command::new(executable)
+        .arg(manifest)
+        .env_remove("__CFBundleIdentifier")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    loop {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(());
         }
-        Ok(())
+        if let Some(status) = child.try_wait()? {
+            ensure!(
+                status.success(),
+                "The native preview could not open this file"
+            );
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (configuration, cancelled);
-        anyhow::bail!("Native preview requires macOS")
-    }
+    Ok(())
 }

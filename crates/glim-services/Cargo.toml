@@ -32,11 +32,8 @@ object = { version = "=0.37.3", default-features = false, features = ["read", "s
 html5ever = "=0.27.0"
 markup5ever_rcdom = "=0.3.0"
 json5 = "0.4"
-ed25519-dalek = "2"
 base64 = "0.22"
-semver = "1"
 serde = { version = "1", features = ["derive"] }
-time = { version = "0.3", features = ["formatting"] }
 roxmltree = "0.21"
 encoding_rs = "0.8"
 

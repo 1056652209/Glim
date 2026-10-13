@@ -208,7 +208,7 @@ pub fn render(
         .collect::<Vec<_>>();
     std::fs::write(&input, serde_json::to_vec(&request)?)?;
     let executable = std::env::current_exe()?;
-    #[cfg(target_os = "macos")]
+
     let executable = executable
         .parent()
         .and_then(|directory| directory.parent())
@@ -223,11 +223,7 @@ pub fn render(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
-    }
+
     let mut child = command
         .spawn()
         .context("Cannot start offline diagram renderer")?;

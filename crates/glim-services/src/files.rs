@@ -127,7 +127,7 @@ mod tests {
         assert!(!path.exists());
         Ok(())
     }
-    #[cfg(unix)]
+
     #[test]
     fn saving_keeps_symlink_and_permissions_and_respects_readonly() -> Result<()> {
         use std::os::unix::fs::{PermissionsExt, symlink};

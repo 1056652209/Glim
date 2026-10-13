@@ -153,7 +153,16 @@ impl MarkupReader {
         let link_base = self.base.clone();
         let scroll = self.scroll.clone();
         let minimap = self.source.minimap.clone();
-        let text_view = TextView::new(&self.state).scrollable(false).w_full();
+        // gpui-base 0.7.1 gives an unclamped document state `h_full`, even
+        // when its outer viewport owns scrolling. An unbounded line cap uses
+        // its natural-height layout instead, without limiting document lines.
+        // This keeps bottom images (including asynchronously loaded charts)
+        // inside the extent measured by our ScrollHandle.
+        let text_view = TextView::new(&self.state)
+            .scrollable(false)
+            .max_lines(usize::MAX)
+            .w_full()
+            .flex_shrink_0();
         let text_view = if let Some(diagrams) = &self.diagrams {
             text_view.markdown_extensions(super::diagrams::with_alerts(
                 diagrams.read(cx).extensions.clone(),

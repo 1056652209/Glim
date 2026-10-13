@@ -15,12 +15,8 @@ pub(crate) struct UpdateState {
     pub preparing: bool,
     pub exiting: bool,
     pub backup: Option<PathBuf>,
-    #[cfg(all(target_os = "macos", feature = "macos-updater"))]
+    #[cfg(feature = "macos-updater")]
     native: Option<super::updater_bridge::NativeUpdater>,
-    #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-    windows: Option<glim_services::windows_updates::Client>,
-    #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-    _windows_worker: Option<Task<()>>,
     _poll: Option<Task<()>>,
     preparation: Option<Task<()>>,
     exit_task: Option<Task<()>>,
@@ -32,22 +28,16 @@ pub(crate) struct UpdateState {
 }
 impl UpdateState {
     fn command(&self, command: &str) {
-        #[cfg(all(target_os = "macos", feature = "macos-updater"))]
+        #[cfg(feature = "macos-updater")]
         if let Some(native) = &self.native {
             native.command(command);
         }
-        #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-        if let Some(windows) = &self.windows {
-            windows.command(command);
-        }
-        #[cfg(not(any(
-            all(target_os = "macos", feature = "macos-updater"),
-            all(target_os = "windows", feature = "windows-updater")
-        )))]
+
+        #[cfg(not(feature = "macos-updater"))]
         let _ = command;
     }
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        #[cfg(all(target_os = "macos", feature = "macos-updater"))]
+        #[cfg(feature = "macos-updater")]
         if let Some(native) = &self.native
             && let Ok(snapshot) = native.snapshot()
             && self.snapshot != snapshot
@@ -68,27 +58,7 @@ impl UpdateState {
             cx.notify();
             cx.refresh_windows();
         }
-        #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-        if let Some(windows) = self.windows.clone() {
-            let snapshot = windows.snapshot();
-            if self.snapshot != snapshot {
-                let cancelled = snapshot.phase == "cancelled" && self.snapshot.phase != "cancelled";
-                self.snapshot = snapshot;
-                if cancelled {
-                    self.clear_checkpoint(None, cx);
-                }
-                if self.exiting && self.snapshot.phase == "error" {
-                    self.exiting = false;
-                    set_locked(false, cx);
-                }
-                if self.exiting && !self.preparing && self.snapshot.exit_requested {
-                    windows.command("commit-exit");
-                    cx.defer(|cx| cx.quit());
-                }
-                cx.notify();
-                cx.refresh_windows();
-            }
-        }
+
         if self.exiting
             && !self.preparing
             && self
@@ -102,7 +72,7 @@ impl UpdateState {
             set_locked(false, cx);
             cx.notify();
         }
-        #[cfg(not(all(target_os = "macos", feature = "macos-updater")))]
+        #[cfg(not(feature = "macos-updater"))]
         let _ = cx;
     }
     fn clear_checkpoint(&mut self, exit_task: Option<Task<()>>, cx: &mut Context<Self>) {
@@ -266,7 +236,7 @@ impl UpdateState {
                 } else if relaunch {
                     state.command("install-approved");
                     state.refresh(cx);
-                    #[cfg(not(all(target_os = "windows", feature = "windows-updater")))]
+
                     if !state.snapshot.exit_requested {
                         state.exiting = false;
                         set_locked(false, cx);
@@ -274,7 +244,7 @@ impl UpdateState {
                 } else {
                     state.command("quit-approved");
                     state.refresh(cx);
-                    #[cfg(not(all(target_os = "windows", feature = "windows-updater")))]
+
                     if state.snapshot.exit_requested {
                         cx.quit();
                     } else {
@@ -291,49 +261,12 @@ impl UpdateState {
 
 pub(crate) fn init(cx: &mut App) {
     cx.set_global(UpdateInstallLock::default());
-    #[cfg(all(target_os = "macos", feature = "macos-updater"))]
+    #[cfg(feature = "macos-updater")]
     let native = super::updater_bridge::NativeUpdater::new();
-    #[cfg(all(target_os = "macos", feature = "macos-updater"))]
+    #[cfg(feature = "macos-updater")]
     let snapshot = native.snapshot().unwrap_or_default();
-    #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-    let (windows, windows_worker, snapshot) = {
-        let result = std::env::current_exe()
-            .map_err(anyhow::Error::from)
-            .and_then(|executable| {
-                glim_services::windows_updates::create(
-                    executable,
-                    option_env!("GLIM_UPDATE_PUBLIC_KEY")
-                        .unwrap_or_default()
-                        .into(),
-                    env!("CARGO_PKG_VERSION").into(),
-                    env!("GLIM_BUILD_NUMBER").parse()?,
-                )
-            });
-        match result {
-            Ok((client, runner)) => {
-                let snapshot = client.snapshot();
-                let worker = cx.background_executor().spawn(async move {
-                    runner.run();
-                });
-                (Some(client), Some(worker), snapshot)
-            }
-            Err(error) => (
-                None,
-                None,
-                UpdateSnapshot {
-                    phase: "disabled".into(),
-                    current_version: env!("CARGO_PKG_VERSION").into(),
-                    current_build: env!("GLIM_BUILD_NUMBER").into(),
-                    message: format!("Cannot enable Windows updates: {error:#}"),
-                    ..Default::default()
-                },
-            ),
-        }
-    };
-    #[cfg(not(any(
-        all(target_os = "macos", feature = "macos-updater"),
-        all(target_os = "windows", feature = "windows-updater")
-    )))]
+
+    #[cfg(not(feature = "macos-updater"))]
     let snapshot = UpdateSnapshot {
         current_version: env!("CARGO_PKG_VERSION").into(),
         mode: glim_core::update::UpdateMode::Manual,
@@ -349,12 +282,8 @@ pub(crate) fn init(cx: &mut App) {
         preparing: false,
         exiting: false,
         backup: None,
-        #[cfg(all(target_os = "macos", feature = "macos-updater"))]
+        #[cfg(feature = "macos-updater")]
         native: Some(native),
-        #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-        windows,
-        #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-        _windows_worker: windows_worker,
         _poll: None,
         preparation: None,
         exit_task: None,
@@ -494,18 +423,12 @@ fn save_all_after_dispatch(cx: &mut App) {
 pub(crate) fn has_pending_install(cx: &App) -> bool {
     state(cx).is_some_and(|s| {
         let s = s.read(cx);
-        #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-        return s.snapshot.enabled
-            && ((s.snapshot.install_on_quit && s.snapshot.can_install)
-                || s.snapshot.phase == "installing");
-        #[cfg(not(all(target_os = "windows", feature = "windows-updater")))]
-        {
-            s.snapshot.enabled
-                && (s.snapshot.install_on_quit
-                    || s.snapshot.phase == "downloading"
-                    || s.snapshot.phase == "extracting"
-                    || s.snapshot.phase == "installing")
-        }
+
+        s.snapshot.enabled
+            && (s.snapshot.install_on_quit
+                || s.snapshot.phase == "downloading"
+                || s.snapshot.phase == "extracting"
+                || s.snapshot.phase == "installing")
     })
 }
 /// Schedule outside a workspace entity update to avoid reentrant borrows.
@@ -606,15 +529,6 @@ pub(crate) fn start_application(path: Option<PathBuf>, urls: Vec<String>, cx: &m
     });
 }
 
-#[cfg(all(target_os = "windows", feature = "windows-updater"))]
-impl Drop for UpdateState {
-    fn drop(&mut self) {
-        if let Some(windows) = &self.windows {
-            windows.stop();
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{UpdateInstallLock, UpdateState, busy};
@@ -666,12 +580,8 @@ mod tests {
                 preparing: false,
                 exiting: false,
                 backup: Some(dir.path().join("backup.zip")),
-                #[cfg(all(target_os = "macos", feature = "macos-updater"))]
+                #[cfg(feature = "macos-updater")]
                 native: None,
-                #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-                windows: None,
-                #[cfg(all(target_os = "windows", feature = "windows-updater"))]
-                _windows_worker: None,
                 _poll: None,
                 preparation: None,
                 exit_task: None,

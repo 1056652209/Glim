@@ -2,7 +2,7 @@
 
 [English](README.md) · **简体中文** · [Glim 首页](../README.zh-CN.md)
 
-当前仅维护 macOS（Apple Silicon 与 Intel），后续发版只提供这两个架构的安装包和更新源。Windows 暂停维护与发布，已发布附件继续保留在[历史 Release](https://github.com/NeoPanic/Glim/releases)；恢复时间未定。
+当前仅维护 macOS（Apple Silicon 与 Intel），后续发版只提供这两个架构的安装包和更新源。仓库只包含 Mac 平台实现，既有公开附件继续保留在[历史 Release](https://github.com/NeoPanic/Glim/releases)。
 
 | 主题 | 内容 |
 | --- | --- |

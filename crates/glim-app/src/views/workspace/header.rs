@@ -446,18 +446,13 @@ impl Workspace {
                             )
                             .child(self.reader_controls(cx)),
                     ),
-                cx,
             ))
             .when(!self.results.is_empty(), |v| {
                 v.child(
                     deferred(
                         h_flex()
                             .absolute()
-                            .top(px(if cfg!(target_os = "windows") {
-                                74.
-                            } else {
-                                44.
-                            }))
+                            .top(px(44.))
                             .left_0()
                             .w_full()
                             .justify_center()
@@ -517,29 +512,11 @@ impl Workspace {
     }
 }
 
-// Windows treats the title bar's Drag hitbox as a native non-client region.
-// Interactive controls must be in a separate client toolbar, not its children.
-fn workspace_title_bar(content: impl IntoElement, cx: &App) -> AnyElement {
-    if cfg!(target_os = "windows") {
-        v_flex()
-            .w_full()
-            .child(TitleBar::new().h(px(30.)).pl_0().pr_0())
-            .child(
-                div()
-                    .h(px(44.))
-                    .w_full()
-                    .bg(cx.theme().title_bar)
-                    .border_b_1()
-                    .border_color(cx.theme().title_bar_border)
-                    .child(content),
-            )
-            .into_any_element()
-    } else {
-        TitleBar::new()
-            .h(px(44.))
-            .pl_0()
-            .pr_0()
-            .child(content)
-            .into_any_element()
-    }
+fn workspace_title_bar(content: impl IntoElement) -> AnyElement {
+    TitleBar::new()
+        .h(px(44.))
+        .pl_0()
+        .pr_0()
+        .child(content)
+        .into_any_element()
 }

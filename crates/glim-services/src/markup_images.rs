@@ -123,16 +123,7 @@ pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
         url.starts_with("https://") || url.starts_with("http://"),
         "Unsupported image URL scheme"
     );
-    let downloader = if cfg!(target_os = "windows") {
-        std::path::PathBuf::from(
-            std::env::var_os("SystemRoot").unwrap_or_else(|| "C:/Windows".into()),
-        )
-        .join("System32")
-        .join("curl.exe")
-    } else {
-        std::path::PathBuf::from("/usr/bin/curl")
-    };
-    let mut command = Command::new(downloader);
+    let mut command = Command::new("/usr/bin/curl");
     command
         .args([
             "--disable",
@@ -157,11 +148,7 @@ pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000); // CREATE_NO_WINDOW: image requests must not open consoles.
-    }
+
     let mut child = command
         .spawn()
         .context("Cannot start the image downloader")?;

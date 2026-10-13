@@ -16,7 +16,6 @@ pub(super) struct NativeReader {
     autoplay: bool,
     task: Option<Task<()>>,
     // Drop the native controller before its prepared data (including SQLite snapshots).
-    #[cfg(target_os = "macos")]
     preview: Option<super::native_bridge::NativePreview>,
     prepared: Option<glim_services::preview::PreparedPreview>,
     error: Option<String>,
@@ -45,7 +44,6 @@ impl NativeReader {
             shuffle,
             autoplay,
             task: None,
-            #[cfg(target_os = "macos")]
             preview: None,
             prepared: None,
             error: None,
@@ -72,18 +70,10 @@ impl NativeReader {
                 v.task = None;
                 match result {
                     Ok(prepared) => {
-                        #[cfg(target_os = "macos")]
-                        {
-                            v.preview = Some(super::native_bridge::NativePreview::new(
-                                &prepared.configuration,
-                            ));
-                            v.prepared = Some(prepared);
-                        }
-                        #[cfg(not(target_os = "macos"))]
-                        {
-                            let _ = prepared;
-                            v.error = Some("Native preview requires macOS".into());
-                        }
+                        v.preview = Some(super::native_bridge::NativePreview::new(
+                            &prepared.configuration,
+                        ));
+                        v.prepared = Some(prepared);
                     }
                     Err(e) => v.error = Some(format!("{e:#}")),
                 }
@@ -93,7 +83,6 @@ impl NativeReader {
         cx.notify();
     }
     pub(super) fn hide(&self) {
-        #[cfg(target_os = "macos")]
         if let Some(preview) = &self.preview {
             preview.hide();
         }
@@ -124,7 +113,7 @@ impl Render for NativeReader {
         if self.obscured {
             return div().size_full().into_any_element();
         }
-        #[cfg(target_os = "macos")]
+
         if self.preview.is_some() {
             let view = cx.entity();
             return canvas(

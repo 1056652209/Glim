@@ -93,10 +93,9 @@ fn discovery_exclusions(root: &Path) -> Vec<PathBuf> {
     let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
         return Vec::new();
     };
-    #[cfg(target_os = "macos")]
+
     let paths = vec![home.join(".Trash"), home.join("Library")];
-    #[cfg(not(target_os = "macos"))]
-    let paths = vec![home.join(".Trash")];
+
     paths
         .into_iter()
         .filter(|path| !root.starts_with(path))
@@ -286,7 +285,6 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(unix)]
     #[test]
     fn directory_symlinks_do_not_create_recursive_trees() -> Result<()> {
         let temp = tempfile::tempdir()?;

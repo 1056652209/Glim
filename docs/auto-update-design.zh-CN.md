@@ -4,7 +4,7 @@
 
 ## 当前实现
 
-macOS 发行构建使用 **GitHub Releases + Sparkle 2.10.0 + Glim 共用更新窗口**，从 0.1.12 开始提供更新器。未配置的本地构建提供 GitHub 手动下载。当前仅为 Apple Silicon 与 Intel Mac 发布更新。Windows 维护与更新清单发布已暂停，既有公开版本保留。
+macOS 发行构建使用 **GitHub Releases + Sparkle 2.10.0 + Glim 共用更新窗口**，从 0.1.12 开始提供更新器。未配置的本地构建提供 GitHub 手动下载。当前仅为 Apple Silicon 与 Intel Mac 发布更新。Sparkle 是唯一更新后端，既有公开版本保留。
 
 本文描述已实现行为及剩余边界，不承诺未来功能或发布日期。部署命令与密钥配置见[构建与发布](releasing.zh-CN.md#automatic-updates)。
 

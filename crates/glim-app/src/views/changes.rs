@@ -63,11 +63,7 @@ impl Changes {
     pub(crate) fn refresh_language(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.message.update(cx, |input, cx| {
             input.set_placeholder(
-                glim_services::locale::tr(if cfg!(target_os = "macos") {
-                    "Commit message · ⌘Enter"
-                } else {
-                    "Commit message · Ctrl+Enter"
-                }),
+                glim_services::locale::tr("Commit message · ⌘Enter"),
                 window,
                 cx,
             )
@@ -76,11 +72,8 @@ impl Changes {
 
     pub fn new(repositories: Vec<Repository>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let message = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(if cfg!(target_os = "macos") {
-                glim_services::locale::tr("Commit message · ⌘Enter")
-            } else {
-                glim_services::locale::tr("Commit message · Ctrl+Enter")
-            })
+            InputState::new(window, cx)
+                .placeholder(glim_services::locale::tr("Commit message · ⌘Enter"))
         });
         let message_subscription =
             cx.subscribe_in(&message, window, |view, _, event, window, cx| {

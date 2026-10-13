@@ -74,21 +74,16 @@ Core 根据提交及父提交 ID 计算 Graph 通道，每次增加 200 个提�
 
 ## 平台、偏好与更新边界
 
-主工作台维护 GPUI macOS 后端，支持 Apple Silicon 与 Intel，快捷键使用 ⌘。Swift 提供原生预览与默认文件类型设置；图表使用系统 WebKit。Windows 分支保留在源码中，但不属于当前维护、CI 或发行范围。
+主工作台维护 GPUI macOS 后端，支持 Apple Silicon 与 Intel，快捷键使用 ⌘。Swift 提供原生预览与默认文件类型设置；图表使用系统 WebKit。应用与服务的 Windows 分支已移除；构建脚本明确拒绝非 macOS 目标。
 
 macOS 保留 `io.github.jony4.glimpse` 身份以兼容已有安装。偏好位于 `~/Library/Application Support/Glim`，在已实现的位置兼容旧 Glimpse 路径。语言字典内嵌，文档正文及技术诊断不翻译；每个文档主题都有英文／简体中文对应页。
 
 `glim-core/update` 定义快照、模式、活动检查和会话值；`services/updates` 校验／复制备份并写入／消费有界检查点；`app/updates` 持有单一全局 `UpdateState`、任务、编辑锁和退出世代检查；`views/updates` 展示复用的居中窗口。菜单／关于／标题栏共用状态。退出准备期间收到 Finder 打开请求会撤回授权并保留文件请求。
 
-macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Updater.swift` 的 Sparkle 2.10.0。自定义 user driver 将安装批准交给 Rust。桥接给固定 GPUI delegate 添加缺少的可取消终止方法，不替换 delegate；未来不兼容的退出契约会禁用更新。Sparkle 负责签名下载、解包、权限和替换。未配置构建提供手动下载；当前只发布两个 Mac 架构的签名更新源；下述 Windows 后端已暂停维护。
+macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Updater.swift` 的 Sparkle 2.10.0。自定义 user driver 将安装批准交给 Rust。桥接给固定 GPUI delegate 添加缺少的可取消终止方法，不替换 delegate；未来不兼容的退出契约会禁用更新。Sparkle 负责签名下载、解包、权限和替换。未配置构建提供手动下载；当前只发布两个 Mac 架构的签名更新源。
 
 参见[更新行为与信任](auto-update-design.zh-CN.md)、[发布配置](releasing.zh-CN.md#automatic-updates)和[未完成事项](TODO.zh-CN.md)。
 
-## 保留的 Windows 后端（暂停维护）
-
-`services/windows_updates` 验证不可变 Release 清单的独立 Ed25519 签名，将 ZIP 地址、SHA-256、版本与 Windows x64 Glim 身份绑定，仅解压和替换便携发行包的四个受管理文件。`manifest` 定义验签协议，`install` 实现有界解压、备份、同卷替换及失败回退；后台 runner 使用系统 HTTPS 下载程序并保留可取消的进程句柄，仅向 UI 共享缓存的更新快照。
-
-应用的 `windows-updater` 可选 feature 将后端接入现有更新弹窗、保存／Git／加载检查及一次性会话记录。复制的 `--install-update` 辅助程序先验证更新包并确认就绪，再等待原进程退出后替换应用；撤回退出授权会取消辅助程序。保留便携目录内其他文件和 AppData 用户偏好，受保护的不可写目录仍需手动更新。该 feature 默认关闭，当前 CI 与发布流程不启用、不打包，也不生成 Windows 签名清单；既有公开附件继续保留。
 
 ## 电子书阅读
 

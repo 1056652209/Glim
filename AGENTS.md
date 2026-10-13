@@ -1,7 +1,7 @@
 # Glim development
 
 - Product scope: a macOS viewer (Apple Silicon and Intel) for Markdown, source code, and Git diffs, with explicit staging/unstaging controls and a Git commit input (Command-Enter, staged contents only); no cloning. Ordinary UTF-8 files support basic notepad-style editing, automatic saving and explicit saving; diffs, images and unsupported files remain read-only.
-- Platform strategy: maintain and release only macOS Apple Silicon and Intel. Windows maintenance, CI, packaging and update-feed publication are paused; keep existing public Windows releases intact. Do not reintroduce cross-platform claims or Windows release jobs without explicit user direction.
+- Platform strategy: maintain and release only macOS Apple Silicon and Intel. The repository is macOS-only: do not add non-macOS backends, platform branches, dependencies or release jobs without explicit user direction. Keep existing public release assets intact.
 - Keep crate dependencies one-way: glim-app -> glim-services -> glim-core;
   glim-app may also depend on glim-core directly.
 - glim-core must not depend on GPUI or perform I/O. Services do not import UI.

@@ -114,7 +114,7 @@ def chart(history, dark=False):
 <title id="title">{escape(history['repository'])} release download history</title>
 <desc id="desc">Daily observed totals for published GitHub release assets. Tracking began {history['snapshots'][0]['date']}. Latest: {latest['total']:,} on {latest['date']}. No earlier history is estimated.</desc>
 <rect x=".5" y=".5" width="959" height="429" rx="16" fill="{bg}" stroke="{grid}"/>
-<g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif">
+<g font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif">
 <text x="32" y="43" fill="{fg}" font-size="21" font-weight="650">Release download history</text>
 <text x="32" y="69" fill="{muted}" font-size="13">{escape(history['repository'])} · Daily snapshots · Asia/Shanghai</text>
 <text x="916" y="47" text-anchor="end" fill="{accent}" font-size="32" font-weight="700">{latest['total']:,}</text>

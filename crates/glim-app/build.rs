@@ -11,51 +11,14 @@ fn main() {
     assert!(build.parse::<u64>().is_ok(), "Invalid release build number");
     println!("cargo:rustc-env=GLIM_BUILD_NUMBER={build}");
     println!("cargo:rerun-if-env-changed=GLIM_UPDATE_PUBLIC_KEY");
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
-        && env::var_os("CARGO_FEATURE_WINDOWS_UPDATER").is_some()
-    {
-        assert!(
-            env::var("GLIM_UPDATE_PUBLIC_KEY").is_ok_and(|key| !key.trim().is_empty()),
-            "Set GLIM_UPDATE_PUBLIC_KEY before enabling Windows updates"
-        );
+    assert!(
+        env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos"),
+        "Glim supports only macOS (Apple Silicon and Intel)"
+    );
+    build_native_preview();
+    if env::var_os("CARGO_FEATURE_MACOS_UPDATER").is_some() {
+        build_updater();
     }
-
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
-        build_native_preview();
-        if env::var_os("CARGO_FEATURE_MACOS_UPDATER").is_some() {
-            build_updater();
-        }
-    }
-    println!("cargo:rerun-if-changed=../../assets/windows/Glim.ico");
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
-        return;
-    }
-    let directory = PathBuf::from(env::var_os("OUT_DIR").unwrap());
-    let icon = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap())
-        .join("../../assets/windows/Glim.ico")
-        .canonicalize()
-        .unwrap();
-    let resource = directory.join("glim.rc");
-    std::fs::write(
-        &resource,
-        format!(
-            "1 ICON \"{}\"\n",
-            icon.to_string_lossy()
-                .trim_start_matches(r"\\?\")
-                .replace('\\', "/")
-        ),
-    )
-    .unwrap();
-    let compiled = directory.join("glim.res");
-    let status = Command::new("rc.exe")
-        .arg("/nologo")
-        .arg("/fo")
-        .arg(&compiled)
-        .arg(resource)
-        .status()
-        .expect("Windows SDK resource compiler is required");
-    assert!(status.success(), "Cannot compile Windows icon resource");
-    println!("cargo:rustc-link-arg-bins={}", compiled.display());
 }
 
 fn build_native_preview() {

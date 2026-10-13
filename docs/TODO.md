@@ -31,7 +31,7 @@ Existing Rust/native/isolated installer checks are useful but do not prove all o
 
 ## Outside current scope
 
-Windows maintenance, CI, packaging and new releases are paused. Existing public assets are retained; there is no committed return date.
+Non-macOS platforms are outside the product scope. Existing public release assets are retained.
 
 LSP, plugins, Git cloning, force push, rebase/reset/cherry-pick and a three-way merge editor are not part of the current product scope. Candidate work is not a release-date promise.
 

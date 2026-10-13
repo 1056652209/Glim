@@ -135,11 +135,7 @@ impl Render for JsonTree {
                                     .items_center()
                                     .gap_2()
                                     .h(px(32.))
-                                    .font_family(if cfg!(target_os = "windows") {
-                                        "Consolas"
-                                    } else {
-                                        "Menlo"
-                                    })
+                                    .font_family("Menlo")
                                     .when(row % 2 == 1, |row| {
                                         row.bg(cx.theme().foreground.opacity(0.025))
                                     })

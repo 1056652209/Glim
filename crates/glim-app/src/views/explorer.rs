@@ -176,9 +176,6 @@ impl Explorer {
     }
 
     fn check_folder_media(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if !cfg!(target_os = "macos") {
-            return;
-        }
         if self.media_presence.contains_key(&path) || self.media_tasks.contains_key(&path) {
             return;
         }
@@ -675,12 +672,7 @@ pub(super) fn path_menu(
     };
     let absolute = path.to_string_lossy().into_owned();
     menu.item(
-        PopupMenuItem::new(if cfg!(target_os = "macos") {
-            "Reveal in Finder"
-        } else {
-            "Reveal in File Explorer"
-        })
-        .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
+        PopupMenuItem::new("Reveal in Finder").on_click(move |_, _, cx| cx.reveal_path(&reveal)),
     )
     .separator()
     .item(

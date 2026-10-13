@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='glim-dmg-') as directory:
     image_mib = max(256, (payload_bytes * 2 + 1024 * 1024 - 1) // (1024 * 1024) + 64)
     subprocess.run(['hdiutil', 'create', '-ov', '-volname', f'Glim {version}',
                     '-srcfolder', directory, '-size', f'{image_mib}m', '-fs', 'HFS+',
-                    '-format', 'UDZO', '-imagekey', 'zlib-level=9', output], check=True)
+                    '-format', 'UDZO', '-imagekey', 'zlib-level=6', output], check=True)
 PY
 hdiutil verify "$PWD/dist/$dmg_name"
 (cd dist && shasum -a 256 "$dmg_name" > "$dmg_name.sha256")

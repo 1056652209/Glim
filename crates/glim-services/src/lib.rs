@@ -25,6 +25,4 @@ pub mod xmind;
 
 pub mod updates;
 
-pub mod windows_updates;
-
 pub mod books;

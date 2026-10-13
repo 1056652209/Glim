@@ -1,6 +1,6 @@
 //! Private renderer subprocess entry point, before GPUI initialization. The
 //! system WebView exists only in this process; Markdown HTML never enters it.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+
 pub fn run() -> anyhow::Result<()> {
     use anyhow::{Context, ensure};
     use std::{
@@ -14,7 +14,7 @@ pub fn run() -> anyhow::Result<()> {
         platform::run_return::EventLoopExtRunReturn,
         window::WindowBuilder,
     };
-    use wry::{WebContext, WebViewBuilder, http::Response};
+    use wry::{WebViewBuilder, http::Response};
 
     let input = PathBuf::from(
         std::env::args_os()
@@ -52,7 +52,7 @@ pub fn run() -> anyhow::Result<()> {
     );
     let mut results = vec![serde_json::Value::Null; count];
     let mut event_loop = EventLoopBuilder::<serde_json::Value>::with_user_event().build();
-    #[cfg(target_os = "macos")]
+
     {
         use tao::platform::macos::{
             ActivationPolicy, EventLoopExtMacOS, EventLoopWindowTargetExtMacOS,
@@ -67,10 +67,7 @@ pub fn run() -> anyhow::Result<()> {
         .with_visible(false)
         .with_inner_size(tao::dpi::LogicalSize::new(1200.0, 900.0))
         .build(&event_loop)?;
-    // Keep WebView2 profile data alongside the parent's temporary request,
-    // instead of writing engine caches into the user's document directory.
-    let mut context = WebContext::new(Some(output.with_file_name("webview")));
-    let _webview = WebViewBuilder::new_with_web_context(&mut context)
+    let _webview = WebViewBuilder::new()
         .with_incognito(true)
         .with_devtools(false)
         .with_initialization_script(initialization)
@@ -210,9 +207,4 @@ pub fn run() -> anyhow::Result<()> {
     }
     std::fs::write(&output, serde_json::to_vec(&results)?)?;
     Ok(())
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub fn run() -> anyhow::Result<()> {
-    anyhow::bail!("Offline Markdown diagrams require macOS or Windows")
 }

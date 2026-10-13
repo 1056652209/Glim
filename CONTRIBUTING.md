@@ -24,7 +24,7 @@ cargo test --workspace --locked
 cargo build --locked
 ```
 
-Describe the user-visible change and how you verified it. For UI changes, include a screenshot with private paths/content removed; say which platform you tested. Documentation-only changes need link/content checks, not a full build. Supported targets are macOS Apple Silicon and Intel. Windows maintenance and releases are paused; avoid adding Windows CI, packaging or support claims.
+Describe the user-visible change and how you verified it. For UI changes, include a screenshot with private paths/content removed; say which platform you tested. Documentation-only changes need link/content checks, not a full build. Supported targets are macOS Apple Silicon and Intel. Non-macOS backends, CI, packaging and support claims are outside the product scope.
 
 Contributions are provided under the project's [MIT license](LICENSE). Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
@@ -34,4 +34,4 @@ Contributions are provided under the project's [MIT license](LICENSE). Please fo
 
 欢迎中文 Issue 和 PR。报告问题时请提供版本、系统、复现步骤与脱敏样例；新格式请说明希望看到的信息。大功能先讨论范围，小改动保持聚焦。代码提交前执行上面的检查，说明实测平台及尚未验证的交互；纯文档改动无需构建。
 
-当前仅维护 macOS（Apple Silicon 与 Intel）。Windows 维护和发布暂停，请勿新增 Windows 构建、打包或支持承诺。
+当前仅维护 macOS（Apple Silicon 与 Intel）。非 macOS 后端、构建、打包与支持承诺不属于当前产品范围。

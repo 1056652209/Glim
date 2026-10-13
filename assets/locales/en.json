@@ -118,7 +118,6 @@
   "语言设置已保存": "Language preference saved",
   "此 dfont 没有可支持的 sfnt 字体资源。": "No supported sfnt font resources found in this dfont.",
   "提交说明 · ⌘Enter": "Commit message · ⌘Enter",
-  "提交说明 · Ctrl+Enter": "Commit message · Ctrl+Enter",
   "正在加载表格…": "Loading table…",
   "CSV · {rows} 行 × {columns} 列 · 只读表格，编辑请切换原文": "CSV · {rows} rows × {columns} columns · Read-only; switch to Source to edit",
   "只读预览 · 公式显示已保存的结果，不重新计算 · 图表与原始版式请使用默认应用查看": "Read-only preview · Stored formula results, no recalculation · Use the default app for charts and original layout",

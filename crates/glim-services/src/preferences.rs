@@ -3,11 +3,6 @@ use anyhow::{Context, Result};
 use std::{io::Write, path::PathBuf};
 
 fn wrap_path_for(application: &str) -> Result<PathBuf> {
-    #[cfg(target_os = "windows")]
-    let base = PathBuf::from(
-        std::env::var_os("APPDATA").context("Application data directory is unavailable")?,
-    );
-    #[cfg(not(target_os = "windows"))]
     let base = PathBuf::from(std::env::var_os("HOME").context("Home directory is unavailable")?)
         .join("Library/Application Support");
     Ok(base.join(application).join("word-wrap"))

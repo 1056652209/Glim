@@ -40,12 +40,7 @@ fn run_with_limit(root: &Path, args: &[&OsStr], limit: u64) -> Result<GitOutput>
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+
     let mut child = command
         .spawn()
         .context("Cannot run git; install Git or Apple Command Line Tools")?;
@@ -103,15 +98,8 @@ fn checked(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
 }
 
 fn path_from_bytes(bytes: &[u8]) -> PathBuf {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStringExt;
-        PathBuf::from(OsString::from_vec(bytes.to_vec()))
-    }
-    #[cfg(not(unix))]
-    {
-        PathBuf::from(String::from_utf8_lossy(bytes).into_owned())
-    }
+    use std::os::unix::ffi::OsStringExt;
+    PathBuf::from(OsString::from_vec(bytes.to_vec()))
 }
 
 pub fn inspect(directory: &Path) -> Result<Option<Repository>> {
@@ -220,8 +208,7 @@ pub fn read_diff(root: &Path, change: &GitChange) -> Result<DiffDocument> {
     args.push("--".into());
     if change.scope == DiffScope::Untracked {
         args.push("/dev/null".into());
-        // -C already selects the repository. Relative paths also avoid Git for
-        // Windows rejecting verbatim \?\ prefixes in --no-index file arguments.
+        // -C already selects the repository, so diff paths remain relative.
         args.push(change.path.as_os_str().to_owned());
     } else {
         args.push(change.path.as_os_str().to_owned());

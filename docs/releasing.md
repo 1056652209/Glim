@@ -9,7 +9,7 @@
 | macOS Apple Silicon — `aarch64-apple-darwin` | Rust, Apple Command Line Tools with Swift, Python 3 |
 | macOS Intel — `x86_64-apple-darwin` | Same macOS tooling and target toolchain |
 
-Use the Rust version pinned in [CI](../.github/workflows/ci.yml). Git features use the installed Git executable. Only macOS Apple Silicon and Intel are maintained and packaged. Windows maintenance and releases are paused; existing public assets are retained, and new drafts contain no Windows ZIP or update manifest.
+Use the Rust version pinned in [CI](../.github/workflows/ci.yml). Git features use the installed Git executable. Only macOS Apple Silicon and Intel are maintained and packaged. The build script rejects non-macOS targets; existing public release assets are retained.
 
 ## Development and validation
 

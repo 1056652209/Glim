@@ -66,7 +66,7 @@ def build(dark=False):
         group = element(svg, 'g', transform=f'translate({x} {y})')
         element(group, 'rect', width=width, height=height, rx=10, fill=card, stroke=border)
         element(group, 'use', href=f'#icon-{icon}', x=43, y=10)
-        element(group, 'text', x=width / 2, y=62, text_anchor='middle', font_family='-apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif', font_size=12, font_weight=600, fill=foreground).text = label
+        element(group, 'text', x=width / 2, y=62, text_anchor='middle', font_family='-apple-system, BlinkMacSystemFont, Arial, sans-serif', font_size=12, font_weight=600, fill=foreground).text = label
     return ET.tostring(svg, encoding='unicode') + '\n'
 
 if __name__ == '__main__':

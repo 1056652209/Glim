@@ -74,21 +74,16 @@ Core computes Graph lanes from commit/parent IDs. History grows in 200-commit pa
 
 ## Platform, preferences and update boundaries
 
-The maintained workspace uses GPUI on macOS Apple Silicon and Intel with ⌘ shortcuts. Swift provides native previews and default file-type settings; diagrams use system WebKit. Windows branches remain in source but are outside current maintenance, CI and release scope.
+The maintained workspace uses GPUI on macOS Apple Silicon and Intel with ⌘ shortcuts. Swift provides native previews and default file-type settings; diagrams use system WebKit. Windows application/service branches have been removed; the build script explicitly rejects non-macOS targets.
 
 macOS bundle identity remains `io.github.jony4.glimpse` for compatibility. Preferences use `~/Library/Application Support/Glim`, with legacy Glimpse fallback where implemented. Locale dictionaries are embedded; document text and technical diagnostics are not translated. Each documentation topic has English and Simplified Chinese counterparts.
 
 `glim-core/update` defines snapshots, modes, activity guards and session values. `services/updates` verifies/copies backups and writes/consumes bounded session checkpoints. `app/updates` owns one global `UpdateState`, task handles, editing locks and exit-generation checks; `views/updates` renders a reusable centered window. Menu/About/titlebar entries share that state. Finder opens arriving during exit preparation withdraw approval and preserve the file request.
 
-The macOS `macos-updater` feature connects `app/updater_bridge` to Sparkle 2.10.0 in `native/Updater.swift`. Its custom user driver delegates install approval to Rust. The bridge adds the missing cancellable termination method to the fixed GPUI delegate without replacing it; incompatible future delegate contracts disable updating. Sparkle handles signed downloads, extraction, permissions and replacement. Unconfigured builds offer manual downloads. Only the two Mac architectures receive signed update feeds; the retained Windows backend below is paused.
+The macOS `macos-updater` feature connects `app/updater_bridge` to Sparkle 2.10.0 in `native/Updater.swift`. Its custom user driver delegates install approval to Rust. The bridge adds the missing cancellable termination method to the fixed GPUI delegate without replacing it; incompatible future delegate contracts disable updating. Sparkle handles signed downloads, extraction, permissions and replacement. Unconfigured builds offer manual downloads. Only the two Mac architectures receive signed update feeds.
 
 See [update behavior and trust](auto-update-design.md), [release setup](releasing.md#automatic-updates) and [remaining work](TODO.md).
 
-## Retained Windows backend (maintenance paused)
-
-`services/windows_updates` verifies the detached Ed25519 signature of an immutable-release manifest, binds its ZIP URL and SHA-256 to the Glim Windows x64 identity, and stages only the portable distribution's four managed files. `manifest` owns the authenticated protocol; `install` owns bounded extraction, backup, same-volume replacement and rollback. The background runner uses the OS HTTPS downloader with a cancellable process handle. It shares only cached `UpdateSnapshot` values with UI.
-
-The opt-in `windows-updater` application feature connects this runner to the existing GPUI update window, save/Git/loading checks and one-time session checkpoint. A copied `--install-update` helper verifies its package before signalling readiness, waits for the original process to exit, then replaces application files. Application-approved exit commits the helper; withdrawn approval cancels it. Other files in the portable folder and the user's AppData preferences are preserved. Protected, non-writable installation folders require a manual update. This feature remains disabled by default. Current CI and release workflows do not enable or package it and do not generate Windows manifests; existing public assets are retained.
 
 ## Markdown network images and executable inspection
 

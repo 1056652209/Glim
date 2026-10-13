@@ -7,7 +7,7 @@ mod lexical;
 mod markup;
 mod media;
 mod native;
-#[cfg(target_os = "macos")]
+
 mod native_bridge;
 mod paged;
 mod pictures;
