@@ -52,7 +52,9 @@ impl MarkupReader {
                 TextViewState::markdown(preview_content, cx)
             }
         });
-        let pictures = cx.new(|cx| Pictures::new(preview_content.to_owned(), html, cx));
+        let base = url::Url::from_file_path(path).expect("absolute document path");
+        let pictures =
+            cx.new(|cx| Pictures::new(preview_content.to_owned(), html, base.clone(), cx));
         let picture_subscription = cx.observe(&pictures, |_, cx| cx.refresh_windows());
         let reveal_pending = Rc::new(Cell::new(false));
         let pending = reveal_pending.clone();
@@ -86,7 +88,7 @@ impl MarkupReader {
             scroll,
             preview,
             html,
-            base: url::Url::from_file_path(path).expect("absolute document path"),
+            base,
             headings: headings(preview_content),
             pending_anchor: None,
             preview_text: text.to_owned(),
@@ -117,7 +119,12 @@ impl MarkupReader {
         self.pending_anchor = Some(anchor.to_owned());
         self.reveal_pending.set(true);
     }
+    pub fn set_images_active(&self, active: bool, cx: &mut App) {
+        self.pictures
+            .update(cx, |pictures, cx| pictures.set_active(active, cx));
+    }
     pub fn render(&mut self, open: OpenLink, cx: &mut App) -> AnyElement {
+        self.set_images_active(self.preview, cx);
         if !self.preview {
             return self.source.render(cx);
         }
@@ -149,6 +156,7 @@ impl MarkupReader {
             .update(cx, |map, cx| map.set_preview(true, cx));
         let image_base = self.base.clone();
         let pictures = self.pictures.read(cx).sources.clone();
+        let animations = self.pictures.read(cx).animations.clone();
         let dark = cx.theme().is_dark();
         let link_base = self.base.clone();
         let scroll = self.scroll.clone();
@@ -200,6 +208,22 @@ impl MarkupReader {
                                     })
                                     .unwrap_or(uri.as_ref());
                                 match image_base.join(selected) {
+                                    Ok(url)
+                                        if matches!(url.scheme(), "file" | "http" | "https")
+                                            && url
+                                                .path()
+                                                .to_ascii_lowercase()
+                                                .ends_with(".gif") =>
+                                    {
+                                        // Stay pending until background parsing has registered
+                                        // the player; never start GPUI's whole-GIF loader.
+                                        let animation = animations.get(url.as_str()).cloned();
+                                        ImageSource::from(move |_: &mut Window, cx: &mut App| {
+                                            animation
+                                                .as_ref()
+                                                .and_then(|view| view.read(cx).image())
+                                        })
+                                    }
                                     Ok(url) if url.scheme() == "file" => url
                                         .to_file_path()
                                         .ok()

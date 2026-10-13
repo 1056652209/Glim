@@ -1,6 +1,6 @@
 //! Bounded image decoding, kept off the UI executor.
 use anyhow::{Context, Result, ensure};
-use image::{AnimationDecoder, ImageDecoder};
+use image::ImageDecoder;
 use std::{
     io::{Cursor, Read},
     path::{Path, PathBuf},
@@ -56,25 +56,9 @@ pub fn read_image(path: &Path) -> Result<ImageDocument> {
         .to_ascii_lowercase();
     let mut pages = Vec::new();
     let png = if ext == "gif" {
-        let decoder = image::codecs::gif::GifDecoder::new(Cursor::new(&bytes))?;
-        let (width, height) = decoder.dimensions();
-        ensure!(
-            u64::from(width) * u64::from(height) * 4 <= 512 * 1024 * 1024,
-            "GIF frame exceeds 512 MiB decoded memory"
-        );
-        let mut decoded_bytes = 0_u64;
-        for (index, frame) in decoder.into_frames().enumerate() {
-            ensure!(index < 2000, "GIF exceeds 2000 frames");
-            let frame = frame.context("GIF frame is damaged")?;
-            decoded_bytes += u64::from(width) * u64::from(height) * 4;
-            ensure!(
-                decoded_bytes <= 512 * 1024 * 1024,
-                "GIF animation exceeds 512 MiB decoded memory"
-            );
-            drop(frame);
-        }
-        ensure!(decoded_bytes > 0, "GIF contains no frames");
-        bytes.clone()
+        // Check the header and canvas budget without decoding the animation.
+        GifPlayback::new(std::sync::Arc::from(bytes.clone()))?;
+        bytes
     } else if matches!(ext.as_str(), "tif" | "tiff") {
         pages = tiff_pages(&bytes)?;
         pages[0].clone()
@@ -146,6 +130,125 @@ pub fn read_image(path: &Path) -> Result<ImageDocument> {
         gif: ext == "gif",
         pages,
     })
+}
+
+/// Sequential, original-resolution GIF decoding with bounded compositing state.
+/// The UI requests one frame at a time on its background executor.
+pub struct GifPlayback {
+    bytes: std::sync::Arc<[u8]>,
+    decoder: gif::Decoder<Cursor<std::sync::Arc<[u8]>>>,
+    canvas: image::RgbaImage,
+    restore: Option<image::RgbaImage>,
+    disposal: gif::DisposalMethod,
+    rectangle: (u32, u32, u32, u32),
+    frames: usize,
+    loops: u32,
+    finished: bool,
+}
+impl GifPlayback {
+    pub fn new(bytes: std::sync::Arc<[u8]>) -> Result<Self> {
+        let decoder = Self::decoder(bytes.clone())?;
+        let (width, height) = (u32::from(decoder.width()), u32::from(decoder.height()));
+        // Allow room for canvas, restore, decoder, displayed frame and next frame.
+        ensure!(
+            u64::from(width) * u64::from(height) * 4 * 5 <= 512 * 1024 * 1024,
+            "GIF canvas exceeds 512 MiB playback memory budget"
+        );
+        ensure!(width > 0 && height > 0, "GIF has an empty canvas");
+        Ok(Self {
+            bytes,
+            decoder,
+            canvas: image::RgbaImage::new(width, height),
+            restore: None,
+            disposal: gif::DisposalMethod::Keep,
+            rectangle: (0, 0, 0, 0),
+            frames: 0,
+            loops: 0,
+            finished: false,
+        })
+    }
+
+    fn decoder(bytes: std::sync::Arc<[u8]>) -> Result<gif::Decoder<Cursor<std::sync::Arc<[u8]>>>> {
+        let mut options = gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::RGBA);
+        options.check_frame_consistency(true);
+        options.set_memory_limit(gif::MemoryLimit::Bytes(
+            std::num::NonZeroU64::new(512 * 1024 * 1024 / 5).unwrap(),
+        ));
+        Ok(options.read_info(Cursor::new(bytes))?)
+    }
+
+    pub fn next_frame(&mut self) -> Result<Option<(image::Frame, std::time::Duration)>> {
+        if self.finished {
+            return Ok(None);
+        }
+        match self.disposal {
+            gif::DisposalMethod::Background => {
+                let (left, top, width, height) = self.rectangle;
+                for y in top..top + height {
+                    for x in left..left + width {
+                        self.canvas.put_pixel(x, y, image::Rgba([0; 4]));
+                    }
+                }
+            }
+            gif::DisposalMethod::Previous => {
+                if let Some(restore) = self.restore.take() {
+                    self.canvas = restore;
+                }
+            }
+            _ => {}
+        }
+        if self.decoder.read_next_frame()?.is_none() {
+            ensure!(self.frames > 0, "GIF contains no frames");
+            self.loops = self.loops.saturating_add(1);
+            if let gif::Repeat::Finite(repeats) = self.decoder.repeat()
+                && self.loops > u32::from(repeats)
+            {
+                self.finished = true;
+                return Ok(None);
+            }
+            self.decoder = Self::decoder(self.bytes.clone())?;
+            self.canvas.fill(0);
+            self.restore = None;
+            self.frames = 0;
+            ensure!(
+                self.decoder.read_next_frame()?.is_some(),
+                "GIF contains no frames"
+            );
+        }
+        let frame = self
+            .decoder
+            .current_frame_info()
+            .context("GIF frame is missing")?;
+        self.frames += 1;
+        let left = u32::from(frame.left);
+        let top = u32::from(frame.top);
+        let width = u32::from(frame.width);
+        let height = u32::from(frame.height);
+        self.restore =
+            (frame.dispose == gif::DisposalMethod::Previous).then(|| self.canvas.clone());
+        for y in 0..height {
+            for x in 0..width {
+                let offset = ((y * width + x) * 4) as usize;
+                let pixel: [u8; 4] = frame.buffer[offset..offset + 4].try_into()?;
+                if pixel[3] != 0 {
+                    self.canvas.put_pixel(left + x, top + y, image::Rgba(pixel));
+                }
+            }
+        }
+        self.disposal = frame.dispose;
+        self.rectangle = (left, top, width, height);
+        // Match browser handling of zero/one-centisecond delays to avoid busy loops.
+        let delay_ms = if frame.delay <= 1 {
+            100
+        } else {
+            u32::from(frame.delay) * 10
+        };
+        Ok(Some((
+            image::Frame::new(self.canvas.clone()),
+            std::time::Duration::from_millis(u64::from(delay_ms)),
+        )))
+    }
 }
 
 fn tiff_pages(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
@@ -244,6 +347,86 @@ fn icns_png(bytes: &[u8]) -> Result<&[u8]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn gif_bytes(
+        frames: &[(u16, Vec<u8>, gif::DisposalMethod)],
+        repeat: gif::Repeat,
+    ) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = gif::Encoder::new(
+                &mut bytes,
+                3,
+                1,
+                &[255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0],
+            )?;
+            encoder.set_repeat(repeat)?;
+            for (left, pixels, disposal) in frames {
+                let frame = gif::Frame {
+                    left: *left,
+                    width: pixels.len() as u16,
+                    height: 1,
+                    delay: 5,
+                    dispose: *disposal,
+                    transparent: Some(3),
+                    buffer: std::borrow::Cow::Borrowed(pixels),
+                    ..Default::default()
+                };
+                encoder.write_frame(&frame)?;
+            }
+        }
+        Ok(bytes)
+    }
+
+    #[test]
+    fn gif_playback_composites_disposal_and_respects_finite_loops() -> Result<()> {
+        use gif::DisposalMethod::{Background, Keep, Previous};
+        let bytes = gif_bytes(
+            &[
+                (0, vec![0, 0, 0], Keep),
+                (1, vec![1], Background),
+                (0, vec![2], Previous),
+                (2, vec![1], Keep),
+            ],
+            gif::Repeat::Finite(1),
+        )?;
+        let mut playback = GifPlayback::new(std::sync::Arc::from(bytes))?;
+        let red = [255, 0, 0, 255];
+        let green = [0, 255, 0, 255];
+        let blue = [0, 0, 255, 255];
+        let transparent = [0; 4];
+        for _ in 0..2 {
+            for expected in [
+                [red, red, red],
+                [red, green, red],
+                [blue, transparent, red],
+                [red, transparent, green],
+            ] {
+                let (frame, delay) = playback.next_frame()?.unwrap();
+                assert_eq!(frame.buffer().dimensions(), (3, 1));
+                assert_eq!(delay, std::time::Duration::from_millis(50));
+                for (pixel, expected) in frame.buffer().pixels().zip(expected) {
+                    assert_eq!(pixel.0, expected);
+                }
+            }
+        }
+        assert!(playback.next_frame()?.is_none());
+        assert!(playback.next_frame()?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn gif_playback_has_no_total_frame_limit() -> Result<()> {
+        let frames = vec![(0, vec![0, 1, 2], gif::DisposalMethod::Keep); 2101];
+        let bytes = gif_bytes(&frames, gif::Repeat::Infinite)?;
+        let mut playback = GifPlayback::new(std::sync::Arc::from(bytes))?;
+        for _ in 0..4202 {
+            assert!(playback.next_frame()?.is_some());
+            assert_eq!(playback.canvas.len(), 12);
+            assert!(playback.restore.is_none());
+        }
+        Ok(())
+    }
+
     #[test]
     fn float_images_produce_displayable_png_previews() -> Result<()> {
         let dir = tempfile::tempdir()?;

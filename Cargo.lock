@@ -2590,7 +2590,7 @@ dependencies = [
 
 [[package]]
 name = "glim-app"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "anyhow",
  "glim-core",
@@ -2606,14 +2606,14 @@ dependencies = [
 
 [[package]]
 name = "glim-core"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "glim-services"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2622,6 +2622,7 @@ dependencies = [
  "csv",
  "encoding_rs",
  "flate2",
+ "gif 0.14.2",
  "glim-core",
  "html5ever 0.27.0",
  "ignore",
@@ -2641,6 +2642,7 @@ dependencies = [
  "tar",
  "tempfile",
  "tiff",
+ "url",
  "xz2",
  "zip 2.4.2",
 ]

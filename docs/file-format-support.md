@@ -81,7 +81,7 @@ Salt and Chen ER are partial adapters, not complete PlantUML dialects. Unsupport
 | CSV/TSV table | 16 MiB / 100,000 rows / 256 columns / 1 million cells; cell display uses excerpts |
 | XLS/XLSX | 128 MiB input; first 128 sheets, 5,000 rows and 256 columns/sheet, 4,096 characters/cell; generated HTML 64 MiB |
 | XMind | 256 MiB archive, 16 MiB content, 100 sheets, 10,000 topics, depth ≤64 plus JSON parser limits; titles/links 16 KiB, notes 64 KiB, ≤128 labels with 16 KiB combined text/topic |
-| Images | 128 MiB input; static images ≤100 million pixels and 512 MiB decoded; previews up to 4,000px longest side. GIF ≤2,000 frames / 512 MiB decoded; TIFF ≤500 pages, 256 MiB preview PNGs / 512 MiB decoded |
+| Images | 128 MiB input; static images ≤100 million pixels and 512 MiB decoded; previews up to 4,000px longest side. GIF plays at original resolution with sequential background decoding, one displayed frame and at most one prefetched frame; compositing buffers are bounded by a 512 MiB canvas budget, without a total-frame limit; TIFF ≤500 pages, 256 MiB preview PNGs / 512 MiB decoded |
 | SQLite | 4 GiB snapshot; native reader ≤5,000 tables/views, 500 rows/page, 256 columns, 32 MiB fields/rows and 5-second queries |
 | Fonts | 128 MiB input; first 256 collection fonts |
 | safetensors | 32 MiB header; displayed list ≤10,000 tensors / approximately 2 MiB |

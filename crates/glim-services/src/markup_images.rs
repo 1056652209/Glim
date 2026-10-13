@@ -118,11 +118,134 @@ fn attr(node: &Handle, key: &str) -> Option<String> {
     }
 }
 
-pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
+// GitHub's Markdown renderer rewrites repository-page image links to raw assets.
+// Match that behavior for images only; ordinary links retain their destinations.
+fn download_url(value: &str) -> Result<url::Url> {
+    let mut url = url::Url::parse(value)?;
     ensure!(
-        url.starts_with("https://") || url.starts_with("http://"),
-        "Unsupported image URL scheme"
+        matches!(url.scheme(), "http" | "https")
+            && url.username().is_empty()
+            && url.password().is_none(),
+        "Unsupported image URL"
     );
+    if url.host_str() == Some("github.com") && url.port().is_none() {
+        let mut parts = url.path().trim_start_matches('/').splitn(4, '/');
+        if let (Some(owner), Some(repo), Some(kind), Some(asset)) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+            && matches!(kind, "blob" | "raw")
+            && !owner.is_empty()
+            && !repo.is_empty()
+            && asset
+                .split_once('/')
+                .is_some_and(|(reference, path)| !reference.is_empty() && !path.is_empty())
+        {
+            let path = format!("/{owner}/{repo}/{asset}");
+            url.set_host(Some("raw.githubusercontent.com"))?;
+            url.set_path(&path);
+            url.set_query(None);
+            url.set_fragment(None);
+        }
+    }
+    Ok(url)
+}
+
+/// Image references actually present in rendered Markdown or HTML.
+/// Code blocks and examples do not initiate downloads.
+pub fn image_uris(text: &str, html: bool) -> HashSet<String> {
+    use markdown::mdast::Node;
+    if text.len() > 8 * 1024 * 1024 {
+        return HashSet::new();
+    }
+    let mut images = HashSet::new();
+    let mut fragments = Vec::new();
+    if html {
+        fragments.push(text.to_owned());
+    } else if let Ok(tree) = markdown::to_mdast(text, &markdown::ParseOptions::gfm()) {
+        let mut definitions = HashMap::new();
+        let mut references = Vec::new();
+        let mut pending = vec![&tree];
+        while let Some(node) = pending.pop() {
+            match node {
+                Node::Image(image) => {
+                    images.insert(image.url.clone());
+                }
+                Node::ImageReference(image) => references.push(image.identifier.clone()),
+                Node::Definition(definition) => {
+                    definitions
+                        .entry(definition.identifier.clone())
+                        .or_insert_with(|| definition.url.clone());
+                }
+                Node::Html(html) => fragments.push(html.value.clone()),
+                _ => {}
+            }
+            if let Some(children) = node.children() {
+                pending.extend(children.iter().rev());
+            }
+        }
+        for reference in references {
+            if let Some(url) = definitions.get(&reference) {
+                images.insert(url.clone());
+            }
+        }
+    }
+    for fragment in fragments {
+        let dom = parse_document(RcDom::default(), Default::default()).one(fragment);
+        let mut pending = vec![dom.document.clone()];
+        while let Some(node) = pending.pop() {
+            pending.extend(node.children.borrow().iter().cloned());
+            if is_tag(&node, "img")
+                && let Some(src) = attr(&node, "src")
+            {
+                images.insert(src);
+            }
+        }
+    }
+    images
+}
+
+fn github_api_url(url: &url::Url) -> Option<url::Url> {
+    if url.host_str() != Some("raw.githubusercontent.com") || url.port().is_some() {
+        return None;
+    }
+    let mut parts = url.path().trim_start_matches('/').splitn(4, '/');
+    let (owner, repo, reference, path) =
+        (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    if [owner, repo, reference, path]
+        .iter()
+        .any(|part| part.is_empty())
+        || reference == "refs"
+    {
+        return None;
+    }
+    let mut api = url::Url::parse("https://api.github.com").ok()?;
+    api.set_path(&format!("/repos/{owner}/{repo}/contents/{path}"));
+    // The path reference is already percent-encoded. Preserve encoded slashes,
+    // but escape literal '+' because it would mean a space in a query.
+    api.set_query(Some(&format!("ref={}", reference.replace('+', "%2B"))));
+    Some(api)
+}
+
+pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
+    use std::time::{Duration, Instant};
+    let url = download_url(url)?;
+    let fallback = github_api_url(&url);
+    let started = Instant::now();
+    let first_timeout = Duration::from_secs(if fallback.is_some() { 8 } else { 20 });
+    let bytes = match download_image(&url, first_timeout, false) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let remaining = Duration::from_secs(20).saturating_sub(started.elapsed());
+            let Some(fallback) = fallback.filter(|_| !remaining.is_zero()) else {
+                return Err(error);
+            };
+            download_image(&fallback, remaining, true)
+                .context("GitHub raw image and API fallback requests failed")?
+        }
+    };
+    prepare_image(&bytes)
+}
+
+fn download_image(url: &url::Url, timeout: std::time::Duration, api: bool) -> Result<Vec<u8>> {
     let mut command = Command::new("/usr/bin/curl");
     command
         .args([
@@ -134,8 +257,6 @@ pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
             "5",
             "--connect-timeout",
             "8",
-            "--max-time",
-            "20",
             "--proto",
             "=http,https",
             "--proto-redir",
@@ -143,12 +264,17 @@ pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
             "--user-agent",
             "Glim",
             "--url",
-            url,
+            url.as_str(),
         ])
+        .arg("--max-time")
+        .arg(timeout.as_secs_f64().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
 
+    if api {
+        command.args(["--header", "Accept: application/vnd.github.raw+json"]);
+    }
     let mut child = command
         .spawn()
         .context("Cannot start the image downloader")?;
@@ -167,7 +293,7 @@ pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
     }
     ensure!(child.wait()?.success(), "Remote image request failed");
     ensure!(!bytes.is_empty(), "Remote image is empty");
-    prepare_image(&bytes)
+    Ok(bytes)
 }
 fn prepare_image(bytes: &[u8]) -> Result<Vec<u8>> {
     ensure!(bytes.len() <= LIMIT, "Remote image exceeds 16 MiB");
@@ -243,6 +369,68 @@ pub fn unavailable_image() -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn github_repository_image_urls_download_raw_assets() -> Result<()> {
+        for kind in ["blob", "raw"] {
+            let url = format!(
+                "https://github.com/humanlayer/12-factor-agents/{kind}/main/img/027-agent-loop-animation.gif?raw=true#preview"
+            );
+            assert_eq!(
+                download_url(&url)?.as_str(),
+                "https://raw.githubusercontent.com/humanlayer/12-factor-agents/main/img/027-agent-loop-animation.gif"
+            );
+        }
+        assert_eq!(
+            download_url("https://github.com/o/r/blob/a123/img/hello%20world.png")?.as_str(),
+            "https://raw.githubusercontent.com/o/r/a123/img/hello%20world.png"
+        );
+        for url in [
+            "https://github.com/user-attachments/assets/example",
+            "https://github.com/o/r/issues/1",
+            "https://example.com/o/r/blob/main/image.png?token=value",
+            "https://raw.githubusercontent.com/o/r/main/image.png",
+        ] {
+            assert_eq!(download_url(url)?.as_str(), url);
+        }
+        assert!(download_url("https://user:password@github.com/o/r/blob/main/a.png").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn github_raw_fallback_preserves_asset_paths_and_refs() -> Result<()> {
+        let url = download_url("https://github.com/o/r/blob/feature%2Fbranch/img/a%20b.png")?;
+        assert_eq!(
+            github_api_url(&url).unwrap().as_str(),
+            "https://api.github.com/repos/o/r/contents/img/a%20b.png?ref=feature%2Fbranch"
+        );
+        assert!(github_api_url(&url::Url::parse("https://example.com/o/r/main/a.png")?).is_none());
+        assert!(
+            github_api_url(&url::Url::parse(
+                "https://raw.githubusercontent.com/o/r/refs/heads/main/a.png"
+            )?)
+            .is_none()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn image_references_include_linked_gifs_html_and_reference_images() {
+        let text = "[![loop](https://github.com/o/r/blob/main/loop.gif)](https://example.com)\n\n![reference][asset]\n\n[asset]: ../img/reference.gif\n\n<img src='html.gif'>\n\n```markdown\n![example](wrong.gif)\n```";
+        let images = image_uris(text, false);
+        assert_eq!(
+            images,
+            HashSet::from([
+                "https://github.com/o/r/blob/main/loop.gif".to_owned(),
+                "../img/reference.gif".to_owned(),
+                "html.gif".to_owned(),
+            ])
+        );
+        assert_eq!(
+            image_uris("<picture><img src='fallback.gif'></picture>", true),
+            HashSet::from(["fallback.gif".to_owned()])
+        );
+    }
+
     #[test]
     fn pictures_in_tables_select_theme_but_code_examples_do_not() {
         let text = "```html\n<picture><source srcset='wrong.png'><img src='same.png'></picture>\n```\n\n<table><tr><td><a href='https://example.com'><picture><source media='(prefers-color-scheme: light)' srcset='light.svg 1x, light2.svg 2x'><source media='(prefers-color-scheme:dark)' srcset='dark.svg'><img src='same.png' alt='Logo' width='80'></picture></a></td></tr></table>";

@@ -44,7 +44,7 @@ Workspace 管理标签、Explorer/Changes 实体、导航历史及异步加载�
 
 Mermaid、Graphviz、PlantUML、flowchart.js、WaveDrom 和 MathJax 及许可证均内嵌；本地 Salt/Chen 适配器仅覆盖部分语法。禁用图表外部资源、导航和下载，失败时保留源码。引擎维护见 [assets/markdown/README.md](../assets/markdown/README.md)。
 
-`services/formats`、`text_formats` 与 `vector_formats` 提供有界容器目录／文本提取、基础阅读投影和静态网格／位图字体图片，专用电子书阅读由 `services/books` 和 `reader/books` 提供，通用投影不执行文档代码。`services/media` 负责有界图片解码。各阅读器预算和边界见[格式与限制](file-format-support.zh-CN.md)。
+`services/formats`、`text_formats` 与 `vector_formats` 提供有界容器目录／文本提取、基础阅读投影和静态网格／位图字体图片，专用电子书阅读由 `services/books` 和 `reader/books` 提供，通用投影不执行文档代码。`services/media` 负责有界图片解码。其 `GifPlayback` 保留顺序解码器和有界合成／恢复缓冲区；`reader/media::GifReader` 持有可取消的播放任务，逐帧直接向 GPUI 提供 BGRA 像素并释放旧纹理。GIF 保留原分辨率和帧时序，不走 GPUI 的整段动画缓存；隐藏标签暂停解码，关闭取消任务并释放纹理。各阅读器预算和边界见[格式与限制](file-format-support.zh-CN.md)。
 
 `services/xmind` 从有界 ZIP 正文中读取新版 JSON 或旧版 XML，不提取附件；不依赖 UI 的工作表／主题模型包含备注、标签、游离根和关系端点。`reader/xmind` 持有工作表选择、折叠、缩放、滚动和详情；缓存布局，使用 GPUI 主题绘制可见节点／连接。阅读器只读，复用普通加载、刷新及更新会话路径。
 
@@ -84,6 +84,12 @@ macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Upd
 
 参见[更新行为与信任](auto-update-design.zh-CN.md)、[发布配置](releasing.zh-CN.md#automatic-updates)和[未完成事项](TODO.zh-CN.md)。
 
+
+## Markdown 网络图片
+
+`app/image_http` 提供仅支持 GET 的 GPUI 图片传输，网络与解码通过 `services/markup_images` 在后台执行。网络请求总时限 20 秒，最多五次重定向，响应上限 16 MiB；使用系统 curl，SVG 使用系统字体并禁用外部引用，失败时显示占位图。GitHub 仓库的 `blob`／`raw` 图片地址转换为原始文件地址；常规 ref/file 地址在原始域名失败时回退到 GitHub Contents API 的原始媒体响应，两个请求共用时限。未认证的 API 回退受 GitHub 请求频率限制，不改变原文或普通链接的目的地。
+
+`reader/pictures` 在后台解析真实图片引用，忽略代码示例，按主题选择 `<picture>` 候选，并为每个解析后的 `.gif` 地址（本地或 HTTP）保留一个逐帧播放器，重复引用共享。图片解析回调始终使用自定义 GPUI 图片源，包括初次加载期间，避免误走整段 GIF 缓存。删除引用会释放播放器，隐藏标签和源码模式暂停播放；渲染中不执行网络或文件 I/O。
 
 ## 电子书阅读
 

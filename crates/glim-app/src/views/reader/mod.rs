@@ -17,7 +17,7 @@ use diff::DiffReader;
 use glim_core::{DiffDocument, Document, DocumentKind, language_for_path};
 use gpui_kit::*;
 use markup::MarkupReader;
-use media::{ImageReader, UnavailableReader};
+use media::{GifReader, ImageReader, UnavailableReader};
 use source::SourceReader;
 use std::{path::PathBuf, sync::Arc};
 
@@ -47,6 +47,7 @@ enum Renderer {
     Markup(Box<MarkupReader>),
     Diff(DiffReader),
     Image(ImageReader),
+    Gif(Entity<GifReader>),
     XMind(Entity<xmind::XMindReader>),
     Book(
         Entity<books::BookReader>,
@@ -331,20 +332,23 @@ impl Reader {
         _: &mut Window,
         cx: &mut App,
     ) -> Self {
-        let format = if document.gif {
-            ImageFormat::Gif
+        let renderer = if document.gif {
+            Renderer::Gif(cx.new(|cx| GifReader::new(document.png, cx)))
         } else {
-            ImageFormat::Png
+            let pages = if document.pages.is_empty() {
+                vec![document.png]
+            } else {
+                document.pages
+            };
+            let images = pages
+                .into_iter()
+                .map(|bytes| Arc::new(Image::from_bytes(ImageFormat::Png, bytes)))
+                .collect();
+            Renderer::Image(ImageReader {
+                pages: images,
+                page: cx.new(|_| 0_usize),
+            })
         };
-        let pages = if document.pages.is_empty() {
-            vec![document.png]
-        } else {
-            document.pages
-        };
-        let images = pages
-            .into_iter()
-            .map(|bytes| Arc::new(Image::from_bytes(format, bytes)))
-            .collect();
         Self {
             title: document.path.display().to_string().into(),
             path: document.path,
@@ -356,10 +360,7 @@ impl Reader {
             commit_file: None,
             json: None,
             csv: None,
-            renderer: Renderer::Image(ImageReader {
-                pages: images,
-                page: cx.new(|_| 0_usize),
-            }),
+            renderer,
         }
     }
     pub fn from_book(
@@ -426,13 +427,22 @@ impl Reader {
             renderer,
         }
     }
-    pub fn hide_native(&self, cx: &App) {
+    pub fn hide_native(&self, cx: &mut App) {
+        if let Renderer::Markup(view) = &self.renderer {
+            view.set_images_active(false, cx);
+        }
+        if let Renderer::Gif(view) = &self.renderer {
+            view.read(cx).set_active(false);
+        }
         if let Renderer::Native(view) = &self.renderer {
             view.read(cx).hide();
         }
     }
 
     pub fn reveal_native(&self, cx: &mut App) -> bool {
+        if let Renderer::Gif(view) = &self.renderer {
+            view.read(cx).set_active(true);
+        }
         if let Renderer::Native(view) = &self.renderer {
             view.update(cx, |v, cx| v.open(cx));
             return true;
@@ -682,6 +692,10 @@ impl Reader {
             Renderer::Markup(m) => m.render(open, cx),
             Renderer::Diff(d) => d.render(cx),
             Renderer::Image(i) => i.render(cx),
+            Renderer::Gif(view) => {
+                view.read(cx).set_active(true);
+                view.clone().into_any_element()
+            }
             Renderer::XMind(v) => v.clone().into_any_element(),
             Renderer::Book(v, _) => v.clone().into_any_element(),
             Renderer::Native(n) => n.clone().into_any_element(),
