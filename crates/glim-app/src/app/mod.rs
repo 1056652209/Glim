@@ -73,7 +73,28 @@ pub(crate) fn remember_explorer(
     cx.global_mut::<ExplorerSaveTask>().0 = Some(task);
 }
 
-pub(crate) fn remember_workspace(folders: Vec<std::path::PathBuf>, cx: &mut App) {
+#[derive(Default)]
+pub(crate) struct RecentWorkspaces(pub Vec<glim_services::preferences::RecentWorkspace>);
+impl Global for RecentWorkspaces {}
+
+fn load_recent_workspaces(cx: &mut App) {
+    let task = cx.spawn(async move |cx| {
+        let result = cx
+            .background_executor()
+            .spawn(async { glim_services::preferences::recent_workspaces() })
+            .await;
+        match result {
+            Ok(recent) => cx.update(|cx| {
+                cx.global_mut::<RecentWorkspaces>().0 = recent;
+                cx.refresh_windows();
+            }),
+            Err(error) => eprintln!("Cannot load recent workspaces: {error:#}"),
+        }
+    });
+    cx.global_mut::<WorkspaceSaveTask>().0 = Some(task);
+}
+
+pub(crate) fn remember_workspace(id: String, folders: Vec<std::path::PathBuf>, cx: &mut App) {
     let previous = cx.global_mut::<WorkspaceSaveTask>().0.take();
     let task = cx.spawn(async move |cx| {
         if let Some(previous) = previous {
@@ -81,10 +102,23 @@ pub(crate) fn remember_workspace(folders: Vec<std::path::PathBuf>, cx: &mut App)
         }
         let result = cx
             .background_executor()
-            .spawn(async move { glim_services::preferences::save_workspace_folders(&folders) })
+            .spawn(async move {
+                let recent = glim_services::preferences::remember_recent_workspace(
+                    glim_services::preferences::RecentWorkspace {
+                        id,
+                        folders: folders.clone(),
+                    },
+                )?;
+                glim_services::preferences::save_workspace_folders(&folders)?;
+                anyhow::Ok(recent)
+            })
             .await;
-        if let Err(error) = result {
-            eprintln!("Cannot remember workspace: {error:#}");
+        match result {
+            Ok(recent) => cx.update(|cx| {
+                cx.global_mut::<RecentWorkspaces>().0 = recent;
+                cx.refresh_windows();
+            }),
+            Err(error) => eprintln!("Cannot remember workspace: {error:#}"),
         }
     });
     cx.global_mut::<WorkspaceSaveTask>().0 = Some(task);
@@ -100,6 +134,54 @@ pub(crate) fn sync_system_appearance(window: &mut Window, cx: &mut App) {
     {
         gpui_kit::component::Theme::sync_system_appearance(Some(window), cx);
     }
+}
+
+pub(crate) fn recent_workspace_is_open(
+    workspace: &glim_services::preferences::RecentWorkspace,
+    exclude: EntityId,
+    cx: &App,
+) -> bool {
+    OpenWorkspaces::windows(cx).iter().any(|(view, _)| {
+        view.entity_id() != exclude
+            && view
+                .upgrade()
+                .is_some_and(|view| view.read(cx).matches_recent_workspace(workspace))
+    })
+}
+
+pub(crate) fn open_recent_workspace(
+    workspace: glim_services::preferences::RecentWorkspace,
+    cx: &mut App,
+) {
+    if updates::busy(cx) {
+        return;
+    }
+    for (view, handle) in OpenWorkspaces::windows(cx) {
+        let focused = handle
+            .update(cx, |_, window, cx| {
+                let matches = view
+                    .upgrade()
+                    .is_some_and(|view| view.read(cx).matches_recent_workspace(&workspace));
+                if matches {
+                    window.activate_window();
+                    cx.activate(true);
+                }
+                matches
+            })
+            .unwrap_or(false);
+        if focused {
+            return;
+        }
+    }
+    open_workspace_with_session(
+        None,
+        Some(glim_core::update::WorkspaceSession {
+            roots: workspace.folders,
+            tabs: Vec::new(),
+            active: None,
+        }),
+        cx,
+    );
 }
 
 pub(crate) fn toggle_dark_mode(cx: &mut App) {
@@ -280,13 +362,19 @@ pub fn run() -> Result<()> {
         cx.set_global(ExplorerSaveTask::default());
         cx.on_app_quit(|cx| {
             let pending = cx.global_mut::<ExplorerSaveTask>().0.take();
+            let workspace = cx.global_mut::<WorkspaceSaveTask>().0.take();
             async move {
                 if let Some(pending) = pending {
                     pending.await;
                 }
+                if let Some(workspace) = workspace {
+                    workspace.await;
+                }
             }
         })
         .detach();
+        cx.set_global(RecentWorkspaces::default());
+        load_recent_workspaces(cx);
         languages::init();
         cx.set_global(ReaderPreferences {
             word_wrap,

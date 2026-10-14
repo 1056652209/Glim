@@ -67,6 +67,11 @@ impl Workspace {
                     Err(error) => errors.push(format!("{error:#}")),
                 }
                 view.loading = false;
+                if !view.roots.is_empty()
+                    && cx.try_global::<crate::app::RecentWorkspaces>().is_some()
+                {
+                    crate::app::remember_workspace(view.recent_id.clone(), view.roots.clone(), cx);
+                }
                 view.load_incoming_file(window, cx);
                 if !errors.is_empty() {
                     view.error =
@@ -178,6 +183,7 @@ impl Workspace {
         if crate::app::reveal_existing_file(&path, Some(cx.entity_id()), cx) {
             return;
         }
+        self.restoring_roots = None;
         self.loading = true;
         self.error = None;
         let read = cx.background_executor().spawn(async move {
@@ -238,18 +244,10 @@ impl Workspace {
         }
         self.sidebar = super::Sidebar::Files;
         self.sidebar_visible = true;
-        if self
-            .roots
-            .iter()
-            .any(|root| snapshot.root.starts_with(root))
-        {
-            return;
-        }
-        self.roots.retain(|root| !root.starts_with(&snapshot.root));
         self.roots.push(snapshot.root.clone());
         self.root = self.roots.first().cloned();
         if !self.loading && cx.try_global::<crate::app::ReaderPreferences>().is_some() {
-            crate::app::remember_workspace(self.roots.clone(), cx);
+            crate::app::remember_workspace(self.recent_id.clone(), self.roots.clone(), cx);
         }
         self.refresh_task = None;
         self.error = None;

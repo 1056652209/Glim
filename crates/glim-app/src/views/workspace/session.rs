@@ -64,6 +64,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.loading = true;
+        self.restoring_roots = Some(session.roots.clone());
         let folders = session.roots.clone();
         let work = cx.background_executor().spawn(async move {
             let expanded = glim_services::preferences::explorer_expansion(&folders);
@@ -132,6 +133,12 @@ impl Workspace {
             }
             let _ = view.update_in(cx, |view, window, cx| {
                 view.loading = false;
+                view.restoring_roots = None;
+                if !view.roots.is_empty()
+                    && cx.try_global::<crate::app::RecentWorkspaces>().is_some()
+                {
+                    crate::app::remember_workspace(view.recent_id.clone(), view.roots.clone(), cx);
+                }
                 view.load_incoming_file(window, cx);
                 view.active = session
                     .active

@@ -275,7 +275,14 @@ mod tests {
                         cx,
                     );
                 }
-                assert_eq!(v.roots.len(), 2);
+                assert_eq!(
+                    v.roots,
+                    [
+                        dir.path().canonicalize().unwrap(),
+                        other.path().canonicalize().unwrap(),
+                        dir.path().canonicalize().unwrap(),
+                    ]
+                );
                 assert_eq!(
                     v.active_reader().unwrap().editor().unwrap().entity_id(),
                     editor.entity_id()

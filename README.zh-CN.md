@@ -15,6 +15,16 @@
   <a href="https://github.com/NeoPanic/Glim/stargazers"><img src="https://img.shields.io/github/stars/NeoPanic/Glim?style=social" alt="GitHub Star 数量" /></a>
 </p>
 
+## 文件查看器，新的界面
+
+Glim 是免费开源的 Mac 全能文件内容查看器。Markdown、PDF、图片、JSON、CSV 和源代码，都可以放在同一个工作空间里阅读。
+
+<p align="center"><img src="assets/readme/workspace.png" alt="Glim 重新设计的 macOS 工作空间：左侧文件树、多个文档标签、居中的工作空间搜索，以及包含内嵌图示的 12-factor-agents Markdown 文档。" width="100%" /></p>
+
+紧凑界面将文档标签与可调整宽度的文件侧栏放在一起，工作空间搜索位于标题栏，预览与源码切换按钮随手可用。截图展示的是公开的 [12-factor-agents](https://github.com/humanlayer/12-factor-agents) 文档；其中的正文与插图属于该项目。
+
+[下载 Glim](https://github.com/NeoPanic/Glim/releases/latest) · [提出格式需求](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml)
+
 ## 支持的文件格式
 
 <a href="docs/file-format-support.zh-CN.md">

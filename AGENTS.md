@@ -11,11 +11,11 @@
 - Keep GPUI entities alive across renders. Use theme tokens for UI colors.
 - Keep editing minimal: typing, selection, undo/redo, automatic save and explicit save. Do not add LSP, plugins, speculative abstraction layers, or empty placeholder modules.
 - Pin GPUI Kit; retain Cargo.lock. Enable extra features only when used.
-- By default, only make the requested code changes. Do not automatically run tests, build/package, install, launch, or perform UI smoke tests; the user handles testing. Do those steps only when explicitly requested.
+- After requested code changes, build/package and install the updated local Glim.app by default, verify the installed bundle and launch it. Keep at most the two most recent installation backups. Do not automatically run tests or UI smoke tests; the user handles testing unless explicitly requested.
 - When validation is requested, use cargo fmt --all --check, cargo clippy --workspace --all-targets --locked -- -D warnings, cargo test --workspace --locked, and cargo build --locked.
 - When UI smoke testing is requested, use macOS when available and report unverified interactions.
 - Document changes to module boundaries in docs/architecture.md.
-- When explicitly asked to package Glim, also install the new build over the existing local Glim.app by default, preserving a recoverable backup, unless the user asks for packaging only. Verify the installed bundle and launch it.
+- When packaging Glim, install the new build over the existing local Glim.app, preserving a recoverable backup and retaining at most two installation backups, unless the user asks for packaging only. Verify the installed bundle and launch it.
 
 - Keep documentation focused on current behavior, architecture and unfinished work. Put release notes in GitHub Releases; do not accumulate per-session operation logs, historical verification reports or personal filesystem inventories in the repository.
 

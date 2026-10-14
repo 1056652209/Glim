@@ -80,6 +80,50 @@ pub fn save_explorer_expansion(roots: &[PathBuf], expanded: &[PathBuf]) -> Resul
     Ok(())
 }
 
+/// A window's ordered folder roots, including repeated paths.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct RecentWorkspace {
+    pub id: String,
+    pub folders: Vec<PathBuf>,
+}
+
+pub fn recent_workspaces() -> Result<Vec<RecentWorkspace>> {
+    let path = directory()?.join("recent-workspaces.json");
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let folders = workspace_folders()?;
+            Ok(if folders.is_empty() {
+                Vec::new()
+            } else {
+                vec![RecentWorkspace {
+                    id: "legacy".into(),
+                    folders,
+                }]
+            })
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn remember_recent_workspace(workspace: RecentWorkspace) -> Result<Vec<RecentWorkspace>> {
+    let mut recent = recent_workspaces()?;
+    if workspace.folders.is_empty() {
+        return Ok(recent);
+    }
+    recent.retain(|entry| entry.id != workspace.id && entry.folders != workspace.folders);
+    recent.insert(0, workspace);
+    recent.truncate(30);
+    let path = directory()?.join("recent-workspaces.json");
+    let parent = path.parent().context("Invalid preferences path")?;
+    std::fs::create_dir_all(parent)?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    serde_json::to_writer(&mut file, &recent)?;
+    file.as_file().sync_all()?;
+    file.persist(path)?;
+    Ok(recent)
+}
+
 pub fn word_wrap() -> bool {
     wrap_path()
         .ok()

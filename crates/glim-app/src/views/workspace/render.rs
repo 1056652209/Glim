@@ -73,10 +73,10 @@ impl Render for Workspace {
         }
         let content = match self.page {
             Page::Settings => self.settings_page(cx),
-            Page::Start => welcome(self.roots.is_empty(), cx).into_any_element(),
+            Page::Start => welcome(self, cx.entity_id(), cx).into_any_element(),
             Page::Document => match self.active.and_then(|i| self.tabs.get_mut(i)) {
                 Some(reader) => reader.render(open, cx),
-                None => welcome(self.roots.is_empty(), cx).into_any_element(),
+                None => welcome(self, cx.entity_id(), cx).into_any_element(),
             },
         };
         let document_page = self.page == Page::Document;
@@ -178,23 +178,20 @@ impl Render for Workspace {
                 .p_5()
                 .gap_5()
                 .text_sm()
-                .child(div().font_weight(FontWeight::SEMIBOLD).child(
-                    if self.sidebar == Sidebar::Files {
-                        "No Folder Opened"
-                    } else {
-                        "Source Control"
-                    },
-                ))
-                .child(div().text_color(cx.theme().muted_foreground).child(
-                    if self.sidebar == Sidebar::Files {
-                        "You have not yet opened a folder."
-                    } else {
-                        "Open a folder containing a Git repository."
-                    },
-                ))
+                .when(self.sidebar == Sidebar::Changes, |view| {
+                    view.child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(glim_services::locale::tr("Source Control")),
+                    )
+                    .child(
+                        div().text_color(cx.theme().muted_foreground).child(
+                            glim_services::locale::tr("Open a folder containing a Git repository."),
+                        ),
+                    )
+                })
                 .child(
                     Button::new("empty-open-folder")
-                        .primary()
                         .w_full()
                         .label(glim_services::locale::tr("Open Folder"))
                         .on_click(cx.listener(|v, _, w, cx| v.choose_path(true, w, cx))),

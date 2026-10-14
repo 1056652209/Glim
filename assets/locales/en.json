@@ -335,5 +335,11 @@
   "Automatic": "Automatic",
   "GitHub Releases": "GitHub Releases",
   "Source Code": "Source Code",
-  "The native preview could not open this file": "Could not open the native preview or file type settings."
+  "The native preview could not open this file": "Could not open the native preview or file type settings.",
+  "Recent Workspaces": "Recent Workspaces",
+  "Open in New Window": "Open in New Window",
+  "Switch to Window": "Switch to Window",
+  "Open New Workspace": "Open New Workspace",
+  "Source Control": "Source Control",
+  "Open a folder containing a Git repository.": "Open a folder containing a Git repository."
 }

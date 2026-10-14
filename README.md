@@ -15,6 +15,16 @@
   <a href="https://github.com/NeoPanic/Glim/stargazers"><img src="https://img.shields.io/github/stars/NeoPanic/Glim?style=social" alt="GitHub stars" /></a>
 </p>
 
+## A new look for your files
+
+Glim is a free, open-source, all-purpose file viewer for Mac. Read Markdown, PDFs, images, JSON, CSV and source code in one workspace.
+
+<p align="center"><img src="assets/readme/workspace.png" alt="Glim's redesigned macOS workspace showing a file tree, multiple document tabs, centered workspace search, and a rendered Markdown page with an embedded diagram from 12-factor-agents." width="100%" /></p>
+
+The compact interface puts document tabs beside a resizable file sidebar, with workspace search in the title bar. Preview and source controls stay close at hand. The screenshot shows the public [12-factor-agents](https://github.com/humanlayer/12-factor-agents) documentation; its text and illustration belong to that project.
+
+[Download Glim](https://github.com/NeoPanic/Glim/releases/latest) · [Request a file format](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml)
+
 ## Supported file formats
 
 <a href="docs/file-format-support.md">

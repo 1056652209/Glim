@@ -29,24 +29,37 @@ gpui_kit::actions!(explorer, [Up, Down, Expand, Collapse, OpenSelected]);
 
 #[derive(Clone)]
 struct Row {
+    root_index: usize,
     entry: DirectoryEntry,
     depth: usize,
     parent: Option<usize>,
     subtree_end: usize,
 }
 
+impl Row {
+    fn element_id(&self, part: &'static str) -> ElementId {
+        let id = entry_id(&self.entry.path, part);
+        if self.root_index == 0 {
+            id
+        } else {
+            ElementId::NamedChild(std::sync::Arc::new(id), self.root_index.to_string().into())
+        }
+    }
+}
+
 /// Only expanded directories are loaded, and only visible rows are rendered.
 pub struct Explorer {
     roots: Vec<PathBuf>,
     directories: HashMap<PathBuf, Vec<DirectoryEntry>>,
-    expanded: HashSet<PathBuf>,
+    expanded: Vec<HashSet<PathBuf>>,
     tasks: HashMap<PathBuf, Task<()>>,
     media_presence: HashMap<PathBuf, bool>,
     media_tasks: HashMap<PathBuf, Task<()>>,
     rows: Vec<Row>,
-    clipped_labels: HashSet<(PathBuf, bool)>,
+    clipped_labels: HashSet<(usize, PathBuf, bool)>,
     selected: Option<usize>,
     clicked_path: Option<PathBuf>,
+    clicked_root: Option<usize>,
     pending_reveal: Option<PathBuf>,
     preserve_next_reveal: Option<PathBuf>,
     focus: FocusHandle,
@@ -70,7 +83,7 @@ impl Explorer {
         let mut view = Self {
             roots: vec![root.clone()],
             directories: HashMap::from([(root.clone(), entries)]),
-            expanded: HashSet::new(),
+            expanded: vec![HashSet::new()],
             tasks: HashMap::new(),
             media_presence: HashMap::new(),
             media_tasks: HashMap::new(),
@@ -78,6 +91,7 @@ impl Explorer {
             clipped_labels: HashSet::new(),
             selected: None,
             clicked_path: None,
+            clicked_root: None,
             pending_reveal: None,
             preserve_next_reveal: None,
             focus: cx.focus_handle(),
@@ -93,24 +107,23 @@ impl Explorer {
         entries: Vec<DirectoryEntry>,
         cx: &mut Context<Self>,
     ) {
-        if !self.roots.iter().any(|existing| root.starts_with(existing)) {
-            self.roots.retain(|existing| !existing.starts_with(&root));
-            self.roots.push(root.clone());
-            self.directories.insert(root, entries);
-            self.rebuild();
-            cx.notify();
-        }
+        self.roots.push(root.clone());
+        self.expanded.push(HashSet::from([root.clone()]));
+        self.directories.insert(root, entries);
+        self.rebuild();
+        cx.notify();
     }
 
     pub fn clear_clicked_selection(&mut self, cx: &mut Context<Self>) {
         self.clicked_path = None;
+        self.clicked_root = None;
         self.pending_reveal = None;
         self.preserve_next_reveal = None;
         cx.notify();
     }
 
     pub fn expansion_state(&self) -> (Vec<PathBuf>, Vec<PathBuf>) {
-        let mut expanded = self.expanded.iter().cloned().collect::<Vec<_>>();
+        let mut expanded = self.expanded.iter().flatten().cloned().collect::<Vec<_>>();
         expanded.sort();
         (self.roots.clone(), expanded)
     }
@@ -121,13 +134,20 @@ impl Explorer {
     }
 
     pub fn restore_expanded(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
-        self.expanded = paths
-            .into_iter()
-            .filter(|path| {
-                !path
-                    .components()
-                    .any(|part| part == std::path::Component::ParentDir)
-                    && self.roots.iter().any(|root| path.starts_with(root))
+        self.expanded = self
+            .roots
+            .iter()
+            .map(|root| {
+                paths
+                    .iter()
+                    .filter(|path| {
+                        !path
+                            .components()
+                            .any(|part| part == std::path::Component::ParentDir)
+                            && path.starts_with(root)
+                    })
+                    .cloned()
+                    .collect()
             })
             .collect();
         self.rebuild();
@@ -139,6 +159,7 @@ impl Explorer {
         let paths = self
             .expanded
             .iter()
+            .flatten()
             .filter(|path| {
                 self.roots.contains(path)
                     || path
@@ -175,7 +196,9 @@ impl Explorer {
                         view.directories.insert(path, entries);
                     }
                     Err(error) => {
-                        view.expanded.remove(&path);
+                        for expanded in &mut view.expanded {
+                            expanded.remove(&path);
+                        }
                         if view
                             .pending_reveal
                             .as_ref()
@@ -212,6 +235,7 @@ impl Explorer {
             .then_some(path);
         if self.pending_reveal.is_some() {
             self.clicked_path = None;
+            self.clicked_root = None;
             cx.emit(ExplorerEvent::SelectionChanged);
         }
         self.advance_reveal(cx);
@@ -222,12 +246,13 @@ impl Explorer {
         let Some(target) = self.pending_reveal.clone() else {
             return;
         };
-        let Some(root) = self
+        let Some((root_index, root)) = self
             .roots
             .iter()
-            .filter(|root| target.starts_with(root))
-            .max_by_key(|root| root.components().count())
-            .cloned()
+            .enumerate()
+            .filter(|(_, root)| target.starts_with(root))
+            .max_by_key(|(_, root)| root.components().count())
+            .map(|(index, root)| (index, root.clone()))
         else {
             return;
         };
@@ -259,7 +284,7 @@ impl Explorer {
                     break;
                 }
             }
-            changed |= self.expanded.insert(path.clone());
+            changed |= self.expanded[root_index].insert(path.clone());
             if !self.directories.contains_key(&path) {
                 self.load_directory(path, cx);
                 ready = false;
@@ -272,9 +297,14 @@ impl Explorer {
         }
         if ready {
             self.pending_reveal = None;
-            if let Some(index) = self.rows.iter().position(|row| row.entry.path == target) {
+            if let Some(index) = self
+                .rows
+                .iter()
+                .position(|row| row.root_index == root_index && row.entry.path == target)
+            {
                 self.selected = Some(index);
                 self.clicked_path = Some(target);
+                self.clicked_root = Some(root_index);
                 // Center explicitly so pinned ancestor rows cannot cover the target.
                 self.scroll
                     .scroll_to_item_strict(index, ScrollStrategy::Center);
@@ -285,7 +315,7 @@ impl Explorer {
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
         self.media_tasks.clear();
         self.media_presence.clear();
-        let mut paths = self.expanded.iter().cloned().collect::<Vec<_>>();
+        let mut paths = self.expanded.iter().flatten().cloned().collect::<Vec<_>>();
         paths.extend(self.roots.iter().cloned());
         paths.sort();
         paths.dedup();
@@ -317,6 +347,7 @@ impl Explorer {
     fn rebuild(&mut self) {
         fn append(
             path: &PathBuf,
+            root_index: usize,
             depth: usize,
             parent: Option<usize>,
             this: &Explorer,
@@ -326,13 +357,14 @@ impl Explorer {
                 for entry in children {
                     let index = rows.len();
                     rows.push(Row {
+                        root_index,
                         entry: entry.clone(),
                         depth,
                         parent,
                         subtree_end: index + 1,
                     });
-                    if this.expanded.contains(&entry.path) {
-                        append(&entry.path, depth + 1, Some(index), this, rows);
+                    if this.expanded[root_index].contains(&entry.path) {
+                        append(&entry.path, root_index, depth + 1, Some(index), this, rows);
                     }
                     rows[index].subtree_end = rows.len();
                 }
@@ -341,11 +373,12 @@ impl Explorer {
         let selected = self
             .selected
             .and_then(|i| self.rows.get(i))
-            .map(|r| r.entry.path.clone());
+            .map(|r| (r.root_index, r.entry.path.clone()));
         let mut rows = Vec::new();
-        for root in &self.roots {
+        for (root_index, root) in self.roots.iter().enumerate() {
             let index = rows.len();
             rows.push(Row {
+                root_index,
                 entry: DirectoryEntry {
                     path: root.clone(),
                     is_dir: true,
@@ -355,12 +388,15 @@ impl Explorer {
                 parent: None,
                 subtree_end: index + 1,
             });
-            if self.expanded.contains(root) {
-                append(root, 1, Some(index), self, &mut rows);
+            if self.expanded[root_index].contains(root) {
+                append(root, root_index, 1, Some(index), self, &mut rows);
             }
             rows[index].subtree_end = rows.len();
         }
-        self.selected = selected.and_then(|path| rows.iter().position(|r| r.entry.path == path));
+        self.selected = selected.and_then(|(root_index, path)| {
+            rows.iter()
+                .position(|r| r.root_index == root_index && r.entry.path == path)
+        });
         self.rows = rows;
     }
 
@@ -397,8 +433,8 @@ impl Explorer {
             cx.emit(ExplorerEvent::OpenFile(row.entry.path));
         } else {
             self.pending_reveal = None;
-            if !self.expanded.remove(&row.entry.path) {
-                self.expanded.insert(row.entry.path.clone());
+            if !self.expanded[row.root_index].remove(&row.entry.path) {
+                self.expanded[row.root_index].insert(row.entry.path.clone());
                 self.load_directory(row.entry.path, cx);
             }
             self.expansion_changed(cx);
@@ -428,7 +464,7 @@ impl Explorer {
     fn render_row(&self, index: usize, sticky: bool, cx: &mut Context<Self>) -> AnyElement {
         let row_height = row_height(cx);
         let row = &self.rows[index];
-        let expanded = self.expanded.contains(&row.entry.path);
+        let expanded = self.expanded[row.root_index].contains(&row.entry.path);
         let name = row
             .entry
             .path
@@ -437,7 +473,8 @@ impl Explorer {
             .to_string_lossy()
             .into_owned();
         let label_name = name.clone();
-        let label_key = (row.entry.path.clone(), sticky);
+        let root_index = row.root_index;
+        let label_key = (root_index, row.entry.path.clone(), sticky);
         let label_view = cx.entity().downgrade();
         let tooltip_name = name.clone();
         let tooltip_path = row.entry.path.display().to_string();
@@ -448,18 +485,9 @@ impl Explorer {
         let menu_view = cx.entity().downgrade();
         let hover_path = menu_path.clone();
 
-        let menu_root = self
-            .roots
-            .iter()
-            .filter(|root| row.entry.path.starts_with(root))
-            .max_by_key(|root| root.components().count())
-            .cloned()
-            .unwrap_or_default();
+        let menu_root = self.roots[root_index].clone();
         let entry = div()
-            .id(entry_id(
-                &row.entry.path,
-                if sticky { "sticky-row" } else { "tree-row" },
-            ))
+            .id(row.element_id(if sticky { "sticky-row" } else { "tree-row" }))
             .relative()
             .when(self.clipped_labels.contains(&label_key), |entry| {
                 entry.tooltip(move |window, cx| {
@@ -500,11 +528,11 @@ impl Explorer {
                         view.check_folder_media(right_click_path.clone(), cx);
                     }
                     view.clicked_path = Some(right_click_path.clone());
+                    view.clicked_root = Some(root_index);
                     cx.emit(ExplorerEvent::SelectionChanged);
-                    view.selected = view
-                        .rows
-                        .iter()
-                        .position(|r| r.entry.path == right_click_path);
+                    view.selected = view.rows.iter().position(|r| {
+                        r.root_index == root_index && r.entry.path == right_click_path
+                    });
                     window.focus(&view.focus, cx);
                     cx.notify();
                 }),
@@ -512,11 +540,15 @@ impl Explorer {
             .h(px(row_height))
             .w_full()
             .rounded(px(6.))
-            .bg(if self.clicked_path.as_ref() == Some(&row.entry.path) {
-                super::selection_background(cx)
-            } else {
-                cx.theme().sidebar
-            })
+            .bg(
+                if self.clicked_root == Some(root_index)
+                    && self.clicked_path.as_ref() == Some(&row.entry.path)
+                {
+                    super::selection_background(cx)
+                } else {
+                    cx.theme().sidebar
+                },
+            )
             .when(sticky, |row| row.occlude())
             .children((0..row.depth).map(|level| {
                 div()
@@ -534,119 +566,119 @@ impl Explorer {
             }))
             .pr_2()
             .child(
-                Button::new(entry_id(
-                    &row.entry.path,
-                    if sticky { "sticky-entry" } else { "entry" },
-                ))
-                .custom(
-                    ButtonCustomVariant::new(cx)
-                        .hover(cx.theme().foreground.opacity(0.04))
-                        .active(cx.theme().foreground.opacity(0.07)),
-                )
-                .text_size(px(12.))
-                .focus_ring(false)
-                .accessibility_label(format!(
-                    "{}  {name}",
-                    glim_services::locale::tr(if !row.entry.is_dir {
-                        "File"
-                    } else if self.tasks.contains_key(&row.entry.path) {
-                        "Loading folder"
-                    } else if expanded {
-                        "Expanded folder"
-                    } else {
-                        "Collapsed folder"
-                    })
-                ))
-                .child(
-                    div().w_full().text_left().truncate().child(
-                        gpui_kit::component::h_flex()
-                            .w_full()
-                            .min_w_0()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .w(px(16.))
-                                    .h(px(16.))
-                                    .flex_shrink_0()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child(if row.entry.is_dir {
-                                        // Keep the same icon box during loading; replacing
-                                        // a font glyph with an ellipsis makes it flicker.
-                                        Icon::new(if expanded {
-                                            gpui_kit::assets::IconName::ChevronDown
-                                        } else {
-                                            gpui_kit::assets::IconName::ChevronRight
-                                        })
-                                        .size(px(14.))
+                Button::new(row.element_id(if sticky { "sticky-entry" } else { "entry" }))
+                    .custom(
+                        ButtonCustomVariant::new(cx)
+                            .hover(cx.theme().foreground.opacity(0.04))
+                            .active(cx.theme().foreground.opacity(0.07)),
+                    )
+                    .text_size(px(12.))
+                    .focus_ring(false)
+                    .accessibility_label(format!(
+                        "{}  {name}",
+                        glim_services::locale::tr(if !row.entry.is_dir {
+                            "File"
+                        } else if self.tasks.contains_key(&row.entry.path) {
+                            "Loading folder"
+                        } else if expanded {
+                            "Expanded folder"
+                        } else {
+                            "Collapsed folder"
+                        })
+                    ))
+                    .child(
+                        div().w_full().text_left().truncate().child(
+                            gpui_kit::component::h_flex()
+                                .w_full()
+                                .min_w_0()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .w(px(16.))
+                                        .h(px(16.))
                                         .flex_shrink_0()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .into_any_element()
-                                    } else {
-                                        super::file_icons::file_icon(&row.entry.path)
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child(if row.entry.is_dir {
+                                            // Keep the same icon box during loading; replacing
+                                            // a font glyph with an ellipsis makes it flicker.
+                                            Icon::new(if expanded {
+                                                gpui_kit::assets::IconName::ChevronDown
+                                            } else {
+                                                gpui_kit::assets::IconName::ChevronRight
+                                            })
+                                            .size(px(14.))
+                                            .flex_shrink_0()
+                                            .text_color(cx.theme().muted_foreground)
                                             .into_any_element()
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id(entry_id(
-                                        &row.entry.path,
-                                        if sticky { "sticky-label" } else { "label" },
-                                    ))
-                                    .relative()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .child(name)
-                                    .child(
-                                        canvas(
-                                            move |bounds, window, cx| {
-                                                let style = window.text_style();
-                                                let width = window
-                                                    .text_system()
-                                                    .layout_line(
-                                                        &label_name,
-                                                        style
-                                                            .font_size
-                                                            .to_pixels(window.rem_size()),
-                                                        &[style.to_run(label_name.len())],
-                                                        None,
-                                                    )
-                                                    .width;
-                                                let clipped = width > bounds.size.width + px(0.5);
-                                                let key = label_key.clone();
-                                                let view = label_view.clone();
-                                                window.defer(cx, move |_, cx| {
-                                                    let _ = view.update(cx, |view, cx| {
-                                                        let changed = if clipped {
-                                                            view.clipped_labels.insert(key)
-                                                        } else {
-                                                            view.clipped_labels.remove(&key)
-                                                        };
-                                                        if changed {
-                                                            cx.notify();
-                                                        }
+                                        } else {
+                                            super::file_icons::file_icon(&row.entry.path)
+                                                .into_any_element()
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .id(row.element_id(if sticky {
+                                            "sticky-label"
+                                        } else {
+                                            "label"
+                                        }))
+                                        .relative()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .truncate()
+                                        .child(name)
+                                        .child(
+                                            canvas(
+                                                move |bounds, window, cx| {
+                                                    let style = window.text_style();
+                                                    let width = window
+                                                        .text_system()
+                                                        .layout_line(
+                                                            &label_name,
+                                                            style
+                                                                .font_size
+                                                                .to_pixels(window.rem_size()),
+                                                            &[style.to_run(label_name.len())],
+                                                            None,
+                                                        )
+                                                        .width;
+                                                    let clipped =
+                                                        width > bounds.size.width + px(0.5);
+                                                    let key = label_key.clone();
+                                                    let view = label_view.clone();
+                                                    window.defer(cx, move |_, cx| {
+                                                        let _ = view.update(cx, |view, cx| {
+                                                            let changed = if clipped {
+                                                                view.clipped_labels.insert(key)
+                                                            } else {
+                                                                view.clipped_labels.remove(&key)
+                                                            };
+                                                            if changed {
+                                                                cx.notify();
+                                                            }
+                                                        });
                                                     });
-                                                });
-                                            },
-                                            |_, _, _, _| {},
+                                                },
+                                                |_, _, _, _| {},
+                                            )
+                                            .absolute()
+                                            .size_full(),
                                         )
-                                        .absolute()
-                                        .size_full(),
-                                    )
-                                    .test_support(),
-                            ),
-                    ),
-                )
-                .w_full()
-                .h(px(row_height))
-                .justify_start()
-                .on_click(cx.listener(move |view, _, window, cx| {
-                    view.clicked_path = Some(row_path.clone());
-                    cx.emit(ExplorerEvent::SelectionChanged);
-                    view.activate_path(&row_path, sticky, window, cx);
-                })),
+                                        .test_support(),
+                                ),
+                        ),
+                    )
+                    .w_full()
+                    .h(px(row_height))
+                    .justify_start()
+                    .on_click(cx.listener(move |view, _, window, cx| {
+                        view.clicked_path = Some(row_path.clone());
+                        view.clicked_root = Some(root_index);
+                        cx.emit(ExplorerEvent::SelectionChanged);
+                        view.activate_path(&row_path, sticky, window, cx);
+                    })),
             )
             .context_menu(move |mut menu, _, cx| {
                 let has_media = menu_view.upgrade().is_some_and(|view| {
@@ -728,7 +760,7 @@ impl Render for Explorer {
                 if let Some(index) = view.selected
                     && let Some(row) = view.rows.get(index)
                     && row.entry.is_dir
-                    && !view.expanded.contains(&row.entry.path)
+                    && !view.expanded[row.root_index].contains(&row.entry.path)
                 {
                     view.activate(index, window, cx);
                 }
@@ -737,10 +769,10 @@ impl Render for Explorer {
                 if let Some(index) = view.selected
                     && let Some(row) = view.rows.get(index)
                 {
-                    if view.expanded.contains(&row.entry.path) {
+                    if view.expanded[row.root_index].contains(&row.entry.path) {
                         view.activate(index, window, cx);
-                    } else if let Some(parent) = row.entry.path.parent() {
-                        view.selected = view.rows.iter().position(|r| r.entry.path == parent);
+                    } else if let Some(parent) = row.parent {
+                        view.selected = Some(parent);
                         cx.notify();
                     }
                 }
@@ -957,6 +989,7 @@ mod tests {
 
     fn row(name: &str, parent: Option<usize>, depth: usize, end: usize, is_dir: bool) -> Row {
         Row {
+            root_index: 0,
             entry: DirectoryEntry {
                 path: name.into(),
                 is_dir,
@@ -1028,7 +1061,7 @@ mod interaction_tests {
         cx: &mut gpui_kit::Context<Explorer>,
     ) -> Explorer {
         let mut view = Explorer::new(root.clone(), entries, cx);
-        view.expanded.insert(root);
+        view.expanded[0].insert(root);
         view.rebuild();
         view
     }
@@ -1050,7 +1083,7 @@ mod interaction_tests {
             });
             view.update(cx, |view, cx| {
                 assert_eq!(view.rows.len(), 1);
-                assert!(view.expanded.is_empty());
+                assert!(view.expanded.iter().all(|expanded| expanded.is_empty()));
                 view.pending_reveal = Some("/fixture/file.txt".into());
                 view.preserve_next_reveal = Some("/fixture/file.txt".into());
                 view.clear_clicked_selection(cx);
@@ -1119,6 +1152,41 @@ mod interaction_tests {
     }
 
     #[gpui_kit::test]
+    fn repeated_and_nested_roots_keep_independent_tree_state(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        cx.update(|cx| {
+            let root = std::path::PathBuf::from("/fixture");
+            let child = root.join("child");
+            let entries = vec![DirectoryEntry {
+                path: child.clone(),
+                is_dir: true,
+                is_symlink: false,
+            }];
+            let view = cx.new(|cx| Explorer::new(root.clone(), entries.clone(), cx));
+            view.update(cx, |view, cx| {
+                view.expanded[0].insert(root.clone());
+                view.rebuild();
+                view.add_folder(child.clone(), Vec::new(), cx);
+                view.add_folder(root.clone(), entries, cx);
+                assert_eq!(view.roots, vec![root.clone(), child, root.clone()]);
+                let duplicate = view.rows.iter().position(|r| r.root_index == 2).unwrap();
+                assert_ne!(
+                    view.rows[0].element_id("entry"),
+                    view.rows[duplicate].element_id("entry"),
+                );
+                view.selected = Some(duplicate);
+                view.expanded[0].remove(&root);
+                view.rebuild();
+                assert!(view.expanded[2].contains(&root));
+                assert_eq!(view.rows[view.selected.unwrap()].root_index, 2);
+                assert_eq!(view.rows.iter().filter(|r| r.depth == 0).count(), 3);
+                assert!(view.rows.iter().any(|r| r.root_index == 2 && r.depth == 1));
+                assert!(!view.rows.iter().any(|r| r.root_index == 0 && r.depth == 1));
+            });
+        });
+    }
+
+    #[gpui_kit::test]
     fn only_clipped_file_labels_enable_tooltips(cx: &mut TestAppContext) {
         let short = std::path::PathBuf::from("/fixture/short.txt");
         let long =
@@ -1158,8 +1226,8 @@ mod interaction_tests {
         cx.run_until_parked();
         cx.update(|cx| {
             let labels = &view.read(cx).clipped_labels;
-            assert!(!labels.contains(&(short.clone(), false)));
-            assert!(labels.contains(&(long.clone(), false)));
+            assert!(!labels.contains(&(0, short.clone(), false)));
+            assert!(labels.contains(&(0, long.clone(), false)));
         });
     }
 
@@ -1205,7 +1273,7 @@ mod interaction_tests {
                     path.clone(),
                     cx.spawn(async |_, _| std::future::pending::<()>().await),
                 );
-                v.expanded.insert(path.clone());
+                v.expanded[0].insert(path.clone());
                 cx.notify();
             })
         });
@@ -1283,7 +1351,7 @@ mod interaction_tests {
                                 .map(|i| file(branch.join(format!("file-{i}"))))
                                 .collect(),
                         );
-                        view.expanded.extend([parent.clone(), branch.clone()]);
+                        view.expanded[0].extend([parent.clone(), branch.clone()]);
                         view.rebuild();
                         view
                     })
@@ -1315,7 +1383,7 @@ mod interaction_tests {
             );
         })
         .unwrap();
-        assert!(!cx.update(|cx| view.read(cx).expanded.contains(&branch)));
+        assert!(!cx.update(|cx| view.read(cx).expanded[0].contains(&branch)));
     }
 
     #[gpui_kit::test]
@@ -1369,6 +1437,6 @@ mod interaction_tests {
             }
         })
         .unwrap();
-        assert!(!cx.update(|cx| view.read(cx).expanded.contains(&parent)));
+        assert!(!cx.update(|cx| view.read(cx).expanded[0].contains(&parent)));
     }
 }

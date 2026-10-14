@@ -335,5 +335,11 @@
   "Automatic": "自动更新",
   "GitHub Releases": "GitHub 发布页",
   "Source Code": "源代码",
-  "The native preview could not open this file": "无法打开原生预览或文件类型设置。"
+  "The native preview could not open this file": "无法打开原生预览或文件类型设置。",
+  "Recent Workspaces": "最近的工作空间",
+  "Open in New Window": "在新窗口中打开",
+  "Switch to Window": "切换到已打开的窗口",
+  "Open New Workspace": "打开新的工作空间",
+  "Source Control": "源代码管理",
+  "Open a folder containing a Git repository.": "打开包含 Git 仓库的文件夹。"
 }

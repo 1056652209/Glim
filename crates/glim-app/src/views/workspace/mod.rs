@@ -33,6 +33,8 @@ const DEFAULT_SIDEBAR_RATIO: f32 = 0.20;
 const SIDEBAR_COLLAPSE_WIDTH: f32 = 120.;
 
 pub struct Workspace {
+    recent_id: String,
+    restoring_roots: Option<Vec<PathBuf>>,
     focus: FocusHandle,
     page: Page,
     sidebar_selection: Option<&'static str>,
@@ -84,6 +86,20 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    pub(crate) fn folder_roots(&self) -> &[PathBuf] {
+        &self.roots
+    }
+
+    pub(crate) fn matches_recent_workspace(
+        &self,
+        workspace: &glim_services::preferences::RecentWorkspace,
+    ) -> bool {
+        self.recent_id == workspace.id
+            || (!workspace.folders.is_empty()
+                && (self.roots == workspace.folders
+                    || self.restoring_roots.as_ref() == Some(&workspace.folders)))
+    }
+
     pub(crate) fn show_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.page = Page::Settings;
         self.results.clear();
@@ -137,6 +153,15 @@ impl Workspace {
             .unwrap_or(true)
         });
         let mut workspace = Self {
+            recent_id: format!(
+                "{}-{:?}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos(),
+                cx.entity_id(),
+            ),
+            restoring_roots: None,
             history: Vec::new(),
             history_cursor: None,
             navigating: false,
