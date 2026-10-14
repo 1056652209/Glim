@@ -1,6 +1,6 @@
 use crate::app::actions::{CloseWindow, CloseWorkspace};
 use gpui_kit::{
-    component::{ActiveTheme, TitleBar, button::Button, v_flex},
+    component::{TitleBar, button::Button, h_flex, v_flex},
     *,
 };
 
@@ -30,8 +30,17 @@ impl Render for About {
                     .items_center()
                     .justify_center()
                     .gap_3()
-                    .child(img("branding/glim.png").w(px(88.)).h(px(88.)))
-                    .child(div().text_3xl().child("Glim"))
+                    .child(
+                        h_flex()
+                            .gap_4()
+                            .child(img("branding/glim.png").size(px(64.)))
+                            .child(
+                                div()
+                                    .text_3xl()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child("Glim"),
+                            ),
+                    )
                     .child(env!("CARGO_PKG_VERSION"))
                     .child(
                         Button::new("about-check-update")
@@ -40,16 +49,6 @@ impl Render for About {
                                 crate::app::updates::show(window, cx);
                                 crate::app::updates::command("check", cx);
                             }),
-                    )
-                    .child(
-                        div()
-                            .max_w(px(340.))
-                            .text_center()
-                            .whitespace_normal()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(glim_services::locale::tr(
-                                "A focused file viewer for macOS.",
-                            )),
                     ),
             )
     }

@@ -28,7 +28,11 @@ fn extension(path: &Path) -> String {
 pub fn read_preview(path: &Path) -> Result<BytePreview> {
     let bytes = bounded(std::fs::File::open(path)?)?;
     let ext = extension(path);
-    let mut text = format!("{} · 只读预览\n\n", ext.to_uppercase());
+    let mut text = format!(
+        "{} · {}\n\n",
+        ext.to_uppercase(),
+        crate::locale::tr("Read-only preview")
+    );
     match ext.as_str() {
         "zip" | "epub" | "odt" | "ods" | "odp" => {
             let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
@@ -45,9 +49,9 @@ pub fn read_preview(path: &Path) -> Result<BytePreview> {
                     entry.name(),
                     entry.size(),
                     if safe {
-                        ""
+                        String::new()
                     } else {
-                        " · 路径越界，禁止提取"
+                        crate::locale::tr(" · Unsafe extraction path")
                     }
                 )?;
                 let document =
@@ -78,9 +82,9 @@ pub fn read_preview(path: &Path) -> Result<BytePreview> {
                     name.display(),
                     entry.size(),
                     if safe {
-                        ""
+                        String::new()
                     } else {
-                        " · 路径越界，禁止提取"
+                        crate::locale::tr(" · Unsafe extraction path")
                     }
                 )?;
             }
@@ -161,7 +165,12 @@ fn numpy(bytes: &[u8]) -> Result<String> {
         _ => 0,
     };
     if size == 0 {
-        writeln!(text, "数据类型暂无数值预览 · {} bytes", data.len())?;
+        writeln!(
+            text,
+            "{} · {} bytes",
+            crate::locale::tr("Numeric preview unavailable for this data type"),
+            data.len()
+        )?;
     } else {
         let shape = header
             .split("shape")
@@ -190,7 +199,9 @@ fn numpy(bytes: &[u8]) -> Result<String> {
             writeln!(text, "[{index}] {value}")?;
         }
         if data.len() / size > 10_000 {
-            text.push_str("仅显示前 10,000 个值\n");
+            text.push_str(&crate::locale::tr(
+                "Only the first 10,000 values are shown\n",
+            ));
         }
     }
     Ok(text)

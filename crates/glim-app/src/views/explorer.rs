@@ -18,9 +18,11 @@ use gpui_kit::{
 };
 
 pub enum ExplorerEvent {
+    SelectionChanged,
     OpenFile(PathBuf),
     PlayFolder(PathBuf, bool),
     Error(String),
+    ExpansionChanged(Vec<PathBuf>, Vec<PathBuf>),
 }
 
 gpui_kit::actions!(explorer, [Up, Down, Expand, Collapse, OpenSelected]);
@@ -44,6 +46,9 @@ pub struct Explorer {
     rows: Vec<Row>,
     clipped_labels: HashSet<(PathBuf, bool)>,
     selected: Option<usize>,
+    clicked_path: Option<PathBuf>,
+    pending_reveal: Option<PathBuf>,
+    preserve_next_reveal: Option<PathBuf>,
     focus: FocusHandle,
     scroll: UniformListScrollHandle,
 }
@@ -65,13 +70,16 @@ impl Explorer {
         let mut view = Self {
             roots: vec![root.clone()],
             directories: HashMap::from([(root.clone(), entries)]),
-            expanded: HashSet::from([root]),
+            expanded: HashSet::new(),
             tasks: HashMap::new(),
             media_presence: HashMap::new(),
             media_tasks: HashMap::new(),
             rows: Vec::new(),
             clipped_labels: HashSet::new(),
             selected: None,
+            clicked_path: None,
+            pending_reveal: None,
+            preserve_next_reveal: None,
             focus: cx.focus_handle(),
             scroll: UniformListScrollHandle::new(),
         };
@@ -88,10 +96,189 @@ impl Explorer {
         if !self.roots.iter().any(|existing| root.starts_with(existing)) {
             self.roots.retain(|existing| !existing.starts_with(&root));
             self.roots.push(root.clone());
-            self.expanded.insert(root.clone());
             self.directories.insert(root, entries);
             self.rebuild();
             cx.notify();
+        }
+    }
+
+    pub fn clear_clicked_selection(&mut self, cx: &mut Context<Self>) {
+        self.clicked_path = None;
+        self.pending_reveal = None;
+        self.preserve_next_reveal = None;
+        cx.notify();
+    }
+
+    pub fn expansion_state(&self) -> (Vec<PathBuf>, Vec<PathBuf>) {
+        let mut expanded = self.expanded.iter().cloned().collect::<Vec<_>>();
+        expanded.sort();
+        (self.roots.clone(), expanded)
+    }
+
+    fn expansion_changed(&self, cx: &mut Context<Self>) {
+        let (roots, expanded) = self.expansion_state();
+        cx.emit(ExplorerEvent::ExpansionChanged(roots, expanded));
+    }
+
+    pub fn restore_expanded(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.expanded = paths
+            .into_iter()
+            .filter(|path| {
+                !path
+                    .components()
+                    .any(|part| part == std::path::Component::ParentDir)
+                    && self.roots.iter().any(|root| path.starts_with(root))
+            })
+            .collect();
+        self.rebuild();
+        self.load_expanded(cx);
+        cx.notify();
+    }
+
+    fn load_expanded(&mut self, cx: &mut Context<Self>) {
+        let paths = self
+            .expanded
+            .iter()
+            .filter(|path| {
+                self.roots.contains(path)
+                    || path
+                        .parent()
+                        .and_then(|parent| self.directories.get(parent))
+                        .is_some_and(|entries| {
+                            entries.iter().any(|entry| {
+                                entry.path == **path && entry.is_dir && !entry.is_symlink
+                            })
+                        })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for path in paths {
+            self.load_directory(path, cx);
+        }
+    }
+
+    fn load_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.directories.contains_key(&path) || self.tasks.contains_key(&path) {
+            return;
+        }
+        let read_path = path.clone();
+        let read = cx
+            .background_executor()
+            .spawn(async move { list_directory(&read_path) });
+        let key = path.clone();
+        let task = cx.spawn(async move |view, cx| {
+            let result = read.await;
+            let _ = view.update(cx, |view, cx| {
+                view.tasks.remove(&path);
+                match result {
+                    Ok(entries) => {
+                        view.directories.insert(path, entries);
+                    }
+                    Err(error) => {
+                        view.expanded.remove(&path);
+                        if view
+                            .pending_reveal
+                            .as_ref()
+                            .is_some_and(|target| target.starts_with(&path))
+                        {
+                            view.pending_reveal = None;
+                        }
+                        view.expansion_changed(cx);
+                        cx.emit(ExplorerEvent::Error(format!("{error:#}")));
+                    }
+                }
+                view.rebuild();
+                view.advance_reveal(cx);
+                view.load_expanded(cx);
+                cx.notify();
+            });
+        });
+        self.tasks.insert(key, task);
+    }
+
+    pub fn reveal_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        // Opening a row feeds back through tab activation/content installation.
+        // Keep that click's scroll position; explicit tab changes still reveal.
+        if self.preserve_next_reveal.take().as_ref() == Some(&path) {
+            self.pending_reveal = None;
+            cx.notify();
+            return;
+        }
+        self.selected = None;
+        self.pending_reveal = self
+            .roots
+            .iter()
+            .any(|root| path.starts_with(root))
+            .then_some(path);
+        if self.pending_reveal.is_some() {
+            self.clicked_path = None;
+            cx.emit(ExplorerEvent::SelectionChanged);
+        }
+        self.advance_reveal(cx);
+        cx.notify();
+    }
+
+    fn advance_reveal(&mut self, cx: &mut Context<Self>) {
+        let Some(target) = self.pending_reveal.clone() else {
+            return;
+        };
+        let Some(root) = self
+            .roots
+            .iter()
+            .filter(|root| target.starts_with(root))
+            .max_by_key(|root| root.components().count())
+            .cloned()
+        else {
+            return;
+        };
+        let mut ancestors = target
+            .parent()
+            .into_iter()
+            .flat_map(|parent| parent.ancestors())
+            .take_while(|path| path.starts_with(&root))
+            .map(std::path::Path::to_path_buf)
+            .collect::<Vec<_>>();
+        ancestors.reverse();
+        let mut changed = false;
+        let mut ready = true;
+        for path in ancestors {
+            if path != root {
+                let Some(entries) = path
+                    .parent()
+                    .and_then(|parent| self.directories.get(parent))
+                else {
+                    ready = false;
+                    break;
+                };
+                if !entries
+                    .iter()
+                    .any(|entry| entry.path == path && entry.is_dir && !entry.is_symlink)
+                {
+                    self.pending_reveal = None;
+                    ready = false;
+                    break;
+                }
+            }
+            changed |= self.expanded.insert(path.clone());
+            if !self.directories.contains_key(&path) {
+                self.load_directory(path, cx);
+                ready = false;
+                break;
+            }
+        }
+        self.rebuild();
+        if changed {
+            self.expansion_changed(cx);
+        }
+        if ready {
+            self.pending_reveal = None;
+            if let Some(index) = self.rows.iter().position(|row| row.entry.path == target) {
+                self.selected = Some(index);
+                self.clicked_path = Some(target);
+                // Center explicitly so pinned ancestor rows cannot cover the target.
+                self.scroll
+                    .scroll_to_item_strict(index, ScrollStrategy::Center);
+            }
         }
     }
 
@@ -118,6 +305,8 @@ impl Explorer {
                     }
                     view.tasks.remove(&path);
                     view.rebuild();
+                    view.advance_reveal(cx);
+                    view.load_expanded(cx);
                     cx.notify();
                 });
             });
@@ -199,40 +388,20 @@ impl Explorer {
         let Some(row) = self.rows.get(index).cloned() else {
             return;
         };
+        self.pending_reveal = None;
+        self.preserve_next_reveal = None;
         self.selected = Some(index);
         window.focus(&self.focus, cx);
         if !row.entry.is_dir {
+            self.preserve_next_reveal = Some(row.entry.path.clone());
             cx.emit(ExplorerEvent::OpenFile(row.entry.path));
-        } else if !self.expanded.remove(&row.entry.path) {
-            self.expanded.insert(row.entry.path.clone());
-            if !self.directories.contains_key(&row.entry.path)
-                && !self.tasks.contains_key(&row.entry.path)
-            {
-                let path = row.entry.path;
-                let read_path = path.clone();
-                let read = cx
-                    .background_executor()
-                    .spawn(async move { list_directory(&read_path) });
-                let key = path.clone();
-                let task = cx.spawn(async move |view, cx| {
-                    let result = read.await;
-                    let _ = view.update(cx, |view, cx| {
-                        view.tasks.remove(&path);
-                        match result {
-                            Ok(entries) => {
-                                view.directories.insert(path, entries);
-                            }
-                            Err(error) => {
-                                view.expanded.remove(&path);
-                                cx.emit(ExplorerEvent::Error(format!("{error:#}")));
-                            }
-                        }
-                        view.rebuild();
-                        cx.notify();
-                    });
-                });
-                self.tasks.insert(key, task);
+        } else {
+            self.pending_reveal = None;
+            if !self.expanded.remove(&row.entry.path) {
+                self.expanded.insert(row.entry.path.clone());
+                self.load_directory(row.entry.path, cx);
             }
+            self.expansion_changed(cx);
         }
         self.rebuild();
         cx.notify();
@@ -257,6 +426,7 @@ impl Explorer {
     }
 
     fn render_row(&self, index: usize, sticky: bool, cx: &mut Context<Self>) -> AnyElement {
+        let row_height = row_height(cx);
         let row = &self.rows[index];
         let expanded = self.expanded.contains(&row.entry.path);
         let name = row
@@ -329,6 +499,8 @@ impl Explorer {
                     if menu_is_dir {
                         view.check_folder_media(right_click_path.clone(), cx);
                     }
+                    view.clicked_path = Some(right_click_path.clone());
+                    cx.emit(ExplorerEvent::SelectionChanged);
                     view.selected = view
                         .rows
                         .iter()
@@ -337,12 +509,11 @@ impl Explorer {
                     cx.notify();
                 }),
             )
-            .h(px(ROW_HEIGHT))
+            .h(px(row_height))
             .w_full()
-            .bg(if self.selected == Some(index) {
-                cx.theme()
-                    .sidebar
-                    .blend(cx.theme().foreground.opacity(0.14))
+            .rounded(px(6.))
+            .bg(if self.clicked_path.as_ref() == Some(&row.entry.path) {
+                super::selection_background(cx)
             } else {
                 cx.theme().sidebar
             })
@@ -354,7 +525,7 @@ impl Explorer {
                     .bottom_0()
                     .left(px(26. + level as f32 * 14.))
                     .w(px(1.))
-                    .bg(cx.theme().border)
+                    .bg(cx.theme().border.opacity(0.5))
             }))
             .pl(px(8. + row.depth as f32 * 14.))
             .pr_2()
@@ -363,11 +534,16 @@ impl Explorer {
                     &row.entry.path,
                     if sticky { "sticky-entry" } else { "entry" },
                 ))
-                .custom(ButtonCustomVariant::new(cx))
+                .custom(
+                    ButtonCustomVariant::new(cx)
+                        .hover(cx.theme().foreground.opacity(0.04))
+                        .active(cx.theme().foreground.opacity(0.07)),
+                )
+                .text_size(px(12.))
                 .focus_ring(false)
                 .accessibility_label(format!(
                     "{}  {name}",
-                    if !row.entry.is_dir {
+                    glim_services::locale::tr(if !row.entry.is_dir {
                         "File"
                     } else if self.tasks.contains_key(&row.entry.path) {
                         "Loading folder"
@@ -375,7 +551,7 @@ impl Explorer {
                         "Expanded folder"
                     } else {
                         "Collapsed folder"
-                    }
+                    })
                 ))
                 .child(
                     div().w_full().text_left().truncate().child(
@@ -391,6 +567,11 @@ impl Explorer {
                                     .flex()
                                     .items_center()
                                     .justify_center()
+                                    .when(row.depth == 0 && row.entry.is_dir, |icon| {
+                                        // Root disclosure aligns with the sidebar navigation
+                                        // icons; keep labels and nested indentation unchanged.
+                                        icon.relative().left(px(-8.))
+                                    })
                                     .child(if row.entry.is_dir {
                                         // Keep the same icon box during loading; replacing
                                         // a font glyph with an ellipsis makes it flicker.
@@ -460,9 +641,11 @@ impl Explorer {
                     ),
                 )
                 .w_full()
-                .h(px(ROW_HEIGHT))
+                .h(px(row_height))
                 .justify_start()
                 .on_click(cx.listener(move |view, _, window, cx| {
+                    view.clicked_path = Some(row_path.clone());
+                    cx.emit(ExplorerEvent::SelectionChanged);
                     view.activate_path(&row_path, sticky, window, cx);
                 })),
             )
@@ -474,24 +657,29 @@ impl Explorer {
                     for (label, shuffle) in [("Play in Order", false), ("Shuffle Play", true)] {
                         let path = menu_path.clone();
                         let view = menu_view.clone();
-                        menu = menu.item(PopupMenuItem::new(label).on_click(move |_, _, cx| {
-                            let _ = view.update(cx, |_, cx| {
-                                cx.emit(ExplorerEvent::PlayFolder(path.clone(), shuffle))
-                            });
-                        }));
+                        menu = menu.item(
+                            PopupMenuItem::new(glim_services::locale::tr(label)).on_click(
+                                move |_, _, cx| {
+                                    let _ = view.update(cx, |_, cx| {
+                                        cx.emit(ExplorerEvent::PlayFolder(path.clone(), shuffle))
+                                    });
+                                },
+                            ),
+                        );
                     }
                     menu = menu.separator();
                 } else if !menu_is_dir && glim_services::preview::supports(&menu_path) {
                     let path = menu_path.clone();
                     let view = menu_view.clone();
                     menu = menu
-                        .item(PopupMenuItem::new("Open Preview / Play").on_click(
-                            move |_, _, cx| {
-                                let _ = view.update(cx, |_, cx| {
-                                    cx.emit(ExplorerEvent::OpenFile(path.clone()))
-                                });
-                            },
-                        ))
+                        .item(
+                            PopupMenuItem::new(glim_services::locale::tr("Open Preview / Play"))
+                                .on_click(move |_, _, cx| {
+                                    let _ = view.update(cx, |_, cx| {
+                                        cx.emit(ExplorerEvent::OpenFile(path.clone()))
+                                    });
+                                }),
+                        )
                         .separator();
                 }
                 path_menu(menu, &menu_path, &menu_root)
@@ -521,6 +709,7 @@ impl Explorer {
 
 impl Render for Explorer {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let row_height = row_height(cx);
         let view = cx.entity().downgrade();
         gpui_kit::component::v_flex()
             .relative()
@@ -591,35 +780,41 @@ impl Render for Explorer {
                                 let offset =
                                     -f32::from(view.scroll.0.borrow().base_handle.offset().y);
                                 let blank_top =
-                                    (view.rows.len() as f32 * ROW_HEIGHT - offset).max(0.);
-                                let pinned =
-                                    sticky_rows(&view.rows, offset, f32::from(bounds.size.height))
-                                        .into_iter()
-                                        .map(|(index, y)| (y, view.render_row(index, true, cx)))
-                                        .collect::<Vec<_>>();
+                                    (view.rows.len() as f32 * row_height - offset).max(0.);
+                                let pinned = sticky_rows_with_height(
+                                    &view.rows,
+                                    offset,
+                                    f32::from(bounds.size.height),
+                                    row_height,
+                                )
+                                .into_iter()
+                                .map(|(index, y)| (y, view.render_row(index, true, cx)))
+                                .collect::<Vec<_>>();
                                 (pinned, blank_top)
                             })
                             .unwrap_or_default();
                         // A separate hit area below the final row: never an ancestor
                         // of file/folder menus, so both menus cannot open together.
                         let mut blank = if blank_top < f32::from(bounds.size.height) {
-                            let mut element = div()
-                                .id("files-blank-space")
-                                .w(bounds.size.width)
-                                .h(bounds.size.height - px(blank_top))
-                                .context_menu(|menu, _, _| {
-                                    menu.item(
-                                        PopupMenuItem::new("Add Folder to Workspace…").on_click(
-                                            |_, window, cx| {
+                            let mut element =
+                                div()
+                                    .id("files-blank-space")
+                                    .w(bounds.size.width)
+                                    .h(bounds.size.height - px(blank_top))
+                                    .context_menu(|menu, _, _| {
+                                        menu.item(
+                                            PopupMenuItem::new(glim_services::locale::tr(
+                                                "Add Folder to Workspace…",
+                                            ))
+                                            .on_click(|_, window, cx| {
                                                 window.dispatch_action(
                                                     Box::new(crate::app::actions::AddFolder),
                                                     cx,
                                                 );
-                                            },
-                                        ),
-                                    )
-                                })
-                                .into_any_element();
+                                            }),
+                                        )
+                                    })
+                                    .into_any_element();
                             element.prepaint_as_root(
                                 bounds.origin + point(px(0.), px(blank_top)),
                                 size(bounds.size.width, bounds.size.height - px(blank_top)).into(),
@@ -633,7 +828,7 @@ impl Render for Explorer {
                         for (y, element) in &mut pinned {
                             element.prepaint_as_root(
                                 bounds.origin + point(px(0.), px(*y)),
-                                size(bounds.size.width, px(ROW_HEIGHT)).into(),
+                                size(bounds.size.width, px(row_height)).into(),
                                 window,
                                 cx,
                             );
@@ -672,18 +867,19 @@ pub(super) fn path_menu(
     };
     let absolute = path.to_string_lossy().into_owned();
     menu.item(
-        PopupMenuItem::new("Reveal in Finder").on_click(move |_, _, cx| cx.reveal_path(&reveal)),
+        PopupMenuItem::new(glim_services::locale::tr("Reveal in Finder"))
+            .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
     )
     .separator()
     .item(
-        PopupMenuItem::new("Copy Relative Path").on_click(move |_, _, cx| {
-            cx.write_to_clipboard(ClipboardItem::new_string(relative.clone()))
-        }),
+        PopupMenuItem::new(glim_services::locale::tr("Copy Relative Path")).on_click(
+            move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(relative.clone())),
+        ),
     )
     .item(
-        PopupMenuItem::new("Copy Absolute Path").on_click(move |_, _, cx| {
-            cx.write_to_clipboard(ClipboardItem::new_string(absolute.clone()))
-        }),
+        PopupMenuItem::new(glim_services::locale::tr("Copy Absolute Path")).on_click(
+            move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(absolute.clone())),
+        ),
     )
 }
 
@@ -694,18 +890,30 @@ fn entry_id(path: &std::path::Path, part: &'static str) -> ElementId {
     )
 }
 
-const ROW_HEIGHT: f32 = 32.;
+fn row_height(_: &App) -> f32 {
+    28.
+}
+
+#[cfg(test)]
+fn sticky_rows(rows: &[Row], offset: f32, height: f32) -> Vec<(usize, f32)> {
+    sticky_rows_with_height(rows, offset, height, 32.)
+}
 
 /// Pin only real expanded ancestor rows that have crossed their tree slot.
 /// A sibling subtree pushes the previous ancestor out, rather than inheriting it.
-fn sticky_rows(rows: &[Row], offset: f32, height: f32) -> Vec<(usize, f32)> {
+fn sticky_rows_with_height(
+    rows: &[Row],
+    offset: f32,
+    height: f32,
+    row_height: f32,
+) -> Vec<(usize, f32)> {
     let offset = offset.max(0.);
-    let top = (offset / ROW_HEIGHT).floor() as usize;
+    let top = (offset / row_height).floor() as usize;
     let mut pinned = Vec::new();
-    let capacity = ((height / ROW_HEIGHT) as usize).saturating_sub(1);
+    let capacity = ((height / row_height) as usize).saturating_sub(1);
     for slot in 0..capacity {
-        let slot_y = slot as f32 * ROW_HEIGHT;
-        let probe = top.saturating_add(((offset % ROW_HEIGHT + slot_y) / ROW_HEIGHT) as usize);
+        let slot_y = slot as f32 * row_height;
+        let probe = top.saturating_add(((offset % row_height + slot_y) / row_height) as usize);
         let Some(row) = rows.get(probe) else {
             break;
         };
@@ -730,15 +938,15 @@ fn sticky_rows(rows: &[Row], offset: f32, height: f32) -> Vec<(usize, f32)> {
         let Some(&index) = ancestors.get(slot) else {
             break;
         };
-        let natural_y = index as f32 * ROW_HEIGHT - offset;
+        let natural_y = index as f32 * row_height - offset;
         if natural_y >= slot_y {
             break;
         }
-        let end_y = rows[index].subtree_end as f32 * ROW_HEIGHT - offset;
+        let end_y = rows[index].subtree_end as f32 * row_height - offset;
         if end_y <= slot_y {
             break;
         }
-        pinned.push((index, slot_y.min(end_y - ROW_HEIGHT)));
+        pinned.push((index, slot_y.min(end_y - row_height)));
     }
     pinned
 }
@@ -814,6 +1022,103 @@ mod interaction_tests {
         test::TestWindowExt,
     };
 
+    // These interaction fixtures need visible children; production roots start collapsed.
+    fn expanded_fixture(
+        root: std::path::PathBuf,
+        entries: Vec<DirectoryEntry>,
+        cx: &mut gpui_kit::Context<Explorer>,
+    ) -> Explorer {
+        let mut view = Explorer::new(root.clone(), entries, cx);
+        view.expanded.insert(root);
+        view.rebuild();
+        view
+    }
+
+    #[gpui_kit::test]
+    fn new_roots_are_collapsed_and_navigation_cancels_pending_reveal(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        cx.update(|cx| {
+            let view = cx.new(|cx| {
+                Explorer::new(
+                    "/fixture".into(),
+                    vec![DirectoryEntry {
+                        path: "/fixture/file.txt".into(),
+                        is_dir: false,
+                        is_symlink: false,
+                    }],
+                    cx,
+                )
+            });
+            view.update(cx, |view, cx| {
+                assert_eq!(view.rows.len(), 1);
+                assert!(view.expanded.is_empty());
+                view.pending_reveal = Some("/fixture/file.txt".into());
+                view.preserve_next_reveal = Some("/fixture/file.txt".into());
+                view.clear_clicked_selection(cx);
+                assert!(view.pending_reveal.is_none());
+                assert!(view.preserve_next_reveal.is_none());
+            });
+        });
+    }
+
+    #[gpui_kit::test]
+    fn file_tree_click_keeps_scroll_but_tab_reveal_moves_it(cx: &mut TestAppContext) {
+        let target = std::path::PathBuf::from("/fixture/file-35.txt");
+        cx.update(gpui_kit::init);
+        let (handle, view) = cx.update(|cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds {
+                        origin: Point::default(),
+                        size: size(px(400.), px(500.)),
+                    })),
+                    ..Default::default()
+                },
+                cx,
+                |_, cx| {
+                    cx.new(|cx| {
+                        expanded_fixture(
+                            "/fixture".into(),
+                            (0..60)
+                                .map(|i| DirectoryEntry {
+                                    path: format!("/fixture/file-{i}.txt").into(),
+                                    is_dir: false,
+                                    is_symlink: false,
+                                })
+                                .collect(),
+                            cx,
+                        )
+                    })
+                },
+            )
+            .unwrap()
+        });
+        cx.update_window(handle, |_, window, cx| {
+            window.render_frame(cx);
+            view.update(cx, |view, cx| {
+                view.scroll
+                    .0
+                    .borrow()
+                    .base_handle
+                    .set_offset(gpui_kit::point(px(0.), px(-700.)));
+                cx.notify();
+            });
+            window.render_frame(cx);
+            let before = view.read(cx).scroll.0.borrow().base_handle.offset();
+            window.click(entry_id(&target, "entry"), cx);
+            view.update(cx, |view, cx| view.reveal_path(target.clone(), cx));
+            window.render_frame(cx);
+            assert_eq!(view.read(cx).scroll.0.borrow().base_handle.offset(), before);
+            assert_eq!(view.read(cx).clicked_path.as_ref(), Some(&target));
+            let other = std::path::PathBuf::from("/fixture/file-1.txt");
+            view.update(cx, |view, cx| view.reveal_path(other.clone(), cx));
+            window.render_frame(cx);
+            assert_ne!(view.read(cx).scroll.0.borrow().base_handle.offset(), before);
+            assert_eq!(view.read(cx).clicked_path.as_ref(), Some(&other));
+        })
+        .unwrap();
+    }
+
     #[gpui_kit::test]
     fn only_clipped_file_labels_enable_tooltips(cx: &mut TestAppContext) {
         let short = std::path::PathBuf::from("/fixture/short.txt");
@@ -832,7 +1137,7 @@ mod interaction_tests {
                 cx,
                 |_, cx| {
                     cx.new(|cx| {
-                        Explorer::new(
+                        expanded_fixture(
                             "/fixture".into(),
                             vec![short.clone(), long.clone()]
                                 .into_iter()
@@ -875,7 +1180,7 @@ mod interaction_tests {
                 cx,
                 |_, cx| {
                     cx.new(|cx| {
-                        Explorer::new(
+                        expanded_fixture(
                             "/fixture".into(),
                             vec![DirectoryEntry {
                                 path: path.clone(),
@@ -954,7 +1259,7 @@ mod interaction_tests {
                 cx,
                 |_, cx| {
                     cx.new(|cx| {
-                        let mut view = Explorer::new(
+                        let mut view = expanded_fixture(
                             "/fixture".into(),
                             vec![DirectoryEntry {
                                 path: parent.clone(),
@@ -1030,7 +1335,7 @@ mod interaction_tests {
                 cx,
                 |_, cx| {
                     cx.new(|cx| {
-                        let mut view = Explorer::new(
+                        let mut view = expanded_fixture(
                             "/fixture".into(),
                             vec![DirectoryEntry {
                                 path: parent.clone(),

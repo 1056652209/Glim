@@ -22,24 +22,35 @@ pub fn preview(path: &Path) -> Result<String> {
     ensure!(!names.is_empty(), "Spreadsheet contains no worksheets");
     let mut html = String::from(
         r#"<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>
-:root{color-scheme:light dark}body{font:14px -apple-system,BlinkMacSystemFont,sans-serif;margin:20px;color:CanvasText;background:Canvas}p{color:GrayText}details{margin:16px 0;border:1px solid GrayText;border-radius:8px;overflow:hidden}summary{padding:12px;font-weight:600;cursor:pointer;background:color-mix(in srgb,CanvasText 5%,Canvas)}.grid{overflow:auto;max-height:70vh}table{border-collapse:separate;border-spacing:0;table-layout:fixed;width:max-content}th,td{box-sizing:border-box;border-right:1px solid GrayText;border-bottom:1px solid GrayText;padding:8px 12px;min-width:160px;max-width:320px;white-space:pre-wrap;overflow-wrap:anywhere;vertical-align:top}th{position:sticky;top:0;background:Canvas;z-index:1}th:first-child{min-width:64px}td{width:240px}tr:nth-child(even){background:color-mix(in srgb,CanvasText 3%,Canvas)}</style></head><body><p>只读预览 · 公式显示已保存的结果，不重新计算 · 图表与原始版式请使用默认应用查看</p>"#,
+:root{color-scheme:light dark}body{font:14px -apple-system,BlinkMacSystemFont,sans-serif;margin:20px;color:CanvasText;background:Canvas}p{color:GrayText}details{margin:16px 0;border:1px solid GrayText;border-radius:8px;overflow:hidden}summary{padding:12px;font-weight:600;cursor:pointer;background:color-mix(in srgb,CanvasText 5%,Canvas)}.grid{overflow:auto;max-height:70vh}table{border-collapse:separate;border-spacing:0;table-layout:fixed;width:max-content}th,td{box-sizing:border-box;border-right:1px solid GrayText;border-bottom:1px solid GrayText;padding:8px 12px;min-width:160px;max-width:320px;white-space:pre-wrap;overflow-wrap:anywhere;vertical-align:top}th{position:sticky;top:0;background:Canvas;z-index:1}th:first-child{min-width:64px}td{width:240px}tr:nth-child(even){background:color-mix(in srgb,CanvasText 3%,Canvas)}</style></head><body><p>__PREVIEW_NOTE__</p>"#,
     );
+    html = html.replace("__PREVIEW_NOTE__", &escape(&crate::locale::tr("Read-only preview · Formulas show saved results without recalculation · Open in the default app for charts and original layout")));
     for (index, name) in names.iter().take(128).enumerate() {
         let range = workbook
             .worksheet_range(name)
             .with_context(|| format!("Cannot decode worksheet {name}"))?;
         let (rows, cols) = range.get_size();
         html.push_str(&format!(
-            "<details {}><summary>{} · {} 行 × {} 列</summary>",
+            "<details {}><summary>{} · {} {} × {} {}</summary>",
             if index == 0 { "open" } else { "" },
             escape(name),
             rows,
-            cols
+            escape(&crate::locale::tr("rows")),
+            cols,
+            escape(&crate::locale::tr("columns"))
         ));
         if rows > 5000 || cols > 256 {
-            html.push_str("<p>预览仅显示前 5000 行、256 列。</p>");
+            html.push_str(&format!(
+                "<p>{}</p>",
+                escape(&crate::locale::tr(
+                    "Preview limited to the first 5,000 rows and 256 columns."
+                ))
+            ));
         }
-        html.push_str("<div class=grid><table><thead><tr><th>行</th>");
+        html.push_str(&format!(
+            "<div class=grid><table><thead><tr><th>{}</th>",
+            escape(&crate::locale::tr("Row"))
+        ));
         for column in 0..cols.min(256) {
             html.push_str(&format!("<th>{}</th>", column + 1));
         }
@@ -71,7 +82,12 @@ pub fn preview(path: &Path) -> Result<String> {
         );
     }
     if names.len() > 128 {
-        html.push_str("<p>预览仅显示前 128 个工作表。</p>");
+        html.push_str(&format!(
+            "<p>{}</p>",
+            escape(&crate::locale::tr(
+                "Preview limited to the first 128 worksheets."
+            ))
+        ));
     }
     html.push_str("</body></html>");
     Ok(html)

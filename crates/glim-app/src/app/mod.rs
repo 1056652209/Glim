@@ -4,6 +4,7 @@ mod assets;
 pub(crate) mod diagram_engine;
 mod image_http;
 pub(crate) mod languages;
+mod menus;
 mod shortcuts;
 #[cfg(feature = "macos-updater")]
 mod updater_bridge;
@@ -16,8 +17,9 @@ use crate::views::workspace::Workspace;
 use actions::{
     About, AddFolder, CheckForUpdates, CloseWindow, CloseWorkspace, DefaultApplications,
     KeyboardShortcuts, LanguageChinese, LanguageEnglish, LanguageSystem, NavigateBack,
-    NavigateForward, NewWindow, NextTab, OpenFile, OpenFolder, PreviousTab, Quit, Refresh,
-    SaveFile, SearchWorkspace, ToggleDarkMode, TogglePreview, ToggleSidebar, ToggleWordWrap,
+    NavigateForward, NewWindow, NextTab, OpenFile, OpenFolder, OpenSettings, PreviousTab, Quit,
+    Refresh, SaveFile, SearchWorkspace, ToggleDarkMode, TogglePreview, ToggleSidebar,
+    ToggleWordWrap,
 };
 
 pub struct ReaderPreferences {
@@ -41,6 +43,36 @@ impl Global for AppearanceSaveTask {}
 struct WorkspaceSaveTask(Option<Task<()>>);
 impl Global for WorkspaceSaveTask {}
 
+#[derive(Default)]
+struct ExplorerSaveTask(Option<Task<()>>);
+impl Global for ExplorerSaveTask {}
+
+pub(crate) fn remember_explorer(
+    roots: Vec<std::path::PathBuf>,
+    expanded: Vec<std::path::PathBuf>,
+    cx: &mut App,
+) {
+    if !cx.has_global::<ExplorerSaveTask>() {
+        return;
+    }
+    let previous = cx.global_mut::<ExplorerSaveTask>().0.take();
+    let task = cx.spawn(async move |cx| {
+        if let Some(previous) = previous {
+            previous.await;
+        }
+        let result =
+            cx.background_executor()
+                .spawn(async move {
+                    glim_services::preferences::save_explorer_expansion(&roots, &expanded)
+                })
+                .await;
+        if let Err(error) = result {
+            eprintln!("Cannot remember file tree: {error:#}");
+        }
+    });
+    cx.global_mut::<ExplorerSaveTask>().0 = Some(task);
+}
+
 pub(crate) fn remember_workspace(folders: Vec<std::path::PathBuf>, cx: &mut App) {
     let previous = cx.global_mut::<WorkspaceSaveTask>().0.take();
     let task = cx.spawn(async move |cx| {
@@ -58,22 +90,34 @@ pub(crate) fn remember_workspace(folders: Vec<std::path::PathBuf>, cx: &mut App)
     cx.global_mut::<WorkspaceSaveTask>().0 = Some(task);
 }
 
+pub(crate) struct AppearancePreference(pub glim_services::preferences::Appearance);
+impl Global for AppearancePreference {}
+
+pub(crate) fn sync_system_appearance(window: &mut Window, cx: &mut App) {
+    if cx
+        .try_global::<AppearancePreference>()
+        .is_none_or(|preference| preference.0 == glim_services::preferences::Appearance::System)
+    {
+        gpui_kit::component::Theme::sync_system_appearance(Some(window), cx);
+    }
+}
+
 pub(crate) fn toggle_dark_mode(cx: &mut App) {
+    use glim_services::preferences::Appearance;
+    let appearance = if gpui_kit::component::Theme::global(cx).is_dark() {
+        Appearance::Light
+    } else {
+        Appearance::Dark
+    };
+    set_appearance(appearance, cx);
+}
+
+pub(crate) fn set_appearance(appearance: glim_services::preferences::Appearance, cx: &mut App) {
     if updates::busy(cx) {
         return;
     }
-    use gpui_kit::component::{Theme, ThemeMode};
-
-    let enabled = !Theme::global(cx).is_dark();
-    Theme::change(
-        if enabled {
-            ThemeMode::Dark
-        } else {
-            ThemeMode::Light
-        },
-        None,
-        cx,
-    );
+    cx.global_mut::<AppearancePreference>().0 = appearance;
+    apply_appearance(appearance, cx);
     let previous = cx.global_mut::<AppearanceSaveTask>().0.take();
     let task = cx.spawn(async move |cx| {
         // Serialize writes so rapid toggles cannot restore an older preference.
@@ -82,7 +126,7 @@ pub(crate) fn toggle_dark_mode(cx: &mut App) {
         }
         let result = cx
             .background_executor()
-            .spawn(async move { glim_services::preferences::save_dark_mode(enabled) })
+            .spawn(async move { glim_services::preferences::save_appearance(appearance) })
             .await;
         if let Err(error) = result {
             cx.update(|cx| {
@@ -101,6 +145,25 @@ pub(crate) fn toggle_dark_mode(cx: &mut App) {
         }
     });
     cx.global_mut::<AppearanceSaveTask>().0 = Some(task);
+}
+
+fn apply_appearance(appearance: glim_services::preferences::Appearance, cx: &mut App) {
+    use glim_services::preferences::Appearance;
+    use gpui_kit::component::{Theme, ThemeMode};
+    match appearance {
+        Appearance::System => {
+            cx.set_window_appearance(None);
+            Theme::sync_system_appearance(None, cx);
+        }
+        Appearance::Light => {
+            cx.set_window_appearance(Some(WindowAppearance::Light));
+            Theme::change(ThemeMode::Light, None, cx);
+        }
+        Appearance::Dark => {
+            cx.set_window_appearance(Some(WindowAppearance::Dark));
+            Theme::change(ThemeMode::Dark, None, cx);
+        }
+    }
 }
 
 fn open_default_applications(cx: &mut App) {
@@ -134,6 +197,34 @@ fn open_default_applications(cx: &mut App) {
     cx.global_mut::<DefaultApplicationsTask>().0 = Some(task);
 }
 
+fn show_settings(cx: &mut App) {
+    if updates::busy(cx) {
+        return;
+    }
+    if !cx
+        .global::<OpenWorkspaces>()
+        .0
+        .iter()
+        .any(|(view, _)| view.upgrade().is_some())
+    {
+        open_workspace(None, cx);
+    }
+    let target = cx
+        .global::<OpenWorkspaces>()
+        .0
+        .iter()
+        .rev()
+        .find(|(view, _)| view.upgrade().is_some())
+        .cloned();
+    if let Some((view, handle)) = target {
+        let _ = handle.update(cx, |_, window, cx| {
+            let _ = view.update(cx, |view, cx| view.show_settings(window, cx));
+            window.activate_window();
+        });
+        cx.activate(true);
+    }
+}
+
 fn show_about(cx: &mut App) {
     about::open(cx);
 }
@@ -151,9 +242,10 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    glim_services::locale::initialize();
+    let language = glim_services::preferences::language().unwrap_or_else(|| "system".into());
+    glim_services::locale::set(&language);
     let word_wrap = glim_services::preferences::word_wrap();
-    let dark_mode = glim_services::preferences::dark_mode();
+    let appearance = glim_services::preferences::appearance();
     let html_preview = glim_services::preferences::preview_mode("html");
     let markdown_preview = glim_services::preferences::preview_mode("markdown");
     let diff_side_by_side = glim_services::preferences::diff_side_by_side();
@@ -180,11 +272,21 @@ pub fn run() -> Result<()> {
         gpui_kit::init(cx);
         gpui_kit::component::set_locale(glim_services::locale::code());
         cx.set_global(LanguageSaveTask::default());
-        if dark_mode {
-            gpui_kit::component::Theme::change(gpui_kit::component::ThemeMode::Dark, None, cx);
-        }
+        cx.set_global(LanguagePreference(language));
+        cx.set_global(AppearancePreference(appearance));
+        apply_appearance(appearance, cx);
         cx.set_global(AppearanceSaveTask::default());
         cx.set_global(WorkspaceSaveTask::default());
+        cx.set_global(ExplorerSaveTask::default());
+        cx.on_app_quit(|cx| {
+            let pending = cx.global_mut::<ExplorerSaveTask>().0.take();
+            async move {
+                if let Some(pending) = pending {
+                    pending.await;
+                }
+            }
+        })
+        .detach();
         languages::init();
         cx.set_global(ReaderPreferences {
             word_wrap,
@@ -221,12 +323,14 @@ pub fn run() -> Result<()> {
         cx.on_action(|_: &DefaultApplications, cx| open_default_applications(cx));
         cx.on_action(|_: &ToggleDarkMode, cx| toggle_dark_mode(cx));
         cx.on_action(|_: &About, cx| show_about(cx));
+        cx.on_action(|_: &OpenSettings, cx| show_settings(cx));
         cx.on_action(|_: &LanguageSystem, cx| change_language("system", cx));
         cx.on_action(|_: &LanguageChinese, cx| change_language("zh-CN", cx));
         cx.on_action(|_: &LanguageEnglish, cx| change_language("en", cx));
         cx.on_action(|_: &KeyboardShortcuts, cx| shortcuts::open(cx));
         cx.bind_keys([
             KeyBinding::new("secondary-q", Quit, None),
+            KeyBinding::new("secondary-,", OpenSettings, None),
             KeyBinding::new("secondary-shift-n", NewWindow, None),
             KeyBinding::new("secondary-o", OpenFile, None),
             KeyBinding::new("secondary-s", SaveFile, None),
@@ -246,7 +350,7 @@ pub fn run() -> Result<()> {
             KeyBinding::new("secondary-alt-t", ToggleDarkMode, None),
             KeyBinding::new("f1", KeyboardShortcuts, None),
         ]);
-        update_menus(cx);
+        menus::update(cx);
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
                 cx.quit();
@@ -437,86 +541,20 @@ pub(crate) fn unlock_git_editors(exclude: EntityId, cx: &mut App) {
     }
 }
 
-fn update_menus(cx: &mut App) {
-    cx.set_dock_menu(vec![MenuItem::action(
-        glim_services::locale::tr("New Window"),
-        NewWindow,
-    )]);
-    cx.set_menus(vec![
-        Menu {
-            name: "Glim".into(),
-            disabled: false,
-            items: vec![
-                MenuItem::action(
-                    glim_services::locale::tr("Check for Updates…"),
-                    CheckForUpdates,
-                ),
-                MenuItem::separator(),
-                MenuItem::action(
-                    glim_services::locale::tr("Default File Types…"),
-                    DefaultApplications,
-                ),
-                MenuItem::separator(),
-                MenuItem::action(glim_services::locale::tr("Quit Glim"), Quit),
-            ],
-        },
-        Menu {
-            name: glim_services::locale::tr("File").into(),
-            disabled: false,
-            items: vec![
-                MenuItem::action(glim_services::locale::tr("New Window"), NewWindow),
-                MenuItem::action(glim_services::locale::tr("Open File…"), OpenFile),
-                MenuItem::action(glim_services::locale::tr("Open Folder…"), OpenFolder),
-                MenuItem::action(
-                    glim_services::locale::tr("Add Folder to Workspace…"),
-                    AddFolder,
-                ),
-                MenuItem::action(glim_services::locale::tr("Save"), SaveFile),
-                MenuItem::action(glim_services::locale::tr("Refresh"), Refresh),
-                MenuItem::action(glim_services::locale::tr("Close Tab / Window"), CloseWindow),
-            ],
-        },
-        Menu {
-            name: glim_services::locale::tr("View").into(),
-            disabled: false,
-            items: vec![MenuItem::action(
-                glim_services::locale::tr("Toggle Dark Mode"),
-                ToggleDarkMode,
-            )],
-        },
-        Menu {
-            name: glim_services::locale::tr("About").into(),
-            disabled: false,
-            items: vec![
-                MenuItem::action(glim_services::locale::tr("About Glim"), About),
-                MenuItem::action(
-                    glim_services::locale::tr("Keyboard Shortcuts…"),
-                    KeyboardShortcuts,
-                ),
-            ],
-        },
-        Menu {
-            name: glim_services::locale::tr("Language").into(),
-            disabled: false,
-            items: vec![
-                MenuItem::action(glim_services::locale::tr("Follow System"), LanguageSystem),
-                MenuItem::action("简体中文", LanguageChinese),
-                MenuItem::action("English", LanguageEnglish),
-            ],
-        },
-    ]);
-}
+pub(crate) struct LanguagePreference(pub String);
+impl Global for LanguagePreference {}
 
 #[derive(Default)]
 struct LanguageSaveTask(Option<Task<()>>);
 impl Global for LanguageSaveTask {}
-fn change_language(language: &'static str, cx: &mut App) {
+pub(crate) fn change_language(language: &'static str, cx: &mut App) {
     if updates::busy(cx) {
         return;
     }
+    cx.global_mut::<LanguagePreference>().0 = language.to_owned();
     glim_services::locale::set(language);
     gpui_kit::component::set_locale(glim_services::locale::code());
-    update_menus(cx);
+    menus::update(cx);
     for (view, handle) in cx.global::<OpenWorkspaces>().0.clone() {
         if let Some(view) = view.upgrade() {
             let _ = handle.update(cx, |_, window, cx| {

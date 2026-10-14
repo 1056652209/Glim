@@ -157,6 +157,7 @@ impl MarkupReader {
         let image_base = self.base.clone();
         let pictures = self.pictures.read(cx).sources.clone();
         let animations = self.pictures.read(cx).animations.clone();
+        let stills = self.pictures.read(cx).stills.clone();
         let dark = cx.theme().is_dark();
         let link_base = self.base.clone();
         let scroll = self.scroll.clone();
@@ -167,6 +168,7 @@ impl MarkupReader {
         // This keeps bottom images (including asynchronously loaded charts)
         // inside the extent measured by our ScrollHandle.
         let text_view = TextView::new(&self.state)
+            .text_size(px(14.))
             .scrollable(false)
             .max_lines(usize::MAX)
             .w_full()
@@ -224,13 +226,14 @@ impl MarkupReader {
                                                 .and_then(|view| view.read(cx).image())
                                         })
                                     }
-                                    Ok(url) if url.scheme() == "file" => url
-                                        .to_file_path()
-                                        .ok()
-                                        .map(ImageSource::from)
-                                        .unwrap_or_else(|| {
-                                            SharedUri::from(selected.to_owned()).into()
-                                        }),
+                                    Ok(url)
+                                        if matches!(url.scheme(), "file" | "http" | "https") =>
+                                    {
+                                        let image = stills.get(url.as_str()).cloned();
+                                        ImageSource::from(move |_: &mut Window, cx: &mut App| {
+                                            image.as_ref().and_then(|image| image.read(cx).image())
+                                        })
+                                    }
                                     Ok(url) => SharedUri::from(url.to_string()).into(),
                                     Err(_) => SharedUri::from(selected.to_owned()).into(),
                                 }

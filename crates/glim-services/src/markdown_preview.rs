@@ -190,7 +190,9 @@ pub fn render(
         if diagram.source.len() > MAX_SOURCE || requests.len() == MAX_DIAGRAMS {
             publish(
                 diagram,
-                Err("图表超过预览预算（每块 256 KiB，每文档 128 块）".into()),
+                Err(crate::locale::tr(
+                    "Diagram exceeds preview budget (256 KiB per block, 128 blocks per document)",
+                )),
             );
         } else {
             requests.push(diagram);
@@ -262,11 +264,14 @@ pub fn render(
         }
         let finished = status.is_some() || timed_out;
         let missing_reason = if timed_out {
-            "整页图表渲染超时，此块尚未完成".to_owned()
+            crate::locale::tr("Diagram rendering timed out; this block is incomplete")
         } else if let Some(status) = status.filter(|status| !status.success()) {
-            format!("离线渲染进程异常退出（{status}），此块尚未完成")
+            format!(
+                "{} ({status})",
+                crate::locale::tr("Offline renderer exited unexpectedly")
+            )
         } else {
-            "离线渲染进程结束，但此块未返回结果".to_owned()
+            crate::locale::tr("Offline renderer exited without a result for this block")
         };
         // Each block is published atomically once. Reading only new slots
         // avoids repeatedly serializing/parsing all preceding SVGs.
@@ -294,33 +299,34 @@ pub fn render(
             if !finished && value.is_none_or(|v| v.is_null()) {
                 continue;
             }
-            let result =
-                if let Some(svg) = value.and_then(|v| v.get("svg")).and_then(|v| v.as_str()) {
-                    let baseline = value
-                        .and_then(|v| v.get("baseline"))
-                        .and_then(|v| v.as_f64());
-                    rasterize(svg, fonts.clone(), baseline)
-                        .and_then(|image| {
-                            bytes_used += image.png.len();
-                            pixels_used += u64::from(image.width) * u64::from(image.height) * 4;
-                            ensure!(
-                                bytes_used <= 64 * 1024 * 1024,
-                                "Diagram image budget exceeded"
-                            );
-                            ensure!(
-                                pixels_used <= 128 * 1024 * 1024,
-                                "Decoded diagram image budget exceeded"
-                            );
-                            Ok(image)
-                        })
-                        .map_err(|e| format!("图表无法显示：{e}"))
-                } else {
-                    Err(value
-                        .and_then(|v| v.get("error"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(&missing_reason)
-                        .to_owned())
-                };
+            let result = if let Some(svg) =
+                value.and_then(|v| v.get("svg")).and_then(|v| v.as_str())
+            {
+                let baseline = value
+                    .and_then(|v| v.get("baseline"))
+                    .and_then(|v| v.as_f64());
+                rasterize(svg, fonts.clone(), baseline)
+                    .and_then(|image| {
+                        bytes_used += image.png.len();
+                        pixels_used += u64::from(image.width) * u64::from(image.height) * 4;
+                        ensure!(
+                            bytes_used <= 64 * 1024 * 1024,
+                            "Diagram image budget exceeded"
+                        );
+                        ensure!(
+                            pixels_used <= 128 * 1024 * 1024,
+                            "Decoded diagram image budget exceeded"
+                        );
+                        Ok(image)
+                    })
+                    .map_err(|e| format!("{}: {e}", crate::locale::tr("Cannot display diagram")))
+            } else {
+                Err(value
+                    .and_then(|v| v.get("error"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&missing_reason)
+                    .to_owned())
+            };
             completed.insert(index);
             publish(diagram.clone(), result);
         }

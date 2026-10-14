@@ -39,6 +39,47 @@ pub fn save_workspace_folders(folders: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
+pub fn explorer_expansion(roots: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let path = directory()?.join("explorer.json");
+    let states: std::collections::BTreeMap<PathBuf, Vec<PathBuf>> = match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
+    Ok(roots
+        .iter()
+        .filter_map(|root| states.get(root))
+        .flatten()
+        .cloned()
+        .collect())
+}
+
+pub fn save_explorer_expansion(roots: &[PathBuf], expanded: &[PathBuf]) -> Result<()> {
+    let parent = directory()?;
+    std::fs::create_dir_all(&parent)?;
+    let path = parent.join("explorer.json");
+    let mut states: std::collections::BTreeMap<PathBuf, Vec<PathBuf>> = match std::fs::read(&path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Default::default(),
+        Err(error) => return Err(error.into()),
+    };
+    for root in roots {
+        states.insert(
+            root.clone(),
+            expanded
+                .iter()
+                .filter(|path| path.starts_with(root))
+                .cloned()
+                .collect(),
+        );
+    }
+    let mut file = tempfile::NamedTempFile::new_in(&parent)?;
+    serde_json::to_writer(&mut file, &states)?;
+    file.as_file().sync_all()?;
+    file.persist(path)?;
+    Ok(())
+}
+
 pub fn word_wrap() -> bool {
     wrap_path()
         .ok()
@@ -65,19 +106,41 @@ pub fn save_word_wrap(enabled: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn dark_mode() -> bool {
-    wrap_path()
-        .ok()
-        .and_then(|path| std::fs::read_to_string(path.with_file_name("appearance")).ok())
-        .is_some_and(|value| value.trim() == "dark")
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
 }
 
-pub fn save_dark_mode(enabled: bool) -> Result<()> {
+pub fn appearance() -> Appearance {
+    match wrap_path()
+        .ok()
+        .and_then(|path| std::fs::read_to_string(path.with_file_name("appearance")).ok())
+        .as_deref()
+        .map(str::trim)
+    {
+        Some("light") => Appearance::Light,
+        Some("dark") => Appearance::Dark,
+        _ => Appearance::System,
+    }
+}
+
+pub fn save_appearance(appearance: Appearance) -> Result<()> {
     let path = wrap_path()?.with_file_name("appearance");
     let parent = path.parent().context("Invalid preferences path")?;
     std::fs::create_dir_all(parent)?;
     let mut file = tempfile::NamedTempFile::new_in(parent)?;
-    writeln!(file, "{}", if enabled { "dark" } else { "light" })?;
+    writeln!(
+        file,
+        "{}",
+        match appearance {
+            Appearance::System => "system",
+            Appearance::Light => "light",
+            Appearance::Dark => "dark",
+        }
+    )?;
     file.persist(path)?;
     Ok(())
 }
@@ -134,13 +197,10 @@ pub fn save_diff_mode(side_by_side: bool) -> Result<()> {
 pub fn language() -> Option<String> {
     let path = wrap_path().ok()?.with_file_name("language");
     let value = std::fs::read_to_string(path).ok()?;
-    matches!(value.trim(), "system" | "en" | "zh-CN").then(|| value.trim().to_owned())
+    crate::locale::supported(value.trim()).then(|| value.trim().to_owned())
 }
 pub fn save_language(language: &str) -> Result<()> {
-    anyhow::ensure!(
-        matches!(language, "system" | "en" | "zh-CN"),
-        "Unknown language"
-    );
+    anyhow::ensure!(crate::locale::supported(language), "Unknown language");
     let path = wrap_path()?.with_file_name("language");
     let parent = path.parent().context("Invalid preferences path")?;
     std::fs::create_dir_all(parent)?;

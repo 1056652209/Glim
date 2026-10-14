@@ -1,6 +1,35 @@
 use std::{env, path::PathBuf, process::Command};
 
 fn main() {
+    println!("cargo:rerun-if-changed=../../assets/locales");
+    println!("cargo:rerun-if-changed=../../scripts/check-locales.py");
+    println!("cargo:rerun-if-changed=../../crates/glim-app/src");
+    println!("cargo:rerun-if-changed=src");
+    let checked = Command::new("python3")
+        .arg("../../scripts/check-locales.py")
+        .status()
+        .expect("Check locale catalogs");
+    assert!(checked.success(), "Locale catalog validation failed");
+    let mut catalogs = std::fs::read_dir("../../assets/locales")
+        .expect("locale directory")
+        .map(|entry| entry.expect("locale entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect::<Vec<_>>();
+    catalogs.sort();
+    let entries = catalogs
+        .iter()
+        .map(|path| {
+            let code = path.file_stem().unwrap().to_str().unwrap();
+            let path = std::fs::canonicalize(path).unwrap();
+            format!("({code:?}, include_str!({:?}))", path.to_str().unwrap())
+        })
+        .collect::<Vec<_>>()
+        .join(",\n");
+    std::fs::write(
+        PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("locales.rs"),
+        format!("const BUNDLED_CATALOGS: &[(&str, &str)] = &[{entries}];"),
+    )
+    .expect("embed locale catalogs");
     println!("cargo:rerun-if-changed=../../native/Preview.swift");
     println!("cargo:rerun-if-changed=../../native/SQLitePreview.swift");
     println!("cargo:rerun-if-changed=../../native/PreviewMain.swift");

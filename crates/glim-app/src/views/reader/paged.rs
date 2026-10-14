@@ -47,7 +47,7 @@ impl PagedReader {
         }
         let path = self.page.path.clone();
         let stamp = (self.page.total, self.page.modified);
-        let response = all.then(|| window.prompt(PromptLevel::Warning, &glim_services::locale::tr("Load the entire file?"), Some("Full view can use substantially more memory. Files up to 256 MiB can be loaded as read-only virtual text; syntax parsing, editing and minimap are disabled. Larger files remain paged."), &["Cancel", "Load All"], cx));
+        let response = all.then(|| window.prompt(PromptLevel::Warning, &glim_services::locale::tr("Load the entire file?"), Some(&glim_services::locale::tr("Full view can use substantially more memory. Files up to 256 MiB can be loaded as read-only virtual text; syntax parsing, editing and minimap are disabled. Larger files remain paged.")), &[glim_services::locale::tr("Cancel").as_str(), glim_services::locale::tr("Load All").as_str()], cx));
         self.task = Some(cx.spawn_in(window, async move |view, cx| {
             if let Some(response) = response
                 && response.await != Ok(1)

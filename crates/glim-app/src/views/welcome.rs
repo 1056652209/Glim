@@ -1,48 +1,61 @@
-use crate::app::actions::OpenFolder;
+use crate::app::actions::{AddFolder, OpenFile, OpenFolder};
 use gpui_kit::{
     component::{
-        ActiveTheme,
         button::{Button, ButtonVariants},
-        v_flex,
+        h_flex, v_flex,
     },
-    prelude::FluentBuilder,
     *,
 };
 
-pub fn welcome(show_open_folder: bool, cx: &App) -> impl IntoElement {
+pub fn welcome(show_open_folder: bool, _cx: &App) -> impl IntoElement {
     v_flex()
         .size_full()
         .items_center()
         .justify_center()
-        .gap_3()
         .px_6()
-        .text_center()
-        .child(img("branding/glim.png").w(px(88.)).h(px(88.)).mb_3())
         .child(
-            div()
-                .text_3xl()
-                .font_weight(FontWeight::SEMIBOLD)
-                .child("Glim"),
-        )
-        .child(
-            div()
-                .max_w(px(520.))
-                .whitespace_normal()
-                .text_color(cx.theme().muted_foreground)
-                .child(glim_services::locale::tr(
-                    "A focused file viewer for macOS.",
-                )),
-        )
-        .when(show_open_folder, |view| {
-            view.child(
-                div().mt_4().child(
-                    Button::new("welcome-open-folder")
-                        .primary()
-                        .label(glim_services::locale::tr("Open Folder"))
-                        .on_click(|_, window, cx| {
-                            window.dispatch_action(Box::new(OpenFolder), cx);
-                        }),
+            v_flex()
+                .items_center()
+                .flex_shrink_0()
+                .gap_3()
+                .child(
+                    h_flex()
+                        .gap_4()
+                        .child(img("branding/glim.png").size(px(52.)))
+                        .child(
+                            div()
+                                .text_size(px(32.))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child("Glim"),
+                        ),
+                )
+                .child(
+                    h_flex()
+                        .mt_3()
+                        .gap_2()
+                        .child(
+                            Button::new("welcome-open-file")
+                                .primary()
+                                .label(glim_services::locale::tr("Open File…"))
+                                .on_click(|_, window, cx| {
+                                    window.dispatch_action(Box::new(OpenFile), cx);
+                                }),
+                        )
+                        .child(
+                            Button::new("welcome-open-folder")
+                                .label(glim_services::locale::tr(if show_open_folder {
+                                    "Open Folder"
+                                } else {
+                                    "Add Folder…"
+                                }))
+                                .on_click(move |_, window, cx| {
+                                    if show_open_folder {
+                                        window.dispatch_action(Box::new(OpenFolder), cx);
+                                    } else {
+                                        window.dispatch_action(Box::new(AddFolder), cx);
+                                    }
+                                }),
+                        ),
                 ),
-            )
-        })
+        )
 }

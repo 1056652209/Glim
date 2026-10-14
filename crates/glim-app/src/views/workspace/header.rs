@@ -1,7 +1,7 @@
 use super::Workspace;
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Icon, Selectable, Sizable, TitleBar,
+        ActiveTheme, Sizable, TitleBar,
         button::{Button, ButtonCustomVariant, ButtonVariants},
         h_flex,
         input::Input,
@@ -173,7 +173,7 @@ impl Workspace {
         cx.notify();
     }
 
-    fn set_diff_mode(&mut self, side_by_side: bool, cx: &mut Context<Self>) {
+    pub(super) fn set_diff_mode(&mut self, side_by_side: bool, cx: &mut Context<Self>) {
         let Some(index) = self.active else {
             return;
         };
@@ -208,163 +208,120 @@ impl Workspace {
         cx.notify();
     }
 
-    fn reader_controls(&self, cx: &mut Context<Self>) -> AnyElement {
-        let subtle = ButtonCustomVariant::new(cx)
-            .hover(cx.theme().foreground.opacity(0.04))
-            .active(cx.theme().foreground.opacity(0.07));
-        h_flex()
-            .gap_1()
-            .child(
-                Button::new("dark-mode")
-                    .custom(subtle)
-                    .small()
-                    .icon(
-                        Icon::empty()
-                            .path("navigation/appearance.svg")
-                            .size(px(16.))
-                            .text_color(cx.theme().foreground),
-                    )
-                    .accessibility_label(glim_services::locale::tr("Toggle dark mode"))
-                    .tooltip(if cx.theme().is_dark() {
-                        "Switch to light mode"
-                    } else {
-                        "Switch to dark mode"
-                    })
-                    .selected(cx.theme().is_dark())
-                    .on_click(|_, _, cx| crate::app::toggle_dark_mode(cx)),
-            )
-            .child(
-                Button::new("word-wrap")
-                    .custom(subtle)
-                    .small()
-                    .icon(
-                        Icon::empty()
-                            .path("navigation/wrap.svg")
-                            .size(px(16.))
-                            .text_color(cx.theme().foreground),
-                    )
-                    .accessibility_label(glim_services::locale::tr("Word wrap"))
-                    .tooltip(if self.word_wrap {
-                        "Turn off word wrap"
-                    } else {
-                        "Turn on word wrap"
-                    })
-                    .selected(self.word_wrap)
-                    .on_click(cx.listener(|v, _, window, cx| v.toggle_word_wrap(window, cx))),
-            )
-            .when(
-                self.active_reader().is_some_and(|r| r.diff.is_some()),
-                |bar| {
-                    bar.child(
-                        Button::new("show-file")
-                            .custom(subtle)
-                            .icon(Icon::new(gpui_kit::assets::IconName::FileText))
-                            .xsmall()
-                            .tooltip(glim_services::locale::tr("View file"))
-                            .accessibility_label(glim_services::locale::tr("View file"))
-                            .on_click(cx.listener(|view, _, window, cx| {
-                                if let Some(reader) = view.active_reader() {
-                                    view.open_path(reader.path.clone(), window, cx);
-                                }
-                            })),
-                    )
-                },
-            )
-            .when(
-                self.active_reader()
-                    .is_some_and(|r| r.diff.is_some() || r.historical),
-                |bar| {
-                    let split = self.active_reader().is_some_and(|r| r.side_by_side());
-                    let available = self.active_reader().is_some_and(|r| r.split_available());
-                    bar.child(
-                        Button::new("diff-split")
-                            .custom(subtle)
-                            .icon(Icon::new(gpui_kit::assets::IconName::Columns2))
-                            .xsmall()
-                            .tooltip(glim_services::locale::tr("Side by side"))
-                            .accessibility_label(glim_services::locale::tr("Side by side"))
-                            .selected(split)
-                            .disabled(!available)
-                            .on_click(cx.listener(|v, _, _, cx| {
-                                v.set_diff_mode(true, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("diff-inline")
-                            .custom(subtle)
-                            .icon(Icon::new(gpui_kit::assets::IconName::Rows2))
-                            .xsmall()
-                            .tooltip(glim_services::locale::tr("Inline"))
-                            .accessibility_label(glim_services::locale::tr("Inline"))
-                            .selected(!split)
-                            .on_click(cx.listener(|v, _, _, cx| {
-                                v.set_diff_mode(false, cx);
-                            })),
-                    )
-                },
-            )
-            .when(
-                self.active_reader().is_some_and(|r| r.can_preview()),
-                |bar| {
-                    let json = self.active_reader().is_some_and(|r| r.is_json());
-                    let csv = self.active_reader().is_some_and(|r| r.is_csv());
-                    let tsv = self.active_reader().is_some_and(|r| {
-                        r.path
-                            .extension()
-                            .is_some_and(|e| e.eq_ignore_ascii_case("tsv"))
-                    });
-                    let preview_title = glim_services::locale::tr(if csv {
-                        "CSV table"
-                    } else if json {
-                        "JSON tree"
-                    } else {
-                        "Preview"
-                    })
-                    .replace("CSV", if tsv { "TSV" } else { "CSV" });
-                    let preview = self
-                        .active_reader()
-                        .is_some_and(|r| r.toggle_label() == "Source");
-                    bar.child(
-                        h_flex()
-                            .px_2()
-                            .gap_1()
-                            .child(
-                                Button::new("markdown-rendered")
-                                    .custom(subtle)
-                                    .icon(Icon::new(if json {
-                                        gpui_kit::assets::IconName::ListTree
-                                    } else {
-                                        gpui_kit::assets::IconName::Eye
-                                    }))
-                                    .xsmall()
-                                    .accessibility_label(preview_title.clone())
-                                    .tooltip(preview_title)
-                                    .selected(preview)
-                                    .on_click(cx.listener(|view, _, window, cx| {
-                                        view.set_reader_preview(true, window, cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("markdown-source")
-                                    .custom(subtle)
-                                    .icon(Icon::new(gpui_kit::assets::IconName::Code))
-                                    .xsmall()
-                                    .accessibility_label(glim_services::locale::tr("Source"))
-                                    .tooltip(glim_services::locale::tr("Source"))
-                                    .selected(!preview)
-                                    .on_click(cx.listener(|view, _, window, cx| {
-                                        view.set_reader_preview(false, window, cx);
-                                    })),
-                            ),
-                    )
-                },
-            )
-            .into_any_element()
-    }
-
     pub(super) fn header(&self, cx: &mut Context<Self>) -> AnyElement {
+        let search = h_flex()
+            .relative()
+            .w(relative(0.34))
+            .max_w(px(420.))
+            .child(
+                Input::new(&self.search)
+                    .small()
+                    .h(px(34.))
+                    .px_3()
+                    .text_size(px(14.))
+                    .rounded(px(10.))
+                    .bg(cx
+                        .theme()
+                        .background
+                        .blend(cx.theme().foreground.opacity(0.025)))
+                    .border_color(cx.theme().border.opacity(0.65))
+                    .focus_bordered(true)
+                    .w_full(),
+            )
+            .when(!self.results.is_empty(), |bar| {
+                bar.child(
+                    deferred(
+                        v_flex()
+                            .id("file-search-results")
+                            .absolute()
+                            .top(px(42.))
+                            .right_0()
+                            .w_full()
+                            .max_h(px(280.))
+                            .overflow_y_scroll()
+                            .p_1()
+                            .rounded(px(10.))
+                            .shadow_lg()
+                            .occlude()
+                            .bg(cx.theme().background)
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .on_mouse_down_out(cx.listener(|v, _, _, cx| {
+                                v.results.clear();
+                                v.search_task = None;
+                                cx.notify();
+                            }))
+                            .children(self.results.iter().enumerate().map(|(i, path)| {
+                                let target = path.clone();
+                                let label = path
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                                    .into_owned();
+                                let parent = path.parent().unwrap_or(path);
+                                let root = self
+                                    .roots
+                                    .iter()
+                                    .filter(|root| path.starts_with(root))
+                                    .max_by_key(|root| root.components().count());
+                                let location = root
+                                    .and_then(|root| root.parent())
+                                    .and_then(|base| parent.strip_prefix(base).ok())
+                                    .unwrap_or(parent)
+                                    .to_string_lossy()
+                                    .into_owned();
+                                Button::new(("search-result", i))
+                                    .custom(
+                                        ButtonCustomVariant::new(cx).hover(cx.theme().secondary),
+                                    )
+                                    .small()
+                                    .w_full()
+                                    .rounded(px(6.))
+                                    .h(px(44.))
+                                    .tooltip(path.to_string_lossy().into_owned())
+                                    .accessibility_label(format!(
+                                        "{} {}",
+                                        glim_services::locale::tr("Open"),
+                                        path.display()
+                                    ))
+                                    .child(
+                                        h_flex()
+                                            .w_full()
+                                            .min_w_0()
+                                            .gap_2()
+                                            .child(crate::views::file_icons::file_icon(path))
+                                            .child(
+                                                v_flex()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .gap_1()
+                                                    .child(div().truncate().text_sm().child(label))
+                                                    .child(
+                                                        div()
+                                                            .truncate()
+                                                            .text_xs()
+                                                            .text_color(cx.theme().muted_foreground)
+                                                            .child(location),
+                                                    ),
+                                            ),
+                                    )
+                                    .on_click(cx.listener(move |v, _, w, cx| {
+                                        v.search.update(cx, |s, cx| s.set_value("", w, cx));
+                                        v.results.clear();
+                                        v.search_task = None;
+                                        v.sidebar = super::Sidebar::Files;
+                                        v.sidebar_visible = true;
+                                        v.open_path(target.clone(), w, cx);
+                                    }))
+                            })),
+                    )
+                    .with_priority(1),
+                )
+            });
         v_flex()
             .relative()
+            .w_full()
+            .flex_shrink_0()
             .on_key_down(cx.listener(|v, event: &KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
                     v.results.clear();
@@ -372,8 +329,6 @@ impl Workspace {
                     cx.notify();
                 }
             }))
-            .w_full()
-            .flex_shrink_0()
             .child(workspace_title_bar(
                 h_flex()
                     .relative()
@@ -381,140 +336,43 @@ impl Workspace {
                     .h_full()
                     .justify_center()
                     .child(
-                        div()
-                            .relative()
-                            .w(px(380.))
-                            .max_w(relative(0.35))
-                            .child(Input::new(&self.search).small().focus_bordered(false))
+                        h_flex()
+                            .absolute()
+                            .left(px(78.))
+                            .top_0()
+                            .h_full()
+                            .gap_2()
                             .child(
-                                h_flex()
-                                    .absolute()
-                                    .right(relative(1.))
-                                    .top_0()
-                                    .h_full()
-                                    .mr_2()
-                                    .gap_1()
-                                    .child(
-                                        Button::new("back")
-                                            .ghost()
-                                            .small()
-                                            .label("←")
-                                            .accessibility_label(glim_services::locale::tr("Back"))
-                                            .disabled(self.history_cursor.is_none_or(|i| i == 0))
-                                            .on_click(
-                                                cx.listener(|v, _, w, cx| v.navigate(false, w, cx)),
-                                            ),
-                                    )
-                                    .child(
-                                        Button::new("forward")
-                                            .ghost()
-                                            .small()
-                                            .label("→")
-                                            .accessibility_label(glim_services::locale::tr(
-                                                "Forward",
-                                            ))
-                                            .disabled(
-                                                self.history_cursor
-                                                    .is_none_or(|i| i + 1 >= self.history.len()),
-                                            )
-                                            .on_click(
-                                                cx.listener(|v, _, w, cx| v.navigate(true, w, cx)),
-                                            ),
-                                    ),
-                            ),
+                                div()
+                                    .flex_shrink_0()
+                                    .text_size(px(16.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child("Glim"),
+                            )
+                            .child(div().w(px(1.)).h(px(16.)).mx_1().bg(cx.theme().border))
+                            .child(self.navigation_toolbar(cx)),
                     )
+                    .child(search)
                     .child(
                         h_flex()
                             .absolute()
                             .right(px(12.))
                             .top_0()
                             .h_full()
-                            .when(
-                                crate::app::updates::state(cx)
-                                    .is_some_and(|s| s.read(cx).snapshot.has_update()),
-                                |v| {
-                                    v.child(
-                                        Button::new("update-available")
-                                            .ghost()
-                                            .small()
-                                            .label(glim_services::locale::tr("Update Available"))
-                                            .on_click(|_, window, cx| {
-                                                crate::app::updates::show(window, cx)
-                                            }),
-                                    )
-                                },
-                            )
-                            .child(self.reader_controls(cx)),
+                            .gap_1()
+                            .child(self.workspace_toolbar(cx)),
                     ),
+                cx,
             ))
-            .when(!self.results.is_empty(), |v| {
-                v.child(
-                    deferred(
-                        h_flex()
-                            .absolute()
-                            .top(px(44.))
-                            .left_0()
-                            .w_full()
-                            .justify_center()
-                            .child(
-                                v_flex()
-                                    .id("file-search-results")
-                                    .occlude()
-                                    .shadow_lg()
-                                    .on_mouse_down_out(cx.listener(|v, _, _, cx| {
-                                        v.results.clear();
-                                        v.search_task = None;
-                                        cx.notify();
-                                    }))
-                                    .w(px(380.))
-                                    .max_h(px(280.))
-                                    .overflow_y_scroll()
-                                    .bg(cx.theme().background)
-                                    .border_1()
-                                    .border_color(cx.theme().border)
-                                    .children(self.results.iter().enumerate().map(|(i, path)| {
-                                        let target = path.clone();
-                                        let label = path
-                                            .strip_prefix(
-                                                self.root
-                                                    .as_deref()
-                                                    .unwrap_or(std::path::Path::new("")),
-                                            )
-                                            .unwrap_or(path)
-                                            .to_string_lossy()
-                                            .into_owned();
-                                        Button::new(("search-result", i))
-                                            .custom(ButtonCustomVariant::new(cx))
-                                            .accessibility_label(format!("Open {label}"))
-                                            .child(
-                                                h_flex()
-                                                    .w_full()
-                                                    .gap_2()
-                                                    .child(crate::views::file_icons::file_icon(
-                                                        path,
-                                                    ))
-                                                    .child(div().truncate().child(label)),
-                                            )
-                                            .w_full()
-                                            .on_click(cx.listener(move |v, _, w, cx| {
-                                                v.search.update(cx, |s, cx| s.set_value("", w, cx));
-                                                v.sidebar = super::Sidebar::Files;
-                                                v.sidebar_visible = true;
-                                                v.open_path(target.clone(), w, cx);
-                                            }))
-                                    })),
-                            ),
-                    )
-                    .with_priority(1),
-                )
-            })
             .into_any_element()
     }
 }
 
-fn workspace_title_bar(content: impl IntoElement) -> AnyElement {
+fn workspace_title_bar(content: impl IntoElement, cx: &App) -> AnyElement {
     TitleBar::new()
-        .h(px(44.))
+        .bg(cx.theme().sidebar)
+        .border_b_0()
+        .h(px(48.))
         .pl_0()
         .pr_0()
         .child(content)

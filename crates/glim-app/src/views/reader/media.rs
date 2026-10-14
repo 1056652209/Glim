@@ -77,11 +77,104 @@ impl ImageReader {
     }
 }
 
-/// Keeps one displayed frame and at most one decoded frame awaiting presentation.
+fn release_image(frame: Arc<RenderImage>, cx: &mut App) {
+    // During render the current window is temporarily absent from App.windows.
+    // Defer eviction until it has been reinserted so its atlas is cleared too.
+    cx.defer(move |cx| cx.drop_image(frame, None));
+}
+
+/// A bounded inline preview whose pixels and texture are released when its document is hidden.
+pub(super) struct InlineImageReader {
+    url: url::Url,
+    frame: Option<Arc<RenderImage>>,
+    error: Option<String>,
+    active: bool,
+    task: Option<Task<()>>,
+}
+
+impl InlineImageReader {
+    pub fn new(url: url::Url, cx: &mut Context<Self>) -> Self {
+        cx.on_release(|view, cx| {
+            view.task = None;
+            if let Some(frame) = view.frame.take() {
+                release_image(frame, cx);
+            }
+        })
+        .detach();
+        Self {
+            url,
+            frame: None,
+            error: None,
+            active: false,
+            task: None,
+        }
+    }
+
+    pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        if self.active == active {
+            return;
+        }
+        self.active = active;
+        if !active {
+            self.task = None;
+            self.error = None;
+            if let Some(frame) = self.frame.take() {
+                release_image(frame, cx);
+            }
+            cx.notify();
+            return;
+        }
+        let url = self.url.clone();
+        let work = cx.background_executor().spawn(async move {
+            let mut frame = match url.scheme() {
+                "file" => glim_services::inline_images::from_file(
+                    &url.to_file_path()
+                        .map_err(|_| anyhow::anyhow!("Invalid inline image path"))?,
+                ),
+                "http" | "https" => glim_services::markup_images::fetch_inline_image(url.as_str()),
+                _ => anyhow::bail!("Unsupported inline image URL"),
+            }?;
+            for pixel in frame.buffer_mut().as_chunks_mut::<4>().0 {
+                pixel.swap(0, 2);
+            }
+            Ok::<_, anyhow::Error>(Arc::new(RenderImage::new(vec![frame])))
+        });
+        self.task = Some(cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.task = None;
+                match result {
+                    Ok(frame) => view.frame = Some(frame),
+                    Err(error) => view.error = Some(format!("{error:#}")),
+                }
+                cx.notify();
+            });
+        }));
+    }
+
+    pub fn image(&self) -> Option<Result<Arc<RenderImage>, ImageCacheError>> {
+        self.frame
+            .as_ref()
+            .map(|frame| Ok(frame.clone()))
+            .or_else(|| {
+                self.error.as_ref().map(|error| {
+                    Err(ImageCacheError::Other(Arc::new(anyhow::anyhow!(
+                        error.clone()
+                    ))))
+                })
+            })
+    }
+}
+
+/// Keeps one displayed frame and two small, byte-bounded lookahead batches.
+/// Hidden animations retain compressed bytes, releasing their decoder and displayed texture.
 pub(super) struct GifReader {
     frame: Option<Arc<RenderImage>>,
     error: Option<String>,
-    active: Arc<std::sync::atomic::AtomicBool>,
+    bytes: Option<Arc<[u8]>>,
+    active: bool,
+    finished: bool,
+    load_task: Option<Task<()>>,
     task: Option<Task<()>>,
 }
 impl GifReader {
@@ -107,79 +200,125 @@ impl GifReader {
     }
 
     fn with_data(data: Task<anyhow::Result<Vec<u8>>>, cx: &mut Context<Self>) -> Self {
-        use std::{sync::atomic::Ordering, time::Duration};
-        let active = Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let playing = active.clone();
-        let executor = cx.background_executor().clone();
-        let task = cx.spawn(async move |view, cx| {
-            let result = async {
-                let bytes = data.await?;
-                let mut playback = executor
-                    .spawn(async move { glim_services::media::GifPlayback::new(Arc::from(bytes)) })
-                    .await?;
-                let mut delay = Duration::ZERO;
-                loop {
-                    while !playing.load(Ordering::Relaxed) {
-                        cx.background_executor()
-                            .timer(Duration::from_millis(100))
-                            .await;
-                    }
-                    // Decode the next frame while the current frame's delay elapses.
-                    let work = cx.background_executor().spawn(async move {
-                        let result = playback.next_frame().map(|frame| {
-                            frame.map(|(mut frame, delay)| {
-                                // GPUI's directly supplied textures use BGRA pixels.
-                                for pixel in frame.buffer_mut().as_chunks_mut::<4>().0 {
-                                    pixel.swap(0, 2);
-                                }
-                                (Arc::new(RenderImage::new(vec![frame])), delay)
-                            })
-                        });
-                        (playback, result)
-                    });
-                    cx.background_executor().timer(delay).await;
-                    let (decoder, next) = work.await;
-                    playback = decoder;
-                    let Some((frame, next_delay)) = next? else {
-                        break;
-                    };
-                    while !playing.load(Ordering::Relaxed) {
-                        cx.background_executor()
-                            .timer(Duration::from_millis(100))
-                            .await;
-                    }
-                    view.update(cx, |view, cx| {
-                        if let Some(previous) = view.frame.replace(frame) {
-                            cx.drop_image(previous, None);
-                        }
-                        cx.notify();
-                    })?;
-                    delay = next_delay;
-                }
-                Ok::<(), anyhow::Error>(())
-            }
-            .await;
+        let load_task = cx.spawn(async move |view, cx| {
+            let result = data.await;
             let _ = view.update(cx, |view, cx| {
-                view.task = None;
-                if let Err(error) = result {
-                    view.error = Some(format!("{error:#}"));
+                view.load_task = None;
+                match result {
+                    Ok(bytes) => {
+                        view.bytes = Some(Arc::from(bytes));
+                        if view.active {
+                            view.start_playback(cx);
+                        }
+                    }
+                    Err(error) => view.error = Some(format!("{error:#}")),
                 }
                 cx.notify();
             });
         });
         cx.on_release(|view, cx| {
+            view.load_task = None;
             view.task = None;
             if let Some(frame) = view.frame.take() {
-                cx.defer(move |cx| cx.drop_image(frame, None));
+                release_image(frame, cx);
             }
         })
         .detach();
         Self {
             frame: None,
             error: None,
-            active,
-            task: Some(task),
+            bytes: None,
+            active: false,
+            finished: false,
+            load_task: Some(load_task),
+            task: None,
         }
+    }
+
+    fn start_playback(&mut self, cx: &mut Context<Self>) {
+        let Some(bytes) = self.bytes.clone() else {
+            return;
+        };
+        let executor = cx.background_executor().clone();
+        self.error = None;
+        self.task = Some(cx.spawn(async move |view, cx| {
+            let result = async {
+                let playback = executor
+                    .spawn(async move { glim_services::media::GifPlayback::new(bytes) })
+                    .await?;
+                // Each batch is at most 16 MiB and three frames. Start preparing
+                // the next batch before displaying this one, keeping decode work
+                // independent from frame presentation without unbounded buffering.
+                let batch_size = (16 * 1024 * 1024 / playback.preview_frame_bytes()).clamp(1, 3);
+                let prepare = |mut playback: glim_services::media::GifPlayback| {
+                    executor.spawn(async move {
+                        let mut frames = std::collections::VecDeque::new();
+                        let result = (|| {
+                            for _ in 0..batch_size {
+                                let Some((mut frame, delay)) = playback.next_preview_frame()?
+                                else {
+                                    break;
+                                };
+                                for pixel in frame.buffer_mut().as_chunks_mut::<4>().0 {
+                                    pixel.swap(0, 2);
+                                }
+                                frames.push_back((Arc::new(RenderImage::new(vec![frame])), delay));
+                            }
+                            Ok::<_, anyhow::Error>(frames)
+                        })();
+                        (playback, result)
+                    })
+                };
+                let mut pending = prepare(playback);
+                let mut deadline = std::time::Instant::now();
+                let mut started = false;
+                loop {
+                    let (decoder, frames) = pending.await;
+                    let mut frames = frames?;
+                    if frames.is_empty() {
+                        break;
+                    }
+                    pending = prepare(decoder);
+                    if !started {
+                        deadline = std::time::Instant::now();
+                        started = true;
+                    }
+                    while let Some((frame, delay)) = frames.pop_front() {
+                        // Absolute deadlines avoid accumulating executor/UI overhead.
+                        // Expired intermediate frames are decoded for disposal but
+                        // never uploaded, so a slow frame does not slow the animation.
+                        let end = deadline + delay;
+                        if end > std::time::Instant::now() || frames.is_empty() {
+                            cx.background_executor()
+                                .timer(
+                                    deadline.saturating_duration_since(std::time::Instant::now()),
+                                )
+                                .await;
+                            view.update(cx, |view, cx| {
+                                if let Some(previous) = view.frame.replace(frame) {
+                                    release_image(previous, cx);
+                                }
+                                cx.notify();
+                            })?;
+                        }
+                        deadline = end;
+                    }
+                }
+                cx.background_executor()
+                    .timer(deadline.saturating_duration_since(std::time::Instant::now()))
+                    .await;
+                Ok::<(), anyhow::Error>(())
+            }
+            .await;
+            let _ = view.update(cx, |view, cx| {
+                view.task = None;
+                match result {
+                    Ok(()) => view.finished = true,
+                    Err(error) => view.error = Some(format!("{error:#}")),
+                }
+                cx.notify();
+            });
+        }));
     }
 
     pub fn image(&self) -> Option<Result<Arc<RenderImage>, ImageCacheError>> {
@@ -194,9 +333,26 @@ impl GifReader {
         }
     }
 
-    pub fn set_active(&self, active: bool) {
-        self.active
-            .store(active, std::sync::atomic::Ordering::Relaxed);
+    pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        if self.active == active {
+            return;
+        }
+        self.active = active;
+        if active {
+            if !self.finished {
+                self.start_playback(cx);
+            }
+        } else {
+            self.task = None;
+            if self.finished {
+                if let Some(frame) = &self.frame {
+                    release_image(frame.clone(), cx);
+                }
+            } else if let Some(frame) = self.frame.take() {
+                release_image(frame, cx);
+            }
+            cx.notify();
+        }
     }
 }
 impl Render for GifReader {

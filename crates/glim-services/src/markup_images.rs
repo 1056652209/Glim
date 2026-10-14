@@ -226,6 +226,19 @@ fn github_api_url(url: &url::Url) -> Option<url::Url> {
 }
 
 pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
+    prepare_image(&fetch_image_data(url)?)
+}
+
+pub fn fetch_inline_image(url: &str) -> Result<image::Frame> {
+    let bytes = fetch_image_data(url)?;
+    if image::guess_format(&bytes).is_ok() {
+        crate::inline_images::from_bytes(&bytes)
+    } else {
+        crate::inline_images::from_bytes(&svg_png(&bytes)?)
+    }
+}
+
+fn fetch_image_data(url: &str) -> Result<Vec<u8>> {
     use std::time::{Duration, Instant};
     let url = download_url(url)?;
     let fallback = github_api_url(&url);
@@ -242,7 +255,7 @@ pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
                 .context("GitHub raw image and API fallback requests failed")?
         }
     };
-    prepare_image(&bytes)
+    Ok(bytes)
 }
 
 fn download_image(url: &url::Url, timeout: std::time::Duration, api: bool) -> Result<Vec<u8>> {

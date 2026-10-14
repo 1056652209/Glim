@@ -87,8 +87,9 @@ pub fn markdown(path: &Path, text: &str) -> String {
     if matches!(ext.as_str(), "gpx" | "kml") {
         // XML is shown literally, never as active HTML or a remote map.
         output = format!(
-            "# {}\n\n地理数据 · 离线坐标预览\n\n{}\n\n```xml\n{text}\n```\n",
+            "# {}\n\n{}\n\n{}\n\n```xml\n{text}\n```\n",
             ext.to_uppercase(),
+            crate::locale::tr("Geographic data · Offline coordinate preview"),
             coordinates(text)
         );
     }
@@ -98,7 +99,12 @@ pub fn markdown(path: &Path, text: &str) -> String {
 fn coordinates(text: &str) -> String {
     use quick_xml::events::Event;
     let mut reader = quick_xml::Reader::from_str(text);
-    let mut output = "| 经度 | 纬度 | 高度 |\n| --- | --- | --- |\n".to_owned();
+    let mut output = format!(
+        "| {} | {} | {} |\n| --- | --- | --- |\n",
+        crate::locale::tr("Longitude"),
+        crate::locale::tr("Latitude"),
+        crate::locale::tr("Altitude")
+    );
     let mut in_coordinates = false;
     let mut count = 0;
     loop {
@@ -150,11 +156,13 @@ fn coordinates(text: &str) -> String {
                 in_coordinates = false
             }
             Ok(Event::Eof) => break,
-            Err(error) => return format!("XML 解析失败：{error}"),
+            Err(error) => return format!("{}: {error}", crate::locale::tr("XML parsing failed")),
             _ => {}
         }
         if count >= 10_000 {
-            output.push_str("\n仅显示前 10,000 个坐标\n");
+            output.push_str(&crate::locale::tr(
+                "\nOnly the first 10,000 coordinates are shown\n",
+            ));
             break;
         }
     }

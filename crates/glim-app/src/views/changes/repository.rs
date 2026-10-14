@@ -376,19 +376,21 @@ impl Changes {
         let root = Some(target.clone());
         let view = cx.entity().downgrade();
         let branch_view = view.clone();
-        menu = menu.item(PopupMenuItem::new("Branches…").disabled(blocked).on_click(
-            move |_, w, cx| {
-                let _ = branch_view.update(cx, |v, cx| {
-                    if let Some(index) = v.repositories.iter().position(|r| r.root == target) {
-                        if v.is_busy() {
-                            return;
+        menu = menu.item(
+            PopupMenuItem::new(glim_services::locale::tr("Branches…"))
+                .disabled(blocked)
+                .on_click(move |_, w, cx| {
+                    let _ = branch_view.update(cx, |v, cx| {
+                        if let Some(index) = v.repositories.iter().position(|r| r.root == target) {
+                            if v.is_busy() {
+                                return;
+                            }
+                            v.select_repository(index, w, cx);
+                            v.open_branch_dialog(w, cx);
                         }
-                        v.select_repository(index, w, cx);
-                        v.open_branch_dialog(w, cx);
-                    }
-                });
-            },
-        ));
+                    });
+                }),
+        );
         let mut actions = vec![
             (
                 "Fetch".to_string(),
@@ -435,7 +437,7 @@ impl Changes {
             let view = view.clone();
             let root = root.clone();
             menu = menu.item(
-                PopupMenuItem::new(label)
+                PopupMenuItem::new(glim_services::locale::tr(&label))
                     .disabled(blocked || disabled)
                     .on_click(move |_, w, cx| {
                         let _ = view.update(cx, |v, cx| {
@@ -457,30 +459,32 @@ impl Changes {
         ] {
             let view = view.clone();
             let root = root.clone();
-            menu = menu.item(PopupMenuItem::new(label).disabled(blocked).on_click(
-                move |_, w, cx| {
-                    let _ = view.update(cx, |v, cx| {
-                        if v.is_busy() {
-                            return;
-                        }
-                        let Some(index) = v
-                            .repositories
-                            .iter()
-                            .position(|r| Some(&r.root) == root.as_ref())
-                        else {
-                            return;
-                        };
-                        v.select_repository(index, w, cx);
-                        v.git.graph_all = all;
-                        v.git.graph_limit = 200;
-                        v.git.graph_more = false;
-                        v.git.graph_rows.clear();
-                        v.git.graph_scroll = UniformListScrollHandle::new();
-                        v.reload_graph(cx);
-                        cx.notify();
-                    });
-                },
-            ));
+            menu = menu.item(
+                PopupMenuItem::new(glim_services::locale::tr(label))
+                    .disabled(blocked)
+                    .on_click(move |_, w, cx| {
+                        let _ = view.update(cx, |v, cx| {
+                            if v.is_busy() {
+                                return;
+                            }
+                            let Some(index) = v
+                                .repositories
+                                .iter()
+                                .position(|r| Some(&r.root) == root.as_ref())
+                            else {
+                                return;
+                            };
+                            v.select_repository(index, w, cx);
+                            v.git.graph_all = all;
+                            v.git.graph_limit = 200;
+                            v.git.graph_more = false;
+                            v.git.graph_rows.clear();
+                            v.git.graph_scroll = UniformListScrollHandle::new();
+                            v.reload_graph(cx);
+                            cx.notify();
+                        });
+                    }),
+            );
         }
         menu
     }
@@ -669,27 +673,31 @@ impl Changes {
                                                     let delete_view = view.clone();
                                                     let name = menu_branch.name.clone();
                                                     menu.item(
-                                                        PopupMenuItem::new("Create Branch From…")
-                                                            .disabled(blocked)
-                                                            .on_click(move |_, w, cx| {
-                                                                let _ = create_view.update(
-                                                                    cx,
-                                                                    |v, cx| {
-                                                                        v.branch_form(
-                                                                            BranchForm::Create(
-                                                                                Some(start.clone()),
-                                                                            ),
-                                                                            String::new(),
-                                                                            w,
-                                                                            cx,
-                                                                        )
-                                                                    },
-                                                                );
-                                                            }),
+                                                        PopupMenuItem::new(
+                                                            glim_services::locale::tr(
+                                                                "Create Branch From…",
+                                                            ),
+                                                        )
+                                                        .disabled(blocked)
+                                                        .on_click(move |_, w, cx| {
+                                                            let _ =
+                                                                create_view.update(cx, |v, cx| {
+                                                                    v.branch_form(
+                                                                        BranchForm::Create(Some(
+                                                                            start.clone(),
+                                                                        )),
+                                                                        String::new(),
+                                                                        w,
+                                                                        cx,
+                                                                    )
+                                                                });
+                                                        }),
                                                     )
                                                     .item(
                                                         PopupMenuItem::new(
-                                                            "Merge into Current Branch…",
+                                                            glim_services::locale::tr(
+                                                                "Merge into Current Branch…",
+                                                            ),
                                                         )
                                                         .disabled(blocked || menu_branch.current)
                                                         .on_click(move |_, w, cx| {
@@ -706,26 +714,28 @@ impl Changes {
                                                         }),
                                                     )
                                                     .item(
-                                                        PopupMenuItem::new("Delete Branch…")
-                                                            .disabled(
-                                                                blocked
-                                                                    || menu_branch.remote
-                                                                    || menu_branch.current,
-                                                            )
-                                                            .on_click(move |_, w, cx| {
-                                                                let _ = delete_view.update(
-                                                                    cx,
-                                                                    |v, cx| {
-                                                                        v.request_operation(
-                                                                            GitOperation::Delete(
-                                                                                name.clone(),
-                                                                            ),
-                                                                            w,
-                                                                            cx,
-                                                                        )
-                                                                    },
-                                                                );
-                                                            }),
+                                                        PopupMenuItem::new(
+                                                            glim_services::locale::tr(
+                                                                "Delete Branch…",
+                                                            ),
+                                                        )
+                                                        .disabled(
+                                                            blocked
+                                                                || menu_branch.remote
+                                                                || menu_branch.current,
+                                                        )
+                                                        .on_click(move |_, w, cx| {
+                                                            let _ =
+                                                                delete_view.update(cx, |v, cx| {
+                                                                    v.request_operation(
+                                                                        GitOperation::Delete(
+                                                                            name.clone(),
+                                                                        ),
+                                                                        w,
+                                                                        cx,
+                                                                    )
+                                                                });
+                                                        }),
                                                     )
                                                 })
                                         }),
@@ -884,8 +894,8 @@ impl Changes {
                             .flex_1()
                             .h_full()
                             .gap_1()
-                            .text_size(px(15.))
-                            .font_weight(FontWeight::BOLD)
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::MEDIUM)
                             .cursor_pointer()
                             .child(disclosure(self.git.graph_collapsed, cx))
                             .child(glim_services::locale::tr("Graph"))
@@ -1110,7 +1120,7 @@ impl Changes {
                                                 let copy = copy.clone();
                                                 menu.item(
                                                     gpui_kit::component::menu::PopupMenuItem::new(
-                                                        "Copy Commit ID",
+                                                        glim_services::locale::tr("Copy Commit ID"),
                                                     )
                                                     .disabled(copy.is_none())
                                                     .on_click(move |_, _, cx| {

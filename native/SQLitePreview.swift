@@ -5,10 +5,10 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
     let view = NSView()
     let picker = NSPopUpButton()
     let grid = NSTableView()
-    let status = NSTextField(wrappingLabelWithString: "Loading database…")
-    let previous = NSButton(title: "Previous", target: nil, action: nil)
-    let next = NSButton(title: "Next", target: nil, action: nil)
-    let structure = NSButton(checkboxWithTitle: "Structure", target: nil, action: nil)
+    let status = NSTextField(wrappingLabelWithString: L("Loading database…"))
+    let previous = NSButton(title: L("Previous"), target: nil, action: nil)
+    let next = NSButton(title: L("Next"), target: nil, action: nil)
+    let structure = NSButton(checkboxWithTitle: L("Structure"), target: nil, action: nil)
     let schemaButton = NSButton(title: "SQL", target: nil, action: nil)
     private let queue = DispatchQueue(label: "glim.sqlite", qos: .userInitiated)
     private var database: OpaquePointer?
@@ -38,11 +38,11 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
         stack.addArrangedSubview(scroll); scroll.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor; stack.addArrangedSubview(status)
         controls()
-        guard let path = path else { status.stringValue = "Open the matching database to browse tables."; return }
+        guard let path = path else { status.stringValue = L("Open the matching database to browse tables."); return }
         queue.async { [self] in
             // Only the private snapshot is writable, to allow journal/WAL recovery.
             let code = sqlite3_open_v2(path, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_PRIVATECACHE, nil)
-            guard code == SQLITE_OK, let database = database else { fail("Cannot open SQLite snapshot."); return }
+            guard code == SQLITE_OK, let database = database else { fail(L("Cannot open SQLite snapshot.")); return }
             sqlite3_busy_timeout(database, 1000)
             sqlite3_limit(database, SQLITE_LIMIT_LENGTH, 32 * 1024 * 1024)
             sqlite3_limit(database, SQLITE_LIMIT_COLUMN, 256)
@@ -55,8 +55,8 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
                     guard let self = self, !self.closed else { return }
                     self.tables = values
                     self.picker.addItems(withTitles: values.map { $0.name })
-                    self.status.stringValue = values.isEmpty ? "No user tables or views." : "\(values.count) tables / views"
-                    if result.rows.count > 5000 { self.status.stringValue += " (first 5,000 shown)" }
+                    self.status.stringValue = values.isEmpty ? L("No user tables or views.") : L("%d tables / views").replacingOccurrences(of: "%d", with: String(values.count))
+                    if result.rows.count > 5000 { self.status.stringValue += L(" (first 5,000 shown)") }
                     self.controls()
                     if !values.isEmpty { self.loadPage() }
                 }
@@ -72,7 +72,7 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
     }
     deinit { if let database = database { sqlite3_close(database) } }
     private func failure() -> NSError {
-        NSError(domain: "SQLite", code: Int(sqlite3_errcode(database)), userInfo: [NSLocalizedDescriptionKey: database.map { String(cString: sqlite3_errmsg($0)) } ?? "Database unavailable"])
+        NSError(domain: "SQLite", code: Int(sqlite3_errcode(database)), userInfo: [NSLocalizedDescriptionKey: database.map { String(cString: sqlite3_errmsg($0)) } ?? L("Database unavailable")])
     }
     private func query(_ sql: String, limit: Int, textLimit: Int = 512) throws -> (columns: [String], rows: [[String]]) {
         guard let database = database else { throw failure() }
@@ -142,14 +142,14 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
                         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(String(index))); column.title = name; column.width = 180; self.grid.addTableColumn(column)
                     }
                     self.grid.reloadData(); self.busy = false; self.controls()
-                    self.status.stringValue = schema ? "Table structure" : "\(self.rows.count) rows · offset \(self.offset) · up to 256 columns · long values shown as summaries"
+                    self.status.stringValue = schema ? L("Table structure") : L("%rows rows · offset %offset · up to 256 columns · long values shown as summaries").replacingOccurrences(of: "%rows", with: String(self.rows.count)).replacingOccurrences(of: "%offset", with: String(self.offset))
                 }
             } catch { fail(error.localizedDescription) }
         }
     }
     @objc func showSQL() {
         guard tables.indices.contains(picker.indexOfSelectedItem) else { return }
-        let alert = NSAlert(); alert.messageText = "Table / View Definition"
+        let alert = NSAlert(); alert.messageText = L("Table / View Definition")
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 240)); scroll.hasVerticalScroller = true
         let text = NSTextView(frame: scroll.bounds); text.isEditable = false; text.font = .monospacedSystemFont(ofSize: 12, weight: .regular); text.string = tables[picker.indexOfSelectedItem].sql
         scroll.documentView = text; alert.accessoryView = scroll; alert.addButton(withTitle: L("Close")); alert.runModal()

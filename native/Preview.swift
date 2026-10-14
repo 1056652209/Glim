@@ -20,8 +20,8 @@ func localizeMenu(_ menu: NSMenu) {
 }
 
 // Default handlers change only after a selection and explicit confirmation.
-final class AssociationWindow: NSObject, NSWindowDelegate {
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 600), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+final class AssociationWindow: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 980, height: 860), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
     let bundleURL: URL
     let identifier: String
     let preferences = UserDefaults(suiteName: "io.github.jony4.glim.file-associations")!
@@ -29,10 +29,7 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
         ("Markdown", ["md", "markdown"]), ("Plain Text", ["txt", "log"]),
         ("JSON", ["json", "jsonl", "geojson"]), ("YAML / TOML", ["yaml", "yml", "toml"]),
         ("HTML", ["html", "htm"]), ("XML", ["xml"]),
-        ("Rust", ["rs"]), ("Python", ["py"]), ("JavaScript / TypeScript", ["js", "jsx", "ts", "tsx"]),
-        ("C / C++", ["c", "h", "cpp", "hpp"]), ("Go / Swift", ["go", "swift"]),
-        ("Java / Kotlin", ["java", "kt"]), ("Ruby / PHP", ["rb", "php"]),
-        ("Shell / SQL", ["sh", "sql"]), ("CSS", ["css"]),
+        ("Source Code", ["rs", "py", "js", "jsx", "ts", "tsx", "c", "h", "cpp", "hpp", "go", "swift", "java", "kt", "rb", "php", "sh", "sql", "css"]),
         ("SQLite", ["sqlite", "sqlite3", "db", "db3"]),
         ("Fonts", ["ttf", "otf", "ttc", "otc", "dfont"]),
         ("PDF", ["pdf"]), ("Mind maps", ["xmind"]), ("Ebooks", ["epub", "fb2", "cbz"]), ("Images", ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "tiff"]),
@@ -42,7 +39,9 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
         ("Word", ["doc", "docx", "rtf"]), ("Excel", ["xls", "xlsx"]), ("PowerPoint", ["ppt", "pptx"])
     ]
     var checks: [NSButton] = []
-    var currentLabels: [NSTextField] = []
+    let table = NSTableView()
+    var currentNames: [String] = []
+    let selectAllButton = NSButton(checkboxWithTitle: L("Select All"), target: nil, action: nil)
     let status = NSTextField(wrappingLabelWithString: L("Select formats to change. Other file types keep their current defaults."))
     init(bundleURL: URL) throws {
         self.bundleURL = bundleURL
@@ -50,7 +49,7 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
               identifier == "io.github.jony4.glimpse" else { throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot identify the installed Glim app."]) }
         self.identifier = identifier
         super.init()
-        window.title = "Default File Types — Glim"; window.minSize = NSSize(width: 560, height: 400); window.delegate = self; window.isReleasedWhenClosed = false
+        window.title = L("Default File Types — Glim"); window.minSize = NSSize(width: 760, height: 420); window.delegate = self; window.isReleasedWhenClosed = false
         let host = window.contentView!
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12; stack.translatesAutoresizingMaskIntoConstraints = false
         host.addSubview(stack)
@@ -58,24 +57,36 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
         let heading = NSTextField(labelWithString: L("Open these file types with Glim")); heading.font = .systemFont(ofSize: 17, weight: .semibold); stack.addArrangedSubview(heading)
         let hint = NSTextField(wrappingLabelWithString: L("macOS applies defaults to document types. Extensions belonging to the same type may change together."))
         hint.textColor = .secondaryLabelColor; stack.addArrangedSubview(hint)
-        let list = NSStackView(); list.orientation = .vertical; list.alignment = .leading; list.spacing = 8; list.edgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 8)
-        for (title, extensions) in groups {
-            let row = NSStackView(); row.orientation = .vertical; row.alignment = .leading; row.spacing = 3
-            let check = NSButton(checkboxWithTitle: "\(title)  (\(extensions.map { "." + $0 }.joined(separator: ", ")))", target: nil, action: nil)
-            let current = NSTextField(wrappingLabelWithString: ""); current.textColor = .secondaryLabelColor; current.font = .systemFont(ofSize: 11)
-            row.addArrangedSubview(check); row.addArrangedSubview(current); list.addArrangedSubview(row)
-            checks.append(check); currentLabels.append(current)
+        selectAllButton.target = self; selectAllButton.action = #selector(selectAll)
+        selectAllButton.allowsMixedState = true
+        stack.addArrangedSubview(selectAllButton)
+        for (title, width) in [("Select", 60.0), ("File Type", 180.0), ("Extensions", 300.0), ("Current Application", 360.0)] {
+            let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(title))
+            column.title = L(title); column.width = width; column.minWidth = title == "Select" ? 60 : 100
+            table.addTableColumn(column)
         }
-        let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.documentView = list
-        list.translatesAutoresizingMaskIntoConstraints = false
-        list.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
+        currentNames = Array(repeating: "", count: groups.count)
+        table.rowHeight = 20
+        table.usesAlternatingRowBackgroundColors = true; table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        table.allowsEmptySelection = true
+        for _ in groups {
+            let check = NSButton(checkboxWithTitle: "", target: self, action: #selector(selectionChanged(_:)))
+            check.allowsMixedState = true; check.tag = checks.count; checks.append(check)
+        }
+        table.dataSource = self; table.delegate = self
+        refresh()
+        let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
+        scroll.documentView = table; scroll.borderType = .bezelBorder
         stack.addArrangedSubview(scroll); scroll.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 280).isActive = true
         status.font = .systemFont(ofSize: 12); stack.addArrangedSubview(status)
         let buttons = NSStackView()
-        buttons.addArrangedSubview(NSButton(title: "Restore Selected", target: self, action: #selector(restore)))
-        buttons.addArrangedSubview(NSButton(title: "Set Selected to Glim", target: self, action: #selector(apply)))
+        buttons.addArrangedSubview(NSButton(title: L("Set Selected to Glim"), target: self, action: #selector(apply)))
         stack.addArrangedSubview(buttons)
-        refresh(); window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        let contentHeight = CGFloat(groups.count) * (table.rowHeight + table.intercellSpacing.height) + 240
+        let screenHeight = NSScreen.main?.visibleFrame.height ?? 900
+        window.setContentSize(NSSize(width: 900, height: min(contentHeight, screenHeight - 80)))
+        window.center(); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
     func types(_ index: Int) -> [String] { Array(Set(groups[index].1.compactMap { UTType(filenameExtension: $0)?.identifier })).sorted() }
     func handler(_ type: String) -> String? {
@@ -83,23 +94,49 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
         return value as String
     }
     func refresh() {
+        var refreshedNames: [String] = []
         for index in groups.indices {
+            let supported = types(index)
+            let owned = supported.filter { handler($0) == identifier }.count
+            checks[index].state = owned == 0 ? .off : (owned == supported.count ? .on : .mixed)
             let names = Set(types(index).map { type -> String in
-                guard let id = handler(type) else { return "Not set" }
+                guard let id = handler(type) else { return L("Not set") }
                 if id == identifier { return "Glim" }
                 return NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)?.deletingPathExtension().lastPathComponent ?? id
             })
-            currentLabels[index].stringValue = L("Current: ") + (names.isEmpty ? "System type unavailable" : names.sorted().joined(separator: ", "))
+            refreshedNames.append(names.isEmpty ? L("System type unavailable") : names.sorted().joined(separator: ", "))
         }
+        currentNames = refreshedNames
+        updateSelectAll(); table.reloadData()
+    }
+    func numberOfRows(in tableView: NSTableView) -> Int { groups.count }
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        guard groups.indices.contains(row), checks.indices.contains(row), currentNames.indices.contains(row) else { return nil }
+        switch tableColumn?.identifier.rawValue {
+        case "Select": return checks[row]
+        case "File Type": return NSTextField(labelWithString: L(groups[row].0))
+        default:
+            let value = tableColumn?.identifier.rawValue == "Extensions" ? groups[row].1.map { "." + $0 }.joined(separator: ", ") : currentNames[row]
+            let label = NSTextField(labelWithString: value); label.lineBreakMode = .byTruncatingTail; label.toolTip = value
+            return label
+        }
+    }
+    func updateSelectAll() {
+        selectAllButton.state = checks.allSatisfy { $0.state == .on } ? .on : (checks.allSatisfy { $0.state == .off } ? .off : .mixed)
+    }
+    @objc func selectionChanged(_ sender: NSButton) { updateSelectAll() }
+    @objc func selectAll() {
+        let state: NSControl.StateValue = checks.allSatisfy { $0.state == .on } ? .off : .on
+        for check in checks { check.state = state }; updateSelectAll()
     }
     @objc func apply() { change(restore: false) }
     @objc func restore() { change(restore: true) }
     func change(restore: Bool) {
-        let selected = groups.indices.filter { checks[$0].state == .on }
+        let selected = groups.indices.filter { checks[$0].state != .off }
         guard !selected.isEmpty else { status.stringValue = L("Select at least one format first."); return }
-        let alert = NSAlert(); alert.messageText = restore ? "Restore previous default applications?" : "Use Glim as the default application?"
-        alert.informativeText = selected.map { groups[$0].0 }.joined(separator: ", ")
-        alert.addButton(withTitle: restore ? "Restore" : "Apply"); alert.addButton(withTitle: L("Cancel"))
+        let alert = NSAlert(); alert.messageText = L(restore ? "Restore previous default applications?" : "Use Glim as the default application?")
+        alert.informativeText = selected.map { L(groups[$0].0) }.joined(separator: ", ")
+        alert.addButton(withTitle: L(restore ? "Restore" : "Apply")); alert.addButton(withTitle: L("Cancel"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         guard LSRegisterURL(bundleURL as CFURL, true) == noErr else { status.stringValue = L("macOS could not register Glim. Move it to Applications and retry."); return }
         var previous = preferences.dictionary(forKey: "previousHandlers") as? [String: String] ?? [:]
@@ -120,7 +157,7 @@ final class AssociationWindow: NSObject, NSWindowDelegate {
             else { failures += 1 }
         }
         preferences.set(previous, forKey: "previousHandlers")
-        status.stringValue = "Updated \(done) document types." + (failures > 0 ? " \(failures) could not be changed or had no saved default. You can also use Finder → Get Info → Open with → Change All." : "")
+        status.stringValue = L("Updated %d document types.").replacingOccurrences(of: "%d", with: String(done)) + (failures > 0 ? " " + L("%d could not be changed or had no saved default. You can also use Finder → Get Info → Open with → Change All.").replacingOccurrences(of: "%d", with: String(failures)) : "")
         refresh()
     }
     func windowWillClose(_ notification: Notification) { NSApp.terminate(nil) }
@@ -235,7 +272,7 @@ final class FontPreview: NSObject, NSTextFieldDelegate {
         let index = selector.indexOfSelectedItem
         guard descriptors.indices.contains(index) else { return }
         let font = CTFontCreateWithFontDescriptor(descriptors[index], 16, nil)
-        metadata.stringValue = "\(CTFontCopyFamilyName(font)) · \(CTFontCopyPostScriptName(font)) · \(CTFontGetGlyphCount(font)) glyphs · \(availableFaces) faces" + (availableFaces > 256 ? " (showing first 256)" : "")
+        metadata.stringValue = "\(CTFontCopyFamilyName(font)) · \(CTFontCopyPostScriptName(font)) · " + L("%glyphs glyphs · %faces faces").replacingOccurrences(of: "%glyphs", with: String(CTFontGetGlyphCount(font))).replacingOccurrences(of: "%faces", with: String(availableFaces)) + (availableFaces > 256 ? L(" (showing first 256)") : "")
         updateSamples()
     }
     func controlTextDidChange(_ notification: Notification) { updateSamples() }
@@ -378,7 +415,7 @@ final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableVie
         nativeTranslations = playlist.localizations ?? [:]
         host.setAccessibilityElement(true)
         host.setAccessibilityRole(.group)
-        host.setAccessibilityLabel(playlist.files.first.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Preview")
+        host.setAccessibilityLabel(playlist.files.first.map { URL(fileURLWithPath: $0).lastPathComponent } ?? L("Preview"))
         urls = playlist.files.map { URL(fileURLWithPath: $0) }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         if playlist.shuffle { urls.shuffle() }
@@ -473,7 +510,7 @@ final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableVie
             playerView.heightAnchor.constraint(equalTo: body.heightAnchor).isActive = true
             playerView.setContentHuggingPriority(.defaultLow, for: .horizontal)
             if urls.count > 1 {
-                let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("file")); column.title = "Playlist"; table.addTableColumn(column)
+                let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("file")); column.title = L("Playlist"); table.addTableColumn(column)
                 table.headerView = nil; table.delegate = self; table.dataSource = self; table.rowHeight = 28
                 let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true
                 scroll.widthAnchor.constraint(equalToConstant: 240).isActive = true

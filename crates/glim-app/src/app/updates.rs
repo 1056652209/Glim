@@ -194,6 +194,9 @@ impl UpdateState {
                 writes.push(task);
             }
         }
+        if let Some(task) = cx.global_mut::<super::ExplorerSaveTask>().0.take() {
+            writes.push(task);
+        }
         if let Some(task) = cx.global_mut::<super::WorkspaceSaveTask>().0.take() {
             writes.push(task);
         }
@@ -362,10 +365,10 @@ fn open_updates_window(cx: &mut App) {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             None,
-            size(px(520.), px(640.)),
+            size(px(640.), px(520.)),
             cx,
         ))),
-        window_min_size: Some(size(px(460.), px(500.))),
+        window_min_size: Some(size(px(600.), px(280.))),
         ..TitleBar::window_options()
     };
     match gpui_kit::open_window(options, cx, |window, cx| {

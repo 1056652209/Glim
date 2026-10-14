@@ -74,8 +74,8 @@ impl RepositoryScan {
     pub fn warning(&self) -> Option<String> {
         (!self.failed_paths.is_empty()).then(|| {
             format!(
-                "Git 扫描已完成，{} 处读取失败；已保留可用仓库。可刷新重试。\n{}{}",
-                self.failed_paths.len(),
+                "{}\n{}{}",
+                crate::locale::tr("Git scan completed with %count read failures; available repositories were retained. Refresh to retry.").replace("%count", &self.failed_paths.len().to_string()),
                 self.warnings.join("\n"),
                 if self.failed_paths.len() > self.warnings.len() {
                     "\n…"

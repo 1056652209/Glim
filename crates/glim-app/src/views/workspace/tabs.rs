@@ -2,7 +2,7 @@ use super::Workspace;
 use crate::views::reader::Reader;
 use gpui_kit::{
     component::{
-        ActiveTheme,
+        ActiveTheme, Sizable,
         button::{Button, ButtonVariants},
         h_flex,
         menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
@@ -15,6 +15,20 @@ impl Workspace {
         self.active.and_then(|index| self.tabs.get(index))
     }
 
+    pub(super) fn reveal_active_file(&self, cx: &mut Context<Self>) {
+        if let (Some(explorer), Some(reader)) = (&self.explorer, self.active_reader()) {
+            let path = if let Some(file) = &reader.commit_file {
+                reader
+                    .repository_root
+                    .as_ref()
+                    .map_or_else(|| reader.path.clone(), |root| root.join(file))
+            } else {
+                reader.path.clone()
+            };
+            explorer.update(cx, |explorer, cx| explorer.reveal_path(path, cx));
+        }
+    }
+
     pub(super) fn activate_tab(
         &mut self,
         index: usize,
@@ -22,10 +36,12 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if self.tabs.get(index).is_some() {
+            self.page = super::Page::Document;
             self.load_task = None;
             self.loading = false;
             self.load_incoming_file(window, cx);
             self.active = Some(index);
+            self.reveal_active_file(cx);
             window.focus(&self.focus, cx);
             self.tab_scroll.scroll_to_item(index);
             window.set_window_title("Glim");
@@ -132,7 +148,7 @@ impl Workspace {
                 .collect();
             let view = cx.entity().downgrade();
             menu = menu.item(
-                PopupMenuItem::new(label)
+                PopupMenuItem::new(glim_services::locale::tr(label))
                     .disabled(targets.is_empty())
                     .on_click(move |_, w, cx| {
                         let _ = view.update(cx, |v, cx| v.close_tabs(targets.clone(), w, cx));
@@ -177,95 +193,93 @@ impl Workspace {
 
 impl Workspace {
     pub(super) fn tab_bar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let tabs =
-            self.tabs
-                .iter()
-                .enumerate()
-                .map(|(index, reader)| {
-                    let active = self.active == Some(index);
-                    let target = super::header::Target::from_reader(reader);
-                    let menu_view = cx.entity().downgrade();
-                    let mut label = reader
-                        .commit_file
-                        .as_ref()
-                        .unwrap_or(&reader.path)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned();
-                    if reader.commit_file.is_some()
-                        && let Some(oid) = &reader.commit_id
-                    {
-                        label.push_str(&format!(" · {}", &oid[..8.min(oid.len())]));
-                    }
-                    if let Some(diff) = &reader.diff {
-                        label.push_str(&format!(" · {}", diff.scope.label()));
-                    }
-                    h_flex()
-                        .id(("document-tab", index))
-                        .h_full()
-                        .flex_shrink_0()
-                        .gap_2()
-                        .px_3()
-                        .border_r_1()
-                        .border_color(cx.theme().border)
-                        .relative()
-                        .child(div().absolute().top_0().left_0().right_0().h(px(2.)).bg(
-                            if active {
-                                cx.theme().primary
+        let tabs = self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(index, reader)| {
+                let active = self.active == Some(index);
+                let target = super::header::Target::from_reader(reader);
+                let menu_view = cx.entity().downgrade();
+                let mut label = reader
+                    .commit_file
+                    .as_ref()
+                    .unwrap_or(&reader.path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                if reader.commit_file.is_some()
+                    && let Some(oid) = &reader.commit_id
+                {
+                    label.push_str(&format!(" · {}", &oid[..8.min(oid.len())]));
+                }
+                if let Some(diff) = &reader.diff {
+                    label.push_str(&format!(" · {}", diff.scope.label()));
+                }
+                h_flex()
+                    .id(("document-tab", index))
+                    .h(px(28.))
+                    .flex_shrink_0()
+                    .gap_2()
+                    .px_3()
+                    .rounded(px(7.))
+                    .bg(if active {
+                        cx.theme().secondary
+                    } else {
+                        cx.theme().background
+                    })
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |view, _, window, cx| {
+                        view.activate_tab(index, window, cx);
+                        view.tabs[index].reveal_native(cx);
+                    }))
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .child(crate::views::file_icons::file_icon(&reader.path))
+                            .child(div().max_w(px(210.)).truncate().text_xs().child(label)),
+                    )
+                    .child(
+                        Button::new(("close-tab", index))
+                            .ghost()
+                            .xsmall()
+                            .label(if reader.is_dirty() { "·" } else { "×" })
+                            .text_color(cx.theme().muted_foreground)
+                            .tooltip(glim_services::locale::tr(if reader.is_dirty() {
+                                "Unsaved changes · Close"
                             } else {
-                                cx.theme().border
-                            },
-                        ))
-                        .bg(if active {
-                            cx.theme().background
-                        } else {
-                            cx.theme().sidebar
-                        })
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |view, _, window, cx| {
-                            view.activate_tab(index, window, cx);
-                            view.tabs[index].reveal_native(cx);
-                        }))
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .child(crate::views::file_icons::file_icon(&reader.path))
-                                .child(div().max_w(px(210.)).truncate().text_sm().child(label)),
-                        )
-                        .child(
-                            Button::new(("close-tab", index))
-                                .ghost()
-                                .label(if reader.is_dirty() { "·" } else { "×" })
-                                .text_color(cx.theme().muted_foreground)
-                                .tooltip(if reader.is_dirty() {
-                                    "Unsaved changes · Close"
-                                } else {
-                                    "Close"
-                                })
-                                .accessibility_label(format!("Close {}", reader.title))
-                                .on_click(cx.listener(move |view, _, window, cx| {
-                                    cx.stop_propagation();
-                                    view.close_tab(index, window, cx);
-                                })),
-                        )
-                        .context_menu(move |menu, _, cx| {
-                            menu_view
-                                .update(cx, |v, cx| v.tab_context_menu(menu, &target, cx))
-                                .expect("Tab menu owner is alive")
-                        })
-                })
-                .collect::<Vec<_>>();
+                                "Close"
+                            }))
+                            .accessibility_label(format!(
+                                "{} {}",
+                                glim_services::locale::tr("Close"),
+                                reader.title
+                            ))
+                            .on_click(cx.listener(move |view, _, window, cx| {
+                                cx.stop_propagation();
+                                view.close_tab(index, window, cx);
+                            })),
+                    )
+                    .context_menu(move |menu, _, cx| {
+                        menu_view
+                            .update(cx, |v, cx| v.tab_context_menu(menu, &target, cx))
+                            .expect("Tab menu owner is alive")
+                    })
+            })
+            .collect::<Vec<_>>();
         h_flex()
-            .h(px(40.))
+            .h(px(36.))
             .w_full()
             .flex_shrink_0()
-            .bg(cx.theme().sidebar)
+            .px_1()
+            .bg(cx.theme().background)
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
                 h_flex()
                     .id("document-tabs")
+                    .gap_1()
                     .track_scroll(&self.tab_scroll)
                     .flex_1()
                     .min_w_0()

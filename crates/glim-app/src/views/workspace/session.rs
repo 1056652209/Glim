@@ -66,18 +66,31 @@ impl Workspace {
         self.loading = true;
         let folders = session.roots.clone();
         let work = cx.background_executor().spawn(async move {
-            folders
+            let expanded = glim_services::preferences::explorer_expansion(&folders);
+            let folders = folders
                 .into_iter()
                 .map(|p| glim_services::workspace::open_folder(&p))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            (folders, expanded)
         });
         self.load_task = Some(cx.spawn_in(window, async move |view, cx| {
-            let folders = work.await;
+            let (folders, expanded) = work.await;
             let _ = view.update_in(cx, |view, window, cx| {
                 for folder in folders {
                     match folder {
                         Ok(folder) => view.add_folder(folder, window, cx),
                         Err(error) => view.error = Some(format!("{error:#}").into()),
+                    }
+                }
+                match expanded {
+                    Ok(paths) => {
+                        if let Some(explorer) = &view.explorer {
+                            explorer
+                                .update(cx, |explorer, cx| explorer.restore_expanded(paths, cx));
+                        }
+                    }
+                    Err(error) => {
+                        view.error = Some(format!("Cannot restore file tree: {error:#}").into())
                     }
                 }
             });
@@ -124,6 +137,10 @@ impl Workspace {
                     .active
                     .filter(|&i| i < view.tabs.len())
                     .or_else(|| (!view.tabs.is_empty()).then_some(0));
+                if view.active.is_some() {
+                    view.page = super::Page::Document;
+                }
+                view.reveal_active_file(cx);
                 view.observe_autosave(window, cx);
                 if view.root.is_none() {
                     view.watch_file_parent(window, cx);

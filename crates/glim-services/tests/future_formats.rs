@@ -12,7 +12,11 @@ fn container_previews_reject_damage_and_do_not_extract() {
     archive.finish().unwrap();
     let before = std::fs::read(&path).unwrap();
     let preview = formats::read_preview(&path).unwrap();
-    assert!(preview.text.contains("路径越界"));
+    assert!(
+        preview
+            .text
+            .contains(&glim_services::locale::tr(" · Unsafe extraction path"))
+    );
     assert_eq!(before, std::fs::read(&path).unwrap());
     assert!(!dir.path().parent().unwrap().join("outside.txt").exists());
     std::fs::write(&path, b"PK\x03\x04broken").unwrap();

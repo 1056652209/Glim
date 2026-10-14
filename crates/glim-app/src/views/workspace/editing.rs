@@ -45,7 +45,7 @@ impl Workspace {
                                     .timer(std::time::Duration::from_millis(800))
                                     .await;
                                 let _ = view.update_in(cx, |view, window, cx| {
-                                    view.save_editor(id, window, cx)
+                                    view.save_editor(id, window, cx);
                                 });
                             });
                             if let Some((_, pending)) = view.autosave.get_mut(&id) {
@@ -140,9 +140,9 @@ impl Workspace {
         }
         let all = matches!(action, DiscardAction::Quit);
         let response = window.prompt(PromptLevel::Warning,
-            if all { "Quit with unsaved changes?" } else { "Discard unsaved changes?" },
-            Some("Your edits have not been saved. Cancel and save the file first, or discard the edits to continue."),
-            &["Cancel", if all { "Discard All and Quit" } else { "Discard Changes" }], cx);
+            &glim_services::locale::tr(if all { "Quit with unsaved changes?" } else { "Discard unsaved changes?" }),
+            Some(&glim_services::locale::tr("Your edits have not been saved. Cancel and save the file first, or discard the edits to continue.")),
+            &[glim_services::locale::tr("Cancel").as_str(), glim_services::locale::tr(if all { "Discard All and Quit" } else { "Discard Changes" }).as_str()], cx);
         self.confirm_task = Some(cx.spawn_in(window, async move |view, cx| {
             let discard = response.await == Ok(1);
             let _ = view.update_in(cx, |v, window, cx| {

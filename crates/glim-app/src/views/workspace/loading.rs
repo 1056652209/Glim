@@ -33,24 +33,35 @@ impl Workspace {
     pub(crate) fn restore_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.loading = true;
         let work = cx.background_executor().spawn(async {
-            glim_services::preferences::workspace_folders().map(|paths| {
-                paths
-                    .into_iter()
-                    .map(|path| open_folder(&path))
-                    .collect::<Vec<_>>()
-            })
+            let paths = glim_services::preferences::workspace_folders()?;
+            let expanded = glim_services::preferences::explorer_expansion(&paths);
+            let folders = paths
+                .into_iter()
+                .map(|path| open_folder(&path))
+                .collect::<Vec<_>>();
+            Ok::<_, anyhow::Error>((folders, expanded))
         });
         self.load_task = Some(cx.spawn_in(window, async move |view, cx| {
             let result = work.await;
             let _ = view.update_in(cx, |view, window, cx| {
                 let mut errors = Vec::new();
                 match result {
-                    Ok(folders) => {
+                    Ok((folders, expanded)) => {
                         for folder in folders {
                             match folder {
                                 Ok(folder) => view.add_folder(folder, window, cx),
                                 Err(error) => errors.push(format!("{error:#}")),
                             }
+                        }
+                        match expanded {
+                            Ok(paths) => {
+                                if let Some(explorer) = &view.explorer {
+                                    explorer.update(cx, |explorer, cx| {
+                                        explorer.restore_expanded(paths, cx)
+                                    });
+                                }
+                            }
+                            Err(error) => errors.push(format!("{error:#}")),
                         }
                     }
                     Err(error) => errors.push(format!("{error:#}")),
@@ -148,6 +159,7 @@ impl Workspace {
     }
 
     pub(super) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.page = super::Page::Document;
         if crate::app::updates::busy(cx) {
             return;
         }
@@ -256,6 +268,10 @@ impl Workspace {
                 &explorer,
                 window,
                 |view, _, event, window, cx| match event {
+                    ExplorerEvent::SelectionChanged => {
+                        view.sidebar_selection = None;
+                        cx.notify();
+                    }
                     ExplorerEvent::OpenFile(path) => view.open_path(path.clone(), window, cx),
                     ExplorerEvent::PlayFolder(path, shuffle) => {
                         view.install_content(
@@ -264,6 +280,9 @@ impl Workspace {
                             cx,
                         );
                     }
+                    ExplorerEvent::ExpansionChanged(roots, expanded) => {
+                        crate::app::remember_explorer(roots.clone(), expanded.clone(), cx);
+                    }
                     ExplorerEvent::Error(error) => {
                         view.error = Some(error.clone().into());
                         cx.notify();
@@ -271,6 +290,12 @@ impl Workspace {
                 },
             ));
             self.explorer = Some(explorer);
+        }
+        if !self.loading
+            && let Some(explorer) = &self.explorer
+        {
+            let (roots, expanded) = explorer.read(cx).expansion_state();
+            crate::app::remember_explorer(roots, expanded, cx);
         }
         if self.changes.is_none() {
             let changes = cx.new(|cx| Changes::new(Vec::new(), window, cx));
@@ -387,6 +412,7 @@ impl Workspace {
         {
             self.tabs[i].reveal_anchor(&anchor, cx);
         }
+        self.reveal_active_file(cx);
         self.observe_autosave(window, cx);
         self.record_history();
         window.set_window_title("Glim");
@@ -455,6 +481,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.page = super::Page::Document;
         if crate::app::updates::busy(cx) {
             return;
         }
@@ -494,7 +521,7 @@ impl Workspace {
             files: false,
             directories: true,
             multiple: true,
-            prompt: Some("Add folders to workspace".into()),
+            prompt: Some(glim_services::locale::tr("Add folders to workspace").into()),
         });
         self.picker_task = Some(cx.spawn_in(window, async move |view, cx| {
             let selection = selection.await;

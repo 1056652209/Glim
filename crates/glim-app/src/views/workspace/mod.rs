@@ -5,7 +5,9 @@ mod header;
 mod loading;
 mod render;
 mod session;
+mod settings;
 mod tabs;
+mod toolbar;
 mod updates;
 
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -20,14 +22,29 @@ enum Sidebar {
     Changes,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Page {
+    Document,
+    Start,
+    Settings,
+}
+
+const DEFAULT_SIDEBAR_RATIO: f32 = 0.20;
+const SIDEBAR_COLLAPSE_WIDTH: f32 = 120.;
+
 pub struct Workspace {
     focus: FocusHandle,
+    page: Page,
+    sidebar_selection: Option<&'static str>,
     history: Vec<header::Target>,
     history_cursor: Option<usize>,
     navigating: bool,
     history_swipe: Option<gestures::HistorySwipe>,
     search: Entity<InputState>,
     sidebar_visible: bool,
+    sidebar_ratio: f32,
+    sidebar_window_width: f32,
+    sidebar_layout: Entity<gpui_kit::component::resizable::ResizableState>,
     word_wrap: bool,
     preference_task: Option<Task<()>>,
     repository_task: Option<Task<()>>,
@@ -35,6 +52,7 @@ pub struct Workspace {
     pending_anchor: Option<(PathBuf, String)>,
     search_task: Option<Task<()>>,
     _search_subscription: Subscription,
+    _appearance_subscription: Subscription,
     watch: Option<glim_services::watch::WorkspaceWatch>,
     watch_task: Option<Task<()>>,
     watch_setup: Option<Task<()>>,
@@ -66,6 +84,14 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    pub(crate) fn show_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.page = Page::Settings;
+        self.results.clear();
+        self.search_task = None;
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
     pub(crate) fn refresh_language(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search.update(cx, |search, cx| {
             search.set_placeholder(
@@ -92,6 +118,9 @@ impl Workspace {
                 view.search_files(window, cx);
             }
         });
+        let appearance_subscription = window.observe_window_appearance(|window, cx| {
+            crate::app::sync_system_appearance(window, cx);
+        });
         let weak = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             if crate::app::updates::intercept_last_window_close(cx) {
@@ -112,7 +141,12 @@ impl Workspace {
             history_cursor: None,
             navigating: false,
             history_swipe: None,
-            sidebar_visible: false,
+            sidebar_visible: true,
+            sidebar_ratio: DEFAULT_SIDEBAR_RATIO,
+            sidebar_window_width: 0.,
+            sidebar_layout: cx.new(|_| gpui_kit::component::resizable::ResizableState::default()),
+            page: Page::Start,
+            sidebar_selection: Some("start"),
             word_wrap: cx
                 .try_global::<crate::app::ReaderPreferences>()
                 .is_some_and(|p| p.word_wrap),
@@ -123,6 +157,7 @@ impl Workspace {
             pending_anchor: None,
             search_task: None,
             _search_subscription: subscription,
+            _appearance_subscription: appearance_subscription,
             watch: None,
             watch_task: None,
             watch_setup: None,
@@ -157,5 +192,15 @@ impl Workspace {
             workspace.open_path(path, window, cx);
         }
         workspace
+    }
+}
+
+impl Workspace {
+    fn select_sidebar_navigation(&mut self, item: &'static str, cx: &mut Context<Self>) {
+        self.sidebar_selection = Some(item);
+        if let Some(explorer) = &self.explorer {
+            explorer.update(cx, |view, cx| view.clear_clicked_selection(cx));
+        }
+        cx.notify();
     }
 }

@@ -28,11 +28,19 @@ pub(super) fn editor_menu(
     copyable: bool,
 ) -> gpui_kit::component::native_menu::NativeMenu {
     use gpui_kit::component::input::{Copy, Cut, Paste, SelectAll};
-    menu.menu_with_disabled("Cut", !(editable && copyable), Box::new(Cut))
-        .menu_with_disabled("Copy", !copyable, Box::new(Copy))
-        .menu_with_disabled("Paste", !editable, Box::new(Paste))
-        .separator()
-        .menu("Select All", Box::new(SelectAll))
+    menu.menu_with_disabled(
+        glim_services::locale::tr("Cut"),
+        !(editable && copyable),
+        Box::new(Cut),
+    )
+    .menu_with_disabled(glim_services::locale::tr("Copy"), !copyable, Box::new(Copy))
+    .menu_with_disabled(
+        glim_services::locale::tr("Paste"),
+        !editable,
+        Box::new(Paste),
+    )
+    .separator()
+    .menu(glim_services::locale::tr("Select All"), Box::new(SelectAll))
 }
 
 pub type OpenLink = Arc<dyn Fn(PathBuf, Option<String>, &mut Window, &mut App) + Send + Sync>;
@@ -432,7 +440,7 @@ impl Reader {
             view.set_images_active(false, cx);
         }
         if let Renderer::Gif(view) = &self.renderer {
-            view.read(cx).set_active(false);
+            view.update(cx, |view, cx| view.set_active(false, cx));
         }
         if let Renderer::Native(view) = &self.renderer {
             view.read(cx).hide();
@@ -441,7 +449,7 @@ impl Reader {
 
     pub fn reveal_native(&self, cx: &mut App) -> bool {
         if let Renderer::Gif(view) = &self.renderer {
-            view.read(cx).set_active(true);
+            view.update(cx, |view, cx| view.set_active(true, cx));
         }
         if let Renderer::Native(view) = &self.renderer {
             view.update(cx, |v, cx| v.open(cx));
@@ -518,6 +526,10 @@ impl Reader {
             _ => {}
         }
     }
+    pub fn can_word_wrap(&self) -> bool {
+        self.source().is_some()
+    }
+
     pub fn set_word_wrap(&self, enabled: bool, window: &mut Window, cx: &mut App) {
         if let Some(source) = self.source() {
             source
@@ -693,7 +705,7 @@ impl Reader {
             Renderer::Diff(d) => d.render(cx),
             Renderer::Image(i) => i.render(cx),
             Renderer::Gif(view) => {
-                view.read(cx).set_active(true);
+                view.update(cx, |view, cx| view.set_active(true, cx));
                 view.clone().into_any_element()
             }
             Renderer::XMind(v) => v.clone().into_any_element(),

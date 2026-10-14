@@ -232,7 +232,7 @@ fn launch(
         if let Some(status) = child.try_wait()? {
             ensure!(
                 status.success(),
-                "The native preview could not open this file"
+                crate::locale::tr("The native preview could not open this file")
             );
             break;
         }

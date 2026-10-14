@@ -6,6 +6,7 @@ pub mod executables;
 pub mod files;
 pub mod formats;
 pub mod git;
+pub mod inline_images;
 pub mod json;
 pub mod locale;
 pub mod markdown_preview;

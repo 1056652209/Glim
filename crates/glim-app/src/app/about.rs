@@ -16,7 +16,7 @@ pub fn open(cx: &mut App) {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             None,
-            size(px(420.), px(340.)),
+            size(px(380.), px(250.)),
             cx,
         ))),
         ..TitleBar::window_options()

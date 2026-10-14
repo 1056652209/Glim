@@ -133,7 +133,8 @@ pub fn read_image(path: &Path) -> Result<ImageDocument> {
 }
 
 /// Sequential, original-resolution GIF decoding with bounded compositing state.
-/// The UI requests one frame at a time on its background executor.
+/// The UI decodes small batches on its background executor. Display previews
+/// are bounded independently of the original-resolution compositing canvas.
 pub struct GifPlayback {
     bytes: std::sync::Arc<[u8]>,
     decoder: gif::Decoder<Cursor<std::sync::Arc<[u8]>>>,
@@ -178,17 +179,47 @@ impl GifPlayback {
         Ok(options.read_info(Cursor::new(bytes))?)
     }
 
+    pub fn preview_frame_bytes(&self) -> usize {
+        let (width, height) = self.preview_dimensions();
+        width as usize * height as usize * 4
+    }
+
+    fn preview_dimensions(&self) -> (u32, u32) {
+        let (width, height) = self.canvas.dimensions();
+        let edge = width.max(height);
+        if edge <= 2048 {
+            (width, height)
+        } else {
+            (
+                ((u64::from(width) * 2048 / u64::from(edge)) as u32).max(1),
+                ((u64::from(height) * 2048 / u64::from(edge)) as u32).max(1),
+            )
+        }
+    }
+
     pub fn next_frame(&mut self) -> Result<Option<(image::Frame, std::time::Duration)>> {
+        self.decode_frame(false)
+    }
+
+    pub fn next_preview_frame(&mut self) -> Result<Option<(image::Frame, std::time::Duration)>> {
+        self.decode_frame(true)
+    }
+
+    fn decode_frame(
+        &mut self,
+        preview: bool,
+    ) -> Result<Option<(image::Frame, std::time::Duration)>> {
         if self.finished {
             return Ok(None);
         }
         match self.disposal {
             gif::DisposalMethod::Background => {
                 let (left, top, width, height) = self.rectangle;
+                let stride = self.canvas.width() as usize * 4;
+                let pixels: &mut [u8] = self.canvas.as_mut();
                 for y in top..top + height {
-                    for x in left..left + width {
-                        self.canvas.put_pixel(x, y, image::Rgba([0; 4]));
-                    }
+                    let start = y as usize * stride + left as usize * 4;
+                    pixels[start..start + width as usize * 4].fill(0);
                 }
             }
             gif::DisposalMethod::Previous => {
@@ -227,12 +258,31 @@ impl GifPlayback {
         let height = u32::from(frame.height);
         self.restore =
             (frame.dispose == gif::DisposalMethod::Previous).then(|| self.canvas.clone());
-        for y in 0..height {
-            for x in 0..width {
-                let offset = ((y * width + x) * 4) as usize;
-                let pixel: [u8; 4] = frame.buffer[offset..offset + 4].try_into()?;
-                if pixel[3] != 0 {
-                    self.canvas.put_pixel(left + x, top + y, image::Rgba(pixel));
+        let stride = self.canvas.width() as usize * 4;
+        let row_bytes = width as usize * 4;
+        let canvas: &mut [u8] = self.canvas.as_mut();
+        if row_bytes > 0 {
+            for (y, source) in frame
+                .buffer
+                .chunks_exact(row_bytes.max(1))
+                .take(height as usize)
+                .enumerate()
+            {
+                let start = (top as usize + y) * stride + left as usize * 4;
+                let destination = &mut canvas[start..start + row_bytes];
+                if frame.transparent.is_none() {
+                    destination.copy_from_slice(source);
+                } else {
+                    for (source, destination) in source
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .zip(destination.as_chunks_mut::<4>().0.iter_mut())
+                    {
+                        if source[3] != 0 {
+                            destination.copy_from_slice(source);
+                        }
+                    }
                 }
             }
         }
@@ -245,7 +295,19 @@ impl GifPlayback {
             u32::from(frame.delay) * 10
         };
         Ok(Some((
-            image::Frame::new(self.canvas.clone()),
+            image::Frame::new(
+                if preview && self.canvas.width().max(self.canvas.height()) > 2048 {
+                    let (width, height) = self.preview_dimensions();
+                    image::imageops::resize(
+                        &self.canvas,
+                        width,
+                        height,
+                        image::imageops::FilterType::Nearest,
+                    )
+                } else {
+                    self.canvas.clone()
+                },
+            ),
             std::time::Duration::from_millis(u64::from(delay_ms)),
         )))
     }
@@ -375,6 +437,40 @@ mod tests {
             }
         }
         Ok(bytes)
+    }
+
+    #[test]
+    fn gif_display_preview_is_bounded_without_changing_source_frames() -> Result<()> {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = gif::Encoder::new(&mut bytes, 4096, 1, &[255, 0, 0])?;
+            encoder.set_repeat(gif::Repeat::Finite(0))?;
+            encoder.write_frame(&gif::Frame {
+                width: 4096,
+                height: 1,
+                delay: 5,
+                buffer: std::borrow::Cow::Owned(vec![0; 4096]),
+                ..Default::default()
+            })?;
+        }
+        let mut source = GifPlayback::new(std::sync::Arc::from(bytes.clone()))?;
+        let mut preview = GifPlayback::new(std::sync::Arc::from(bytes))?;
+        assert_eq!(
+            source.next_frame()?.unwrap().0.buffer().dimensions(),
+            (4096, 1)
+        );
+        assert_eq!(preview.preview_frame_bytes(), 2048 * 4);
+        let (frame, delay) = preview.next_preview_frame()?.unwrap();
+        assert_eq!(frame.buffer().dimensions(), (2048, 1));
+        assert!(
+            frame
+                .buffer()
+                .pixels()
+                .all(|pixel| pixel.0 == [255, 0, 0, 255])
+        );
+        assert_eq!(delay, std::time::Duration::from_millis(50));
+        assert!(preview.next_preview_frame()?.is_none());
+        Ok(())
     }
 
     #[test]

@@ -86,6 +86,7 @@ impl Changes {
                 ) {
                     view.commit(window, cx);
                 }
+                cx.notify();
             });
         let mut view = Self {
             repositories,
@@ -93,7 +94,7 @@ impl Changes {
             selected: None,
             tree: true,
             split_layout: cx.new(|_| ResizableState::default()),
-            expanded_heights: [px(180.), px(300.), px(280.)],
+            expanded_heights: [px(120.), px(300.), px(280.)],
             git: repository::GitState::new(window, cx),
             repos_collapsed: false,
             changes_collapsed: false,
@@ -320,6 +321,13 @@ impl Changes {
 }
 impl Render for Changes {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let staged_count = self.repository().map_or(0, |repository| {
+            repository
+                .changes
+                .iter()
+                .filter(|change| change.scope == DiffScope::Index)
+                .count()
+        });
         let repositories = v_flex()
             .size_full()
             .min_h_0()
@@ -337,8 +345,8 @@ impl Render for Changes {
                     .flex_shrink_0()
                     .px_2()
                     .gap_1()
-                    .text_size(px(15.))
-                    .font_weight(FontWeight::BOLD)
+                    .text_size(px(12.))
+                    .font_weight(FontWeight::MEDIUM)
                     .cursor_pointer()
                     .child(disclosure(self.repos_collapsed, cx))
                     .child(
@@ -380,13 +388,7 @@ impl Render for Changes {
                                 .pr_2()
                                 .gap_2()
                                 .text_sm()
-                                .rounded(px(4.))
-                                .border_l_2()
-                                .border_color(if i == self.selected_repo {
-                                    cx.theme().primary
-                                } else {
-                                    cx.theme().transparent
-                                })
+                                .rounded(px(7.))
                                 .when(i == self.selected_repo, |row| row.bg(cx.theme().accent))
                                 .cursor_pointer()
                                 .child(
@@ -466,8 +468,8 @@ impl Render for Changes {
                             .flex_1()
                             .h_full()
                             .gap_1()
-                            .text_size(px(15.))
-                            .font_weight(FontWeight::BOLD)
+                            .text_size(px(12.))
+                            .font_weight(FontWeight::MEDIUM)
                             .cursor_pointer()
                             .child(disclosure(self.changes_collapsed, cx))
                             .child(glim_services::locale::tr("Changes"))
@@ -505,19 +507,9 @@ impl Render for Changes {
                     ),
             )
             .when(!self.changes_collapsed, |panel| {
-                panel
-                    .child(
-                        div().pl(px(26.)).pr_3().pb_3().child(
-                            Input::new(&self.message)
-                                .small()
-                                .bordered(false)
-                                .focus_bordered(false)
-                                .disabled(self.is_busy() || self.repositories.is_empty()),
-                        ),
-                    )
-                    .when_some(self.notice.clone(), |v, message| {
-                        v.child(div().px_3().pb_1().text_xs().child(message))
-                    })
+                panel.when_some(self.notice.clone(), |v, message| {
+                    v.child(div().px_3().pb_1().text_xs().child(message))
+                })
             })
             .when(!self.changes_collapsed, |panel| {
                 panel.child(
@@ -562,8 +554,8 @@ impl Render for Changes {
                                                 .items_center()
                                                 .justify_center()
                                                 .text_xs()
-                                                .bg(cx.theme().primary)
-                                                .text_color(cx.theme().primary_foreground)
+                                                .bg(cx.theme().background)
+                                                .text_color(cx.theme().muted_foreground)
                                                 .child(
                                                     view.repository()
                                                         .map_or(0, |r| {
@@ -725,12 +717,58 @@ impl Render for Changes {
                     .track_scroll(&self.scroll),
                 )
             });
+        let changes = changes.when(!self.changes_collapsed, |panel| {
+            panel.child(
+                v_flex()
+                    .flex_shrink_0()
+                    .p_2()
+                    .gap_2()
+                    .border_t_1()
+                    .border_color(cx.theme().border)
+                    .child(
+                        Input::new(&self.message)
+                            .small()
+                            .disabled(self.is_busy() || self.repositories.is_empty()),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(format!(
+                                        "{} · {staged_count}",
+                                        glim_services::locale::tr("Staged files only")
+                                    )),
+                            )
+                            .child(
+                                Button::new("commit-staged")
+                                    .primary()
+                                    .small()
+                                    .label(glim_services::locale::tr("Commit"))
+                                    .tooltip(glim_services::locale::tr("Commit message · ⌘Enter"))
+                                    .disabled(
+                                        self.is_busy()
+                                            || self.loading
+                                            || staged_count == 0
+                                            || self.message.read(cx).value().trim().is_empty(),
+                                    )
+                                    .on_click(cx.listener(|view, _, window, cx| {
+                                        view.commit(window, cx);
+                                    })),
+                            ),
+                    ),
+            )
+        });
         let graph = self.graph_panel(cx);
         v_resizable("source-control-sections")
             .with_state(&self.split_layout)
             .child(
                 resizable_panel()
-                    .size(px(180.))
+                    .size(px(120.))
                     .flex_none()
                     .size_range(px(36.)..px(10000.))
                     .child(repositories),
