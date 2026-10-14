@@ -158,6 +158,8 @@ impl Workspace {
             .history_cursor
             .is_some_and(|i| i + 1 < self.history.len());
         h_flex()
+            .h(px(28.))
+            .items_center()
             .gap_1()
             .flex_shrink_0()
             .child(self.toolbar_button(ToolbarItem::new(ToolbarAction::Sidebar), cx))

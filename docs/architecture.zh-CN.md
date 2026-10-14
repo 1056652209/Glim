@@ -46,7 +46,7 @@ Workspace 管理标签、Explorer/Changes 实体、导航历史及异步加载�
 
 Mermaid、Graphviz、PlantUML、flowchart.js、WaveDrom 和 MathJax 及许可证均内嵌；本地 Salt/Chen 适配器仅覆盖部分语法。禁用图表外部资源、导航和下载，失败时保留源码。引擎维护见 [assets/markdown/README.md](../assets/markdown/README.md)。
 
-`services/formats`、`text_formats` 与 `vector_formats` 提供有界容器目录／文本提取、基础阅读投影和静态网格／位图字体图片，专用电子书阅读由 `services/books` 和 `reader/books` 提供，通用投影不执行文档代码。`services/media` 负责有界图片解码。其 `GifPlayback` 保留顺序解码器和有界合成／恢复缓冲区；`reader/media::GifReader` 持有可取消的播放任务，逐帧直接向 GPUI 提供 BGRA 像素并释放旧纹理。GIF 按原分辨率合成，显示帧最长边限制为 2048px；按绝对时间轴播放，使用两个预取批次（每批最多三帧／16 MiB），落后的中间帧不上传纹理，保留帧处置和有限循环语义，不走 GPUI 的整段动画缓存；隐藏标签暂停解码，关闭取消任务并释放纹理。各阅读器预算和边界见[格式与限制](file-format-support.zh-CN.md)。
+`services/formats`、`text_formats` 与 `vector_formats` 提供有界容器目录／文本提取、基础阅读投影和静态网格／位图字体图片，专用电子书阅读由 `services/books` 和 `reader/books` 提供，通用投影不执行文档代码。`services/media` 负责有界图片解码。独立打开的大 PNG 复用 `services/inline_images` 的 ImageIO 缩略图准备，通过已读取字节的临时快照保持预览与指纹一致；工作台加载期间立即显示状态提示。其 `GifPlayback` 保留顺序解码器和有界合成／恢复缓冲区；`reader/media::GifReader` 持有可取消的播放任务，逐帧直接向 GPUI 提供 BGRA 像素并释放旧纹理。GIF 按原分辨率合成，显示帧最长边限制为 2048px；按绝对时间轴播放，使用两个预取批次（每批最多三帧／16 MiB），落后的中间帧不上传纹理，保留帧处置和有限循环语义，不走 GPUI 的整段动画缓存；隐藏标签暂停解码，关闭取消任务并释放纹理。各阅读器预算和边界见[格式与限制](file-format-support.zh-CN.md)。
 
 `services/xmind` 从有界 ZIP 正文中读取新版 JSON 或旧版 XML，不提取附件；不依赖 UI 的工作表／主题模型包含备注、标签、游离根和关系端点。`reader/xmind` 持有工作表选择、折叠、缩放、滚动和详情；缓存布局，使用 GPUI 主题绘制可见节点／连接。阅读器只读，复用普通加载、刷新及更新会话路径。
 

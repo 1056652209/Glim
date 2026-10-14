@@ -527,7 +527,11 @@ impl Explorer {
                     .w(px(1.))
                     .bg(cx.theme().border.opacity(0.5))
             }))
-            .pl(px(8. + row.depth as f32 * 14.))
+            .pl(px(if row.depth == 0 {
+                0.
+            } else {
+                8. + row.depth as f32 * 14.
+            }))
             .pr_2()
             .child(
                 Button::new(entry_id(
@@ -567,11 +571,6 @@ impl Explorer {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .when(row.depth == 0 && row.entry.is_dir, |icon| {
-                                        // Root disclosure aligns with the sidebar navigation
-                                        // icons; keep labels and nested indentation unchanged.
-                                        icon.relative().left(px(-8.))
-                                    })
                                     .child(if row.entry.is_dir {
                                         // Keep the same icon box during loading; replacing
                                         // a font glyph with an ellipsis makes it flicker.

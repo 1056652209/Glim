@@ -103,25 +103,36 @@ pub fn read_image(path: &Path) -> Result<ImageDocument> {
             decoder.total_bytes() <= 512 * 1024 * 1024,
             "Decoded image exceeds 512 MiB"
         );
-        let decoded = image::DynamicImage::from_decoder(decoder)?;
-        let mut out = Cursor::new(Vec::new());
-        // Float EXR/HDR pixels must be converted before PNG encoding. This is an
-        // SDR preview, not a color-managed HDR mastering surface.
-        let preview = if matches!(
-            decoded,
-            image::DynamicImage::ImageRgb32F(_) | image::DynamicImage::ImageRgba32F(_)
-        ) {
-            image::DynamicImage::ImageRgba8(decoded.to_rgba8())
+        if ext == "png" && (width > 4000 || height > 4000) {
+            // ImageIO handles large PNG resizing/encoding without slow debug-build
+            // pixel loops. Read from the already captured snapshot, not the source
+            // path, so concurrent source changes cannot mix preview and fingerprint.
+            use std::io::Write;
+            let mut snapshot = tempfile::NamedTempFile::new()?;
+            snapshot.write_all(data)?;
+            drop(decoder);
+            crate::inline_images::thumbnail_png(snapshot.path(), 4000)?
         } else {
-            decoded
-        };
-        let preview = if preview.width() > 4000 || preview.height() > 4000 {
-            preview.thumbnail(4000, 4000)
-        } else {
-            preview
-        };
-        preview.write_to(&mut out, image::ImageFormat::Png)?;
-        out.into_inner()
+            let decoded = image::DynamicImage::from_decoder(decoder)?;
+            let mut out = Cursor::new(Vec::new());
+            // Float EXR/HDR pixels must be converted before PNG encoding. This is an
+            // SDR preview, not a color-managed HDR mastering surface.
+            let preview = if matches!(
+                decoded,
+                image::DynamicImage::ImageRgb32F(_) | image::DynamicImage::ImageRgba32F(_)
+            ) {
+                image::DynamicImage::ImageRgba8(decoded.to_rgba8())
+            } else {
+                decoded
+            };
+            let preview = if preview.width() > 4000 || preview.height() > 4000 {
+                preview.thumbnail(4000, 4000)
+            } else {
+                preview
+            };
+            preview.write_to(&mut out, image::ImageFormat::Png)?;
+            out.into_inner()
+        }
     };
     Ok(ImageDocument {
         path: std::path::absolute(path)?,

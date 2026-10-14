@@ -130,6 +130,22 @@ impl Render for Workspace {
                     .min_h_0()
                     .w_full()
                     .child(content)
+                    .when(self.loading && document_page, |view| {
+                        view.child(
+                            div()
+                                .absolute()
+                                .top(px(12.))
+                                .right(px(12.))
+                                .px_3()
+                                .py_2()
+                                .rounded(px(8.))
+                                .bg(cx.theme().background)
+                                .border_1()
+                                .border_color(cx.theme().border)
+                                .text_sm()
+                                .child(glim_services::locale::tr("Loading…")),
+                        )
+                    })
                     .child(
                         canvas(
                             |_, _, _| (),

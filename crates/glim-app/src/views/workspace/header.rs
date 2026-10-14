@@ -338,14 +338,19 @@ impl Workspace {
                     .child(
                         h_flex()
                             .absolute()
-                            .left(px(78.))
+                            .left(px(94.))
                             .top_0()
                             .h_full()
+                            .items_center()
                             .gap_2()
                             .child(
                                 div()
                                     .flex_shrink_0()
+                                    .h(px(28.))
+                                    .flex()
+                                    .items_center()
                                     .text_size(px(16.))
+                                    .line_height(px(16.))
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .child("Glim"),
                             )

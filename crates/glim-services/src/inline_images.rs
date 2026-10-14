@@ -40,6 +40,17 @@ pub fn from_bytes(bytes: &[u8]) -> Result<image::Frame> {
 }
 
 fn native_thumbnail(path: &Path) -> Result<image::Frame> {
+    let png = thumbnail_png(path, MAX_EDGE)?;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(png)).with_guessed_format()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_EDGE);
+    limits.max_image_height = Some(MAX_EDGE);
+    limits.max_alloc = Some(64 * 1024 * 1024);
+    reader.limits(limits);
+    Ok(image::Frame::new(reader.decode()?.into_rgba8()))
+}
+
+pub(crate) fn thumbnail_png(path: &Path, max_edge: u32) -> Result<Vec<u8>> {
     if let Ok((width, height)) = image::ImageReader::open(path)?
         .with_guessed_format()?
         .into_dimensions()
@@ -55,7 +66,7 @@ fn native_thumbnail(path: &Path) -> Result<image::Frame> {
     let result = Command::new("/usr/bin/sips")
         .args([
             "--resampleHeightWidthMax",
-            &MAX_EDGE.to_string(),
+            &max_edge.to_string(),
             "--setProperty",
             "format",
             "png",
@@ -74,16 +85,16 @@ fn native_thumbnail(path: &Path) -> Result<image::Frame> {
         String::from_utf8_lossy(&result.stderr).trim()
     );
     ensure!(
-        std::fs::metadata(&output)?.len() <= 20 * 1024 * 1024,
-        "Inline thumbnail exceeds 20 MiB"
+        std::fs::metadata(&output)?.len()
+            <= u64::from(max_edge) * u64::from(max_edge) * 4 + 1024 * 1024,
+        "Image thumbnail exceeds output budget"
     );
-    let mut reader = image::ImageReader::open(output)?;
-    let mut limits = image::Limits::default();
-    limits.max_image_width = Some(MAX_EDGE);
-    limits.max_image_height = Some(MAX_EDGE);
-    limits.max_alloc = Some(64 * 1024 * 1024);
-    reader.limits(limits);
-    Ok(image::Frame::new(reader.decode()?.into_rgba8()))
+    let (width, height) = image::ImageReader::open(&output)?.into_dimensions()?;
+    ensure!(
+        width > 0 && height > 0 && width <= max_edge && height <= max_edge,
+        "Invalid thumbnail dimensions"
+    );
+    Ok(std::fs::read(output)?)
 }
 
 fn decoded_preview(bytes: &[u8]) -> Result<image::Frame> {
