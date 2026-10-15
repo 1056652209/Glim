@@ -1,5 +1,6 @@
 //! Bounded, read-only inspection of executable files; never run the inspected file.
-use crate::binary::BytePreview;
+use crate::limits as reader_limits;
+use crate::{paged::TextPage, report::Report, work::Cancellation};
 use anyhow::{Context, Result, ensure};
 use object::{Object, ObjectSection, ObjectSegment, read::macho::FatArch};
 use std::{
@@ -8,7 +9,6 @@ use std::{
     io::{Read, Seek, SeekFrom},
     path::Path,
 };
-const LIMIT: u64 = 256 * 1024 * 1024;
 
 pub fn supports(path: &Path) -> bool {
     if !path.is_file() {
@@ -61,75 +61,73 @@ fn has_magic(bytes: &[u8]) -> bool {
             };
             let count = u32::from_be_bytes(count.try_into().unwrap());
             let cpu = u32::from_be_bytes(cpu.try_into().unwrap());
-            (1..=32).contains(&count)
-                && matches!(cpu, 7 | 12 | 18 | 0x01000007 | 0x0100000c | 0x01000012)
+            count > 0 && matches!(cpu, 7 | 12 | 18 | 0x01000007 | 0x0100000c | 0x01000012)
         }
         _ => false,
     }
 }
-pub fn read_preview(path: &Path) -> Result<BytePreview> {
-    let mut file = std::fs::File::open(path)?;
+pub fn read_preview(path: &Path) -> Result<TextPage> {
+    read_preview_cancellable(path, &Cancellation::default())
+}
+pub fn read_preview_cancellable(path: &Path, cancel: &Cancellation) -> Result<TextPage> {
+    let file = std::fs::File::open(path)?;
     let metadata = file.metadata()?;
     ensure!(
         metadata.is_file(),
         "Executable preview requires a regular file"
     );
-    ensure!(
-        metadata.len() <= LIMIT,
-        "Executable preview is limited to 256 MiB"
-    );
-    let mut bytes = Vec::new();
-    (&mut file).take(LIMIT + 1).read_to_end(&mut bytes)?;
-    ensure!(
-        bytes.len() as u64 <= LIMIT,
-        "Executable preview is limited to 256 MiB"
-    );
-    let mut text = format!(
-        "Executable · Read-only inspection\nFile: {}\nSize: {} bytes\n\n",
+    let mut prefix = Vec::new();
+    (&file)
+        .take(reader_limits::EXECUTABLE_HEX_BYTES as u64)
+        .read_to_end(&mut prefix)?;
+    let cache = object::read::ReadCache::new(crate::work::Reader {
+        inner: file,
+        cancel: cancel.clone(),
+    });
+    let mut text = Report::new()?;
+    writeln!(
+        text,
+        "Executable · Read-only inspection\nFile: {}\nSize: {} bytes\n",
         path.file_name().unwrap_or_default().to_string_lossy(),
-        bytes.len()
-    );
-    match object::FileKind::parse(bytes.as_slice()).context("Invalid executable header")? {
+        metadata.len()
+    )?;
+    match object::FileKind::parse(&cache).context("Invalid executable header")? {
         object::FileKind::MachOFat32 => {
-            let fat = object::read::macho::MachOFatFile32::parse(bytes.as_slice())?;
-            ensure!(
-                (1..=32).contains(&fat.arches().len()),
-                "Universal executable has too many architectures"
-            );
+            let fat = object::read::macho::MachOFatFile32::parse(&cache)?;
             writeln!(
                 text,
                 "Container: Universal Mach-O · {} architectures\n",
                 fat.arches().len()
             )?;
             for arch in fat.arches() {
-                describe(arch.data(bytes.as_slice())?, &mut text)?;
+                cancel.check()?;
+                let (offset, size) = arch.file_range();
+                describe(cache.range(offset, size), &mut text, cancel)?;
             }
         }
         object::FileKind::MachOFat64 => {
-            let fat = object::read::macho::MachOFatFile64::parse(bytes.as_slice())?;
-            ensure!(
-                (1..=32).contains(&fat.arches().len()),
-                "Universal executable has too many architectures"
-            );
+            let fat = object::read::macho::MachOFatFile64::parse(&cache)?;
             writeln!(
                 text,
                 "Container: Universal Mach-O · {} architectures\n",
                 fat.arches().len()
             )?;
             for arch in fat.arches() {
-                describe(arch.data(bytes.as_slice())?, &mut text)?;
+                cancel.check()?;
+                let (offset, size) = arch.file_range();
+                describe(cache.range(offset, size), &mut text, cancel)?;
             }
         }
-        _ => describe(&bytes, &mut text)?,
+        _ => describe(&cache, &mut text, cancel)?,
     }
     writeln!(
         text,
         "\nHex preview · first {} bytes\nOffset    Hex bytes                                         ASCII",
-        bytes.len().min(4096)
+        prefix.len()
     )?;
-    for (row, chunk) in bytes
+    for (row, chunk) in prefix
         .iter()
-        .take(4096)
+        .take(reader_limits::EXECUTABLE_HEX_BYTES)
         .copied()
         .collect::<Vec<_>>()
         .chunks(16)
@@ -152,12 +150,13 @@ pub fn read_preview(path: &Path) -> Result<BytePreview> {
         }
         text.push('\n');
     }
-    Ok(BytePreview {
-        path: std::path::absolute(path)?,
-        text,
-    })
+    text.finish(path)
 }
-fn describe(bytes: &[u8], text: &mut String) -> Result<()> {
+fn describe<'a, R: object::read::ReadRef<'a>>(
+    bytes: R,
+    text: &mut Report,
+    cancel: &Cancellation,
+) -> Result<()> {
     let file = object::File::parse(bytes).context("Invalid or unsupported executable structure")?;
     ensure!(
         matches!(
@@ -180,8 +179,9 @@ fn describe(bytes: &[u8], text: &mut String) -> Result<()> {
         },
         file.entry()
     )?;
-    text.push_str("Segments (first 128)\nAddress           Size              File offset       File size         Name\n");
-    for segment in file.segments().take(128) {
+    text.push_str("Segments (preview)\nAddress           Size              File offset       File size         Name\n");
+    for segment in file.segments() {
+        cancel.check()?;
         let (offset, size) = segment.file_range();
         writeln!(
             text,
@@ -196,12 +196,12 @@ fn describe(bytes: &[u8], text: &mut String) -> Result<()> {
                 .flatten()
                 .unwrap_or("")
                 .chars()
-                .take(384)
                 .collect::<String>()
         )?;
     }
-    text.push_str("\nSections (first 256)\nAddress           Size              Name\n");
-    for section in file.sections().take(256) {
+    text.push_str("\nSections (preview)\nAddress           Size              Name\n");
+    for section in file.sections() {
+        cancel.check()?;
         writeln!(
             text,
             "{:016x}  {:016x}  {}",
@@ -211,12 +211,11 @@ fn describe(bytes: &[u8], text: &mut String) -> Result<()> {
                 .name()
                 .unwrap_or("<invalid name>")
                 .chars()
-                .take(384)
                 .collect::<String>()
         )?;
     }
-    text.push_str("\nImported libraries (up to 256 names; bounded header scan)\n");
-    match libraries(&file) {
+    text.push_str("\nImported libraries\n");
+    match libraries(&file, cancel) {
         Ok(libraries) => {
             if libraries.is_empty() {
                 text.push_str("No library names available in these headers.\n");
@@ -228,35 +227,27 @@ fn describe(bytes: &[u8], text: &mut String) -> Result<()> {
         Err(_) => text.push_str("Dependency metadata unavailable or malformed.\n"),
     }
     text.push('\n');
-    ensure!(
-        text.len() <= 2 * 1024 * 1024,
-        "Executable metadata exceeds preview budget"
-    );
     Ok(())
 }
-fn libraries(file: &object::File<'_>) -> Result<BTreeSet<String>> {
+fn libraries<'a, R: object::read::ReadRef<'a>>(
+    file: &object::File<'a, R>,
+    cancel: &Cancellation,
+) -> Result<BTreeSet<String>> {
     use object::read::elf::Dyn;
     let mut result = BTreeSet::new();
-    let short = |bytes: &[u8]| {
-        String::from_utf8_lossy(&bytes[..bytes.len().min(1536)])
-            .chars()
-            .take(384)
-            .collect::<String>()
-    };
+    let short = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
     macro_rules! macho {
         ($file:expr) => {{
             let f = $file;
             let mut commands = f.macho_load_commands()?;
-            for _ in 0..512 {
+            loop {
+                cancel.check()?;
                 let Some(command) = commands.next()? else {
                     break;
                 };
                 if command.cmd() != object::macho::LC_ID_DYLIB {
                     if let Some(dylib) = command.dylib()? {
                         result.insert(short(command.string(f.endian(), dylib.dylib.name)?));
-                        if result.len() >= 256 {
-                            break;
-                        }
                     }
                 }
             }
@@ -266,7 +257,8 @@ fn libraries(file: &object::File<'_>) -> Result<BTreeSet<String>> {
         ($file:expr) => {{
             if let Some(table) = $file.import_table()? {
                 let mut descriptors = table.descriptors()?;
-                for _ in 0..256 {
+                loop {
+                    cancel.check()?;
                     let Some(descriptor) = descriptors.next()? else {
                         break;
                     };
@@ -283,12 +275,17 @@ fn libraries(file: &object::File<'_>) -> Result<BTreeSet<String>> {
             let sections = f.elf_section_table();
             if let Some((dynamic, index)) = sections.dynamic(f.endian(), f.data())? {
                 let strings = sections.strings(f.endian(), f.data(), index)?;
-                for entry in dynamic.iter().take(4096) {
+                for entry in dynamic.iter() {
                     if entry.tag32(f.endian()) == Some(object::elf::DT_NEEDED) {
-                        result.insert(short(entry.string(f.endian(), strings)?));
-                        if result.len() >= 256 {
-                            break;
-                        }
+                        result.insert(short(
+                            strings
+                                .get(
+                                    entry
+                                        .val32(f.endian())
+                                        .context("Invalid ELF string offset")?,
+                                )
+                                .map_err(|_| anyhow::anyhow!("Invalid ELF string table"))?,
+                        ));
                     }
                 }
             }

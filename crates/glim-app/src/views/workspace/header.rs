@@ -1,7 +1,8 @@
 use super::Workspace;
+use glim_services::limits as reader_limits;
 use gpui_kit::{
     component::{
-        ActiveTheme, Sizable, TitleBar,
+        ActiveTheme, Disableable, Sizable, TitleBar,
         button::{Button, ButtonCustomVariant, ButtonVariants},
         h_flex,
         input::Input,
@@ -75,33 +76,41 @@ impl Workspace {
         }
     }
     pub(super) fn search_files(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_offset = 0;
+        self.load_search_page(window, cx);
+    }
+    fn load_search_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let query = self.search.read(cx).value().to_string();
         self.results.clear();
         self.search_task = None;
+        self.search_more = false;
         if query.trim().is_empty() {
+            self.search_offset = 0;
             cx.notify();
             return;
         }
         let roots = self.roots.clone();
+        let offset = self.search_offset;
+        let (cancel, guard) = glim_services::work::Cancellation::task();
         self.search_task = Some(cx.spawn_in(window, async move |view, cx| {
+            let _guard = guard;
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(150))
                 .await;
-            let results = cx
+            let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let mut results = roots
-                        .iter()
-                        .flat_map(|root| glim_services::workspace::search_files(root, &query))
-                        .collect::<Vec<_>>();
-                    results.sort();
-                    results.dedup();
-                    results.truncate(60);
-                    results
+                    glim_services::workspace::search_page(&roots, &query, offset, &cancel)
                 })
                 .await;
             let _ = view.update(cx, |view, cx| {
-                view.results = results;
+                match result {
+                    Ok(page) => {
+                        view.results = page.paths;
+                        view.search_more = page.more;
+                    }
+                    Err(error) => view.error = Some(format!("{error:#}").into()),
+                }
                 cx.notify();
             });
         }));
@@ -209,6 +218,29 @@ impl Workspace {
     }
 
     pub(super) fn header(&self, cx: &mut Context<Self>) -> AnyElement {
+        if self.file_fullscreen {
+            let name = self
+                .active_reader()
+                .map(|reader| {
+                    reader
+                        .path
+                        .file_name()
+                        .unwrap_or(reader.path.as_os_str())
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .unwrap_or_default();
+            return workspace_title_bar(
+                h_flex()
+                    .size_full()
+                    .pl(px(94.))
+                    .pr_3()
+                    .gap_3()
+                    .child(div().flex_1().min_w_0().truncate().text_sm().child(name))
+                    .child(self.workspace_toolbar(cx)),
+                cx,
+            );
+        }
         let search = h_flex()
             .relative()
             .w(relative(0.34))
@@ -228,7 +260,7 @@ impl Workspace {
                     .focus_bordered(true)
                     .w_full(),
             )
-            .when(!self.results.is_empty(), |bar| {
+            .when(!self.results.is_empty() || self.search_offset > 0, |bar| {
                 bar.child(
                     deferred(
                         v_flex()
@@ -248,6 +280,8 @@ impl Workspace {
                             .border_color(cx.theme().border)
                             .on_mouse_down_out(cx.listener(|v, _, _, cx| {
                                 v.results.clear();
+                                v.search_offset = 0;
+                                v.search_more = false;
                                 v.search_task = None;
                                 cx.notify();
                             }))
@@ -308,12 +342,47 @@ impl Workspace {
                                     .on_click(cx.listener(move |v, _, w, cx| {
                                         v.search.update(cx, |s, cx| s.set_value("", w, cx));
                                         v.results.clear();
+                                        v.search_offset = 0;
+                                        v.search_more = false;
                                         v.search_task = None;
                                         v.sidebar = super::Sidebar::Files;
                                         v.sidebar_visible = true;
                                         v.open_path(target.clone(), w, cx);
                                     }))
-                            })),
+                            }))
+                            .child(
+                                h_flex()
+                                    .gap_2()
+                                    .p_2()
+                                    .child(
+                                        Button::new("search-previous")
+                                            .ghost()
+                                            .small()
+                                            .label(glim_services::locale::tr("Previous"))
+                                            .disabled(self.search_offset == 0)
+                                            .on_click(cx.listener(|view, _, window, cx| {
+                                                view.search_offset =
+                                                    view.search_offset.saturating_sub(
+                                                        reader_limits::WORKSPACE_SEARCH_RESULTS,
+                                                    );
+                                                view.load_search_page(window, cx);
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("search-next")
+                                            .ghost()
+                                            .small()
+                                            .label(glim_services::locale::tr("Next page"))
+                                            .disabled(!self.search_more)
+                                            .on_click(cx.listener(|view, _, window, cx| {
+                                                view.search_offset =
+                                                    view.search_offset.saturating_add(
+                                                        reader_limits::WORKSPACE_SEARCH_RESULTS,
+                                                    );
+                                                view.load_search_page(window, cx);
+                                            })),
+                                    ),
+                            ),
                     )
                     .with_priority(1),
                 )
@@ -325,6 +394,8 @@ impl Workspace {
             .on_key_down(cx.listener(|v, event: &KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
                     v.results.clear();
+                    v.search_offset = 0;
+                    v.search_more = false;
                     v.search_task = None;
                     cx.notify();
                 }

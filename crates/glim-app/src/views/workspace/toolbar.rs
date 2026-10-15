@@ -21,6 +21,7 @@ enum ToolbarAction {
     Inline,
     ViewFile,
     WordWrap,
+    FileFullscreen,
     Update,
 }
 
@@ -44,6 +45,7 @@ impl ToolbarAction {
             Self::Inline => "diff-inline",
             Self::ViewFile => "show-file",
             Self::WordWrap => "word-wrap",
+            Self::FileFullscreen => "file-fullscreen",
             Self::Update => "update-available",
         }
     }
@@ -61,6 +63,7 @@ impl ToolbarItem {
             ToolbarAction::Inline => ("Inline", Some(IconName::Rows2)),
             ToolbarAction::ViewFile => ("View file", Some(IconName::FileText)),
             ToolbarAction::WordWrap => ("Word wrap", None),
+            ToolbarAction::FileFullscreen => ("Enter File Fullscreen", None),
             ToolbarAction::Update => ("Update Available", Some(IconName::Download)),
         };
         Self {
@@ -127,6 +130,13 @@ impl Workspace {
         let label = glim_services::locale::tr(item.label);
         let icon = match item.icon {
             Some(icon) => Icon::new(icon),
+            None if matches!(action, ToolbarAction::FileFullscreen) => {
+                Icon::empty().path(if self.file_fullscreen {
+                    "navigation/file-fullscreen-exit.svg"
+                } else {
+                    "navigation/file-fullscreen.svg"
+                })
+            }
             None => Icon::empty().path("navigation/wrap.svg"),
         };
         Button::new(action.id())
@@ -169,13 +179,21 @@ impl Workspace {
     }
 
     pub(super) fn workspace_toolbar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let document = if self.page == Page::Document {
+        let mut document = if self.page == Page::Document {
             self.active_reader()
                 .map(|r| document_items(r, self.word_wrap))
                 .unwrap_or_default()
         } else {
             Vec::new()
         };
+        if self.page == Page::Document && self.active_reader().is_some() {
+            let mut fullscreen = ToolbarItem::new(ToolbarAction::FileFullscreen);
+            fullscreen.selected = self.file_fullscreen;
+            if self.file_fullscreen {
+                fullscreen.label = "Exit File Fullscreen";
+            }
+            document.push(fullscreen);
+        }
         let has_update = crate::app::updates::state(cx)
             .is_some_and(|state| state.read(cx).snapshot.has_update());
         let border = cx.theme().border;
@@ -234,6 +252,17 @@ impl Workspace {
             ToolbarAction::WordWrap => {
                 if self.active_reader().is_some_and(|r| r.can_word_wrap()) {
                     self.toggle_word_wrap(window, cx);
+                }
+            }
+            ToolbarAction::FileFullscreen => {
+                if self.page == Page::Document && self.active_reader().is_some() {
+                    self.file_fullscreen = !self.file_fullscreen;
+                    self.results.clear();
+                    self.search_task = None;
+                    self.history_swipe = None;
+                    // Keep the existing reader and its editing/preview state alive.
+                    window.focus(&self.focus, cx);
+                    cx.notify();
                 }
             }
             ToolbarAction::Update => crate::app::updates::show(window, cx),

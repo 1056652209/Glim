@@ -1,5 +1,6 @@
 //! Offline diagram preparation. All parsing, child processes and rasterization
 //! run on the caller's background executor; document text is never a script.
+use crate::limits as reader_limits;
 use anyhow::{Context, Result, ensure};
 use markdown::{ParseOptions, mdast::Node};
 use std::{
@@ -12,8 +13,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const MAX_DIAGRAMS: usize = 128;
-pub const MAX_SOURCE: usize = 256 * 1024;
+pub const MAX_DIAGRAMS: usize = reader_limits::DIAGRAM_BLOCKS;
+pub const MAX_SOURCE: usize = reader_limits::DIAGRAM_SOURCE_BYTES;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Diagram {
@@ -191,7 +192,7 @@ pub fn render(
             publish(
                 diagram,
                 Err(crate::locale::tr(
-                    "Diagram exceeds preview budget (256 KiB per block, 128 blocks per document)",
+                    "Diagram source size or block count exceeds the preview budget",
                 )),
             );
         } else {
@@ -230,7 +231,10 @@ pub fn render(
         .spawn()
         .context("Cannot start offline diagram renderer")?;
     let started = Instant::now();
-    let deadline = Duration::from_secs(15 + requests.len() as u64 * 8);
+    let deadline = Duration::from_secs(
+        reader_limits::DIAGRAM_STARTUP_SECONDS
+            + requests.len() as u64 * reader_limits::DIAGRAM_BLOCK_SECONDS,
+    );
     static FONTS: OnceLock<Arc<resvg::usvg::fontdb::Database>> = OnceLock::new();
     let fonts = FONTS
         .get_or_init(|| {
@@ -278,7 +282,7 @@ pub fn render(
         let final_values = if finished {
             std::fs::metadata(&output)
                 .ok()
-                .filter(|m| m.len() <= 128 * 1024 * 1024)
+                .filter(|m| m.len() <= reader_limits::DIAGRAM_IPC_BYTES)
                 .and_then(|_| std::fs::read(&output).ok())
                 .and_then(|bytes| serde_json::from_slice::<Vec<serde_json::Value>>(&bytes).ok())
                 .unwrap_or_default()
@@ -292,7 +296,7 @@ pub fn render(
             let slot_path = output.with_extension(format!("{index}.json"));
             let slot = std::fs::metadata(&slot_path)
                 .ok()
-                .filter(|m| m.len() <= 16 * 1024 * 1024)
+                .filter(|m| m.len() <= reader_limits::DIAGRAM_SLOT_BYTES)
                 .and_then(|_| std::fs::read(slot_path).ok())
                 .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
             let value = slot.as_ref().or_else(|| final_values.get(index));
@@ -310,11 +314,11 @@ pub fn render(
                         bytes_used += image.png.len();
                         pixels_used += u64::from(image.width) * u64::from(image.height) * 4;
                         ensure!(
-                            bytes_used <= 64 * 1024 * 1024,
+                            bytes_used <= reader_limits::DIAGRAM_AGGREGATE_ENCODED_BYTES,
                             "Diagram image budget exceeded"
                         );
                         ensure!(
-                            pixels_used <= 128 * 1024 * 1024,
+                            pixels_used <= reader_limits::DIAGRAM_AGGREGATE_DECODED_BYTES,
                             "Decoded diagram image budget exceeded"
                         );
                         Ok(image)
@@ -343,16 +347,24 @@ fn rasterize(
     fonts: Arc<resvg::usvg::fontdb::Database>,
     baseline: Option<f64>,
 ) -> Result<DiagramImage> {
-    ensure!(svg.len() <= 8 * 1024 * 1024, "SVG exceeds 8 MiB");
+    ensure!(
+        svg.len() <= reader_limits::DIAGRAM_SVG_BYTES,
+        "SVG exceeds the preview size limit"
+    );
     let options = resvg::usvg::Options {
         fontdb: fonts,
         ..Default::default()
     };
     let tree = resvg::usvg::Tree::from_str(svg, &options)?;
     let size = tree.size();
-    let scale = (2400.0 / size.width().max(size.height())).min(2.0);
-    let width = (size.width() * scale).ceil().clamp(1.0, 2400.0) as u32;
-    let height = (size.height() * scale).ceil().clamp(1.0, 2400.0) as u32;
+    let scale = (reader_limits::DIAGRAM_PREVIEW_EDGE as f32 / size.width().max(size.height()))
+        .min(reader_limits::DIAGRAM_MAX_UPSCALE as f32);
+    let width = (size.width() * scale)
+        .ceil()
+        .clamp(1.0, reader_limits::DIAGRAM_PREVIEW_EDGE as f32) as u32;
+    let height = (size.height() * scale)
+        .ceil()
+        .clamp(1.0, reader_limits::DIAGRAM_PREVIEW_EDGE as f32) as u32;
     let mut pixmap =
         resvg::tiny_skia::Pixmap::new(width, height).context("Invalid diagram dimensions")?;
     resvg::render(

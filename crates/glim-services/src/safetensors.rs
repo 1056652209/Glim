@@ -1,136 +1,151 @@
-//! Header-only inspection. Tensor payloads are never read or executed.
-use crate::binary::BytePreview;
+//! Stream header metadata to a pageable report without reading tensor payloads.
+use crate::{paged::TextPage, report::Report, work::Cancellation};
 use anyhow::{Context, Result, ensure};
-use std::{collections::BTreeMap, fmt::Write as _, fs::File, io::Read, path::Path};
+use serde::de::{DeserializeSeed, Error, MapAccess, Visitor};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Write as _},
+    fs::File,
+    io::{BufReader, Read},
+    path::Path,
+};
 
-pub fn read_preview(path: &Path) -> Result<BytePreview> {
+pub fn read_preview(path: &Path) -> Result<TextPage> {
+    read_preview_cancellable(path, &Cancellation::default())
+}
+pub fn read_preview_cancellable(path: &Path, cancel: &Cancellation) -> Result<TextPage> {
     let mut file = File::open(path)?;
     let size = file.metadata()?.len();
-    let mut prefix = [0u8; 8];
+    let mut prefix = [0; 8];
     file.read_exact(&mut prefix)
         .context("Missing safetensors header length")?;
     let length = u64::from_le_bytes(prefix);
     ensure!(
-        length <= 32 * 1024 * 1024,
-        "Safetensors header exceeds the 32 MiB preview budget"
-    );
-    ensure!(
         length <= size.saturating_sub(8),
         "Truncated safetensors header"
     );
-    let mut bytes = vec![0; length as usize];
-    file.read_exact(&mut bytes)?;
-    ensure!(
-        bytes.first() == Some(&b'{'),
-        "Invalid safetensors JSON header"
-    );
-    let header: serde_json::Value = serde_json::from_slice(&bytes)?;
-    let entries = header
-        .as_object()
-        .context("Expected a safetensors object")?;
     let payload = size - 8 - length;
-    let mut types = BTreeMap::<&str, usize>::new();
-    let mut parameters = 0u128;
-    let mut count = 0usize;
-    let mut rows = String::new();
-    for (name, tensor) in entries {
-        if name == "__metadata__" {
-            continue;
-        }
-        let dtype = tensor["dtype"].as_str().context("Missing tensor dtype")?;
-        let shape = tensor["shape"].as_array().context("Missing tensor shape")?;
-        let mut elements = 1u128;
-        for dimension in shape {
-            elements = elements
-                .checked_mul(dimension.as_u64().context("Invalid tensor dimension")? as u128)
-                .context("Tensor shape overflow")?;
-        }
-        parameters = parameters
-            .checked_add(elements)
-            .context("Parameter count overflow")?;
-        let offsets = tensor["data_offsets"]
-            .as_array()
-            .context("Missing tensor offsets")?;
-        ensure!(offsets.len() == 2, "Invalid tensor offsets");
-        let begin = offsets[0].as_u64().context("Invalid tensor offset")?;
-        let end = offsets[1].as_u64().context("Invalid tensor offset")?;
-        ensure!(
-            begin <= end && end <= payload,
-            "Tensor extends beyond the file"
-        );
-        *types.entry(dtype).or_default() += 1;
-        count += 1;
-        // Bound the rendered report independently of header size and tensor count.
-        if count <= 10000 && rows.len() < 2 * 1024 * 1024 {
-            writeln!(
-                rows,
-                "{}  ·  {}  ·  {}  ·  {} bytes",
-                clipped(name, 200),
-                clipped(dtype, 40),
-                shape
-                    .iter()
-                    .take(32)
-                    .map(|d| d.to_string())
-                    .collect::<Vec<_>>()
-                    .join(" × ")
-                    + if shape.len() > 32 {
-                        " × …"
-                    } else if shape.is_empty() {
-                        "[] (scalar)"
-                    } else {
-                        ""
-                    },
-                end - begin
-            )?;
-        }
-    }
-    let mut text = format!(
-        "SAFETENSORS\n\nFile size       {size} bytes\nHeader          {length} bytes\nTensor payload  {payload} bytes\nTensors         {count}\nParameters      {parameters}\n\nPRECISION\n"
-    );
-    let type_count = types.len();
-    for (dtype, count) in types.into_iter().take(100) {
-        writeln!(text, "{:<12} {count} tensors", clipped(dtype, 40))?;
-    }
-    if type_count > 100 {
-        text.push_str("… Precision listing truncated.\n");
-    }
-    if let Some(metadata) = entries.get("__metadata__") {
-        let metadata = metadata.as_object().context("Invalid metadata map")?;
-        text.push_str("\nMETADATA\n");
-        for (key, value) in metadata.iter().take(100) {
-            writeln!(
-                text,
-                "{}: {}",
-                clipped(key, 100),
-                clipped(
-                    value.as_str().context("Metadata values must be strings")?,
-                    10000
-                )
-            )?;
-        }
-        if metadata.len() > 100 {
-            text.push_str("… Metadata preview limited to 100 entries.\n");
-        }
-    }
-    text.push_str("\nTENSORS · name / dtype / shape / storage\n");
-    text.push_str(&rows);
-    if count > 10000 || rows.len() >= 2 * 1024 * 1024 {
-        text.push_str("… Tensor listing truncated to the preview budget.\n");
+    let mut text = Report::new()?;
+    writeln!(
+        text,
+        "SAFETENSORS\n\nFile size       {size} bytes\nHeader          {length} bytes\nTensor payload  {payload} bytes\n\nTENSORS AND METADATA"
+    )?;
+    let input = crate::work::Reader {
+        inner: file.take(length),
+        cancel: cancel.clone(),
+    };
+    let mut decoder = serde_json::Deserializer::from_reader(BufReader::new(input));
+    let mut header = Header {
+        text: &mut text,
+        payload,
+        count: 0,
+        parameters: 0,
+        types: BTreeMap::new(),
+        cancel,
+    };
+    (&mut header).deserialize(&mut decoder)?;
+    decoder.end()?;
+    let count = header.count;
+    let parameters = header.parameters;
+    let types = std::mem::take(&mut header.types);
+    drop(header);
+    writeln!(
+        text,
+        "\nTensors         {count}\nParameters      {parameters}\n\nPRECISION"
+    )?;
+    for (dtype, count) in types {
+        writeln!(text, "{dtype:<12} {count} tensors")?;
     }
     text.push_str("\nHeader inspection only; weights were not loaded. Offsets are range-checked; this is not full model validation.\n");
-    Ok(BytePreview {
-        path: std::path::absolute(path)?,
-        text,
-    })
+    text.finish(path)
 }
-fn clipped(value: &str, limit: usize) -> String {
-    let mut result: String = value
-        .chars()
-        .take(limit)
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect();
-    if value.chars().count() > limit {
-        result.push('…');
+
+struct Header<'a> {
+    text: &'a mut Report,
+    payload: u64,
+    count: u64,
+    parameters: u128,
+    types: BTreeMap<String, u64>,
+    cancel: &'a Cancellation,
+}
+impl<'de> DeserializeSeed<'de> for &mut Header<'_> {
+    type Value = ();
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        decoder: D,
+    ) -> std::result::Result<(), D::Error> {
+        decoder.deserialize_map(self)
     }
-    result
+}
+impl<'de> Visitor<'de> for &mut Header<'_> {
+    type Value = ();
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a safetensors header object")
+    }
+    fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> std::result::Result<(), M::Error> {
+        while let Some(name) = map.next_key::<String>()? {
+            self.cancel.check().map_err(M::Error::custom)?;
+            if name == "__metadata__" {
+                map.next_value_seed(Metadata(self.text))?;
+                continue;
+            }
+            #[derive(serde::Deserialize)]
+            struct Tensor {
+                dtype: String,
+                shape: Vec<u64>,
+                data_offsets: [u64; 2],
+            }
+            let tensor: Tensor = map.next_value()?;
+            let [begin, end] = tensor.data_offsets;
+            if begin > end || end > self.payload {
+                return Err(M::Error::custom("Tensor extends beyond the file"));
+            }
+            let elements = tensor
+                .shape
+                .iter()
+                .try_fold(1u128, |n, dim| n.checked_mul(u128::from(*dim)))
+                .ok_or_else(|| M::Error::custom("Tensor shape overflow"))?;
+            self.parameters = self
+                .parameters
+                .checked_add(elements)
+                .ok_or_else(|| M::Error::custom("Parameter count overflow"))?;
+            self.count += 1;
+            *self.types.entry(tensor.dtype.clone()).or_default() += 1;
+            write!(self.text, "{name}  ·  {}  ·  ", tensor.dtype).map_err(M::Error::custom)?;
+            if tensor.shape.is_empty() {
+                self.text.push_str("[] (scalar)");
+            }
+            for (index, dimension) in tensor.shape.iter().enumerate() {
+                if index > 0 {
+                    self.text.push_str(" × ");
+                }
+                write!(self.text, "{dimension}").map_err(M::Error::custom)?;
+            }
+            writeln!(self.text, "  ·  {} bytes", end - begin).map_err(M::Error::custom)?;
+        }
+        Ok(())
+    }
+}
+struct Metadata<'a>(&'a mut Report);
+impl<'de> DeserializeSeed<'de> for Metadata<'_> {
+    type Value = ();
+    fn deserialize<D: serde::Deserializer<'de>>(
+        self,
+        decoder: D,
+    ) -> std::result::Result<(), D::Error> {
+        decoder.deserialize_map(self)
+    }
+}
+impl<'de> Visitor<'de> for Metadata<'_> {
+    type Value = ();
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("string metadata")
+    }
+    fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> std::result::Result<(), M::Error> {
+        self.0.push_str("\nMETADATA\n");
+        while let Some((key, value)) = map.next_entry::<String, String>()? {
+            writeln!(self.0, "{key}: {value}").map_err(M::Error::custom)?;
+        }
+        Ok(())
+    }
 }

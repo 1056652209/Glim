@@ -1,10 +1,13 @@
+use crate::limits as reader_limits;
 use std::{fs::File, io::Read, path::Path};
 
 use anyhow::{Context, Result, ensure};
 use glim_core::{Document, DocumentKind};
 
 /// Editable text budget; larger files use bounded, read-only windows.
-pub const MAX_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
+pub const MAX_DOCUMENT_BYTES: u64 = reader_limits::TEXT_EDITABLE_BYTES;
+
+pub(crate) static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub fn read_document(path: &Path) -> Result<Document> {
     ensure!(path.is_file(), "Not a regular file: {}", path.display());
@@ -19,7 +22,7 @@ pub fn read_document(path: &Path) -> Result<Document> {
     file.take(MAX_DOCUMENT_BYTES + 1).read_to_end(&mut bytes)?;
     ensure!(
         bytes.len() as u64 <= MAX_DOCUMENT_BYTES,
-        "File exceeds the 32 MiB editing limit: {}",
+        "File exceeds the editing size limit: {}",
         path.display()
     );
     ensure!(
@@ -40,14 +43,9 @@ pub fn read_document(path: &Path) -> Result<Document> {
 /// A same-directory temporary file avoids truncation on a failed write.
 pub fn save_document(path: &Path, expected: &str, text: &str) -> Result<()> {
     use std::io::Write;
-    static SAVES: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = SAVES
+    let _guard = SAVE_LOCK
         .lock()
         .map_err(|_| anyhow::anyhow!("Save lock unavailable"))?;
-    ensure!(
-        text.len() as u64 <= MAX_DOCUMENT_BYTES,
-        "File exceeds the 32 MiB editing limit"
-    );
     ensure!(
         !text.contains('\0'),
         "Text contains a null byte and cannot be reopened as a supported text file"

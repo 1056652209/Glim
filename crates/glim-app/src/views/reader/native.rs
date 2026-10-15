@@ -22,6 +22,11 @@ pub(super) struct NativeReader {
     obscured: bool,
 }
 impl NativeReader {
+    pub fn image_stamp(&self) -> Option<(u64, Option<std::time::SystemTime>)> {
+        self.prepared
+            .as_ref()
+            .and_then(|prepared| prepared.image_stamp)
+    }
     pub fn new(path: PathBuf, folder: bool, shuffle: bool, cx: &mut Context<Self>) -> Self {
         Self::with_playback(path, folder, shuffle, true, cx)
     }
@@ -61,10 +66,12 @@ impl NativeReader {
         let folder = self.folder;
         let shuffle = self.shuffle;
         let autoplay = self.autoplay;
+        let (cancel, guard) = glim_services::work::Cancellation::task();
         let work = cx.background_executor().spawn(async move {
-            glim_services::preview::prepare(&path, folder, shuffle, autoplay)
+            glim_services::preview::prepare_cancellable(&path, folder, shuffle, autoplay, &cancel)
         });
         self.task = Some(cx.spawn(async move |view, cx| {
+            let _guard = guard;
             let result = work.await;
             let _ = view.update(cx, |v, cx| {
                 v.task = None;

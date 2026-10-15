@@ -1,4 +1,5 @@
 //! Bounded raster previews for inline document images. Call from a background executor.
+use crate::limits as reader_limits;
 use anyhow::{Context, Result, ensure};
 use std::{
     io::Write,
@@ -7,63 +8,65 @@ use std::{
     sync::Mutex,
 };
 
-const MAX_EDGE: u32 = 2048;
+const MAX_EDGE: u32 = reader_limits::INLINE_IMAGE_PREVIEW_EDGE;
 // Avoid simultaneous full-size native decode work for a document containing many images.
 static PREPARATION: Mutex<()> = Mutex::new(());
 
 pub fn from_file(path: &Path) -> Result<image::Frame> {
-    ensure!(
-        std::fs::metadata(path)?.len() <= 128 * 1024 * 1024,
-        "Inline image exceeds 128 MiB"
-    );
+    from_file_cancellable(path, &crate::work::Cancellation::default())
+}
+pub fn from_file_cancellable(
+    path: &Path,
+    cancel: &crate::work::Cancellation,
+) -> Result<image::Frame> {
+    cancel.check()?;
     let _guard = PREPARATION
         .lock()
         .map_err(|_| anyhow::anyhow!("Image preparation was interrupted"))?;
-    if path
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("svg"))
-    {
-        let document = crate::media::read_image(path)?;
-        return decoded_preview(&document.png);
-    }
-    native_thumbnail(path)
+    cancel.check()?;
+    native_thumbnail(path, cancel)
 }
 
 pub fn from_bytes(bytes: &[u8]) -> Result<image::Frame> {
-    ensure!(
-        bytes.len() <= 20 * 1024 * 1024,
-        "Inline image exceeds 20 MiB"
-    );
     let mut file = tempfile::NamedTempFile::new()?;
     file.write_all(bytes)?;
     from_file(file.path())
 }
 
-fn native_thumbnail(path: &Path) -> Result<image::Frame> {
-    let png = thumbnail_png(path, MAX_EDGE)?;
+fn native_thumbnail(path: &Path, cancel: &crate::work::Cancellation) -> Result<image::Frame> {
+    let png = thumbnail_png_cancellable(path, MAX_EDGE, cancel)?;
     let mut reader = image::ImageReader::new(std::io::Cursor::new(png)).with_guessed_format()?;
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(MAX_EDGE);
     limits.max_image_height = Some(MAX_EDGE);
-    limits.max_alloc = Some(64 * 1024 * 1024);
+    limits.max_alloc = Some(reader_limits::INLINE_IMAGE_DECODED_BYTES);
     reader.limits(limits);
     Ok(image::Frame::new(reader.decode()?.into_rgba8()))
 }
 
 pub(crate) fn thumbnail_png(path: &Path, max_edge: u32) -> Result<Vec<u8>> {
-    if let Ok((width, height)) = image::ImageReader::open(path)?
-        .with_guessed_format()?
-        .into_dimensions()
-    {
-        ensure!(
-            width > 0 && height > 0 && u64::from(width) * u64::from(height) <= 100_000_000,
-            "Inline image exceeds 100 megapixels"
-        );
-    }
+    thumbnail_png_cancellable(path, max_edge, &crate::work::Cancellation::default())
+}
+pub(crate) fn thumbnail_png_cancellable(
+    path: &Path,
+    max_edge: u32,
+    cancel: &crate::work::Cancellation,
+) -> Result<Vec<u8>> {
+    cancel.check()?;
     let directory = tempfile::tempdir()?;
     let output = directory.path().join("preview.png");
+    let mut signature = [0; 4];
+    use std::io::Read;
+    let qoi = std::fs::File::open(path)?.read(&mut signature)? == 4 && &signature == b"qoif";
+    let converted = if qoi {
+        Some(crate::qoi::prepare(path, cancel)?)
+    } else {
+        None
+    };
+    let path = converted.as_ref().map_or(path, |file| file.path());
     // macOS ImageIO prepares the thumbnail outside the viewer's heap. The source is untouched.
-    let result = Command::new("/usr/bin/sips")
+    let mut command = Command::new("/usr/bin/sips");
+    command
         .args([
             "--resampleHeightWidthMax",
             &max_edge.to_string(),
@@ -76,17 +79,34 @@ pub(crate) fn thumbnail_png(path: &Path, max_edge: u32) -> Result<Vec<u8>> {
         .arg(std::path::absolute(path)?)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
-        .context("Cannot prepare inline image thumbnail")?;
-    ensure!(
-        result.status.success(),
-        "Cannot prepare inline image thumbnail: {}",
-        String::from_utf8_lossy(&result.stderr).trim()
-    );
+        .stderr(Stdio::null());
+    let result =
+        crate::work::run(&mut command, cancel).context("Cannot prepare inline image thumbnail")?;
+    let output = if result.success() {
+        output
+    } else {
+        // Quick Look handles vector/system image formats that ImageIO's CLI does not.
+        let svg = crate::svg_preview::prepare(path, cancel)?;
+        let mut command = Command::new("/usr/bin/qlmanage");
+        command
+            .args(["-t", "-s", &max_edge.to_string(), "-o"])
+            .arg(directory.path())
+            .arg(svg.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let result = crate::work::run(&mut command, cancel)?;
+        ensure!(result.success(), "Cannot prepare image thumbnail");
+        std::fs::read_dir(directory.path())?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "png"))
+            .context("Thumbnail provider produced no image")?
+    };
     ensure!(
         std::fs::metadata(&output)?.len()
-            <= u64::from(max_edge) * u64::from(max_edge) * 4 + 1024 * 1024,
+            <= u64::from(max_edge) * u64::from(max_edge) * 4
+                + reader_limits::INLINE_IMAGE_OUTPUT_OVERHEAD_BYTES,
         "Image thumbnail exceeds output budget"
     );
     let (width, height) = image::ImageReader::open(&output)?.into_dimensions()?;
@@ -95,14 +115,4 @@ pub(crate) fn thumbnail_png(path: &Path, max_edge: u32) -> Result<Vec<u8>> {
         "Invalid thumbnail dimensions"
     );
     Ok(std::fs::read(output)?)
-}
-
-fn decoded_preview(bytes: &[u8]) -> Result<image::Frame> {
-    let image = image::load_from_memory(bytes)?;
-    let image = if image.width() > MAX_EDGE || image.height() > MAX_EDGE {
-        image.thumbnail(MAX_EDGE, MAX_EDGE)
-    } else {
-        image
-    };
-    Ok(image::Frame::new(image.into_rgba8()))
 }

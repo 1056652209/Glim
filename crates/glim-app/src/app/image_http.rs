@@ -36,10 +36,15 @@ impl HttpClient for ImageHttpClient {
                     && url.password().is_none(),
                 "Unsupported image URL"
             );
+            let (cancel, guard) = glim_services::work::Cancellation::task();
+            let _guard = guard;
             executor
                 .spawn(async move {
-                    let bytes = glim_services::markup_images::fetch_image(url.as_str())
-                        .or_else(|_| glim_services::markup_images::unavailable_image())?;
+                    let bytes = glim_services::markup_images::fetch_image_cancellable(
+                        url.as_str(),
+                        &cancel,
+                    )
+                    .or_else(|_| glim_services::markup_images::unavailable_image())?;
                     Response::builder()
                         .status(200)
                         .body(AsyncBody::from(bytes))

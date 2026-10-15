@@ -133,9 +133,15 @@ fn paging_completes_utf8_and_bounds_full_reads() -> Result<()> {
     let text = "a".repeat(paged::PAGE_BYTES as usize - 1) + "界tail";
     fs::write(&path, &text)?;
     let first = paged::read_page(&path, 0, false)?;
-    assert!(first.text.ends_with('界'));
-    let next = paged::read_page(&path, first.end, false)?;
-    assert_eq!(first.text + &next.text, text);
+    let mut joined = first.text;
+    let mut offset = first.end;
+    while offset < text.len() as u64 {
+        let next = paged::read_page(&path, offset, false)?;
+        assert!(next.end > offset);
+        joined.push_str(&next.text);
+        offset = next.end;
+    }
+    assert_eq!(joined, text);
     fs::File::create(&path)?.set_len(paged::FULL_BYTES + 1)?;
     assert!(paged::read_page(&path, 0, true).is_err());
     fs::write(&path, [0xff])?;

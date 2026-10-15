@@ -1,10 +1,12 @@
 //! Bounded image decoding, kept off the UI executor.
+use crate::limits as reader_limits;
 use anyhow::{Context, Result, ensure};
-use image::ImageDecoder;
 use std::{
     io::{Cursor, Read},
     path::{Path, PathBuf},
 };
+
+const GIF_COMPOSITING_BUFFERS: u64 = 5;
 
 pub struct ImageDocument {
     pub path: PathBuf,
@@ -37,118 +39,54 @@ pub fn supports(path: &Path) -> bool {
     )
 }
 pub fn read_image(path: &Path) -> Result<ImageDocument> {
-    use std::hash::{Hash, Hasher};
-    let mut bytes = Vec::new();
-    std::fs::File::open(path)?
-        .take(128 * 1024 * 1024 + 1)
-        .read_to_end(&mut bytes)?;
-    ensure!(
-        bytes.len() <= 128 * 1024 * 1024,
-        "Image exceeds 128 MiB limit"
-    );
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    bytes.hash(&mut hash);
-    let fingerprint = format!("image:{:x}", hash.finish());
-    let ext = path
+    if path
         .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let mut pages = Vec::new();
-    let png = if ext == "gif" {
-        // Check the header and canvas budget without decoding the animation.
-        GifPlayback::new(std::sync::Arc::from(bytes.clone()))?;
-        bytes
-    } else if matches!(ext.as_str(), "tif" | "tiff") {
-        pages = tiff_pages(&bytes)?;
-        pages[0].clone()
-    } else if ext == "svg" {
-        // No resources_dir: external file references are intentionally not resolved.
-        let tree = resvg::usvg::Tree::from_data(&bytes, &resvg::usvg::Options::default())?;
-        // Vector documents can describe enormous canvases. Rasterize a bounded
-        // preview instead of rejecting them or allocating their full native size.
-        let size = tree.size();
-        let scale = (4000.0 / size.width().max(size.height())).min(1.0);
-        let width = (size.width() * scale).ceil().clamp(1.0, 4000.0) as u32;
-        let height = (size.height() * scale).ceil().clamp(1.0, 4000.0) as u32;
-        let mut pixmap =
-            resvg::tiny_skia::Pixmap::new(width, height).context("Invalid SVG dimensions")?;
-        resvg::render(
-            &tree,
-            resvg::tiny_skia::Transform::from_scale(scale, scale),
-            &mut pixmap.as_mut(),
-        );
-        pixmap.encode_png()?
-    } else {
-        let data = if ext == "icns" {
-            icns_png(&bytes)?
-        } else {
-            &bytes
-        };
-        let mut reader = image::ImageReader::new(Cursor::new(data)).with_guessed_format()?;
-        let mut limits = image::Limits::default();
-        limits.max_image_width = None;
-        limits.max_image_height = None;
-        limits.max_alloc = Some(512 * 1024 * 1024);
-        reader.limits(limits);
-        let decoder = reader.into_decoder()?;
-        let (width, height) = decoder.dimensions();
-        // Check before allocating the full pixel buffer. Compressed file size
-        // alone is not a reliable indication of an image's memory requirements.
-        ensure!(
-            u64::from(width) * u64::from(height) <= 100_000_000,
-            "Image exceeds 100 megapixels"
-        );
-        ensure!(
-            decoder.total_bytes() <= 512 * 1024 * 1024,
-            "Decoded image exceeds 512 MiB"
-        );
-        if ext == "png" && (width > 4000 || height > 4000) {
-            // ImageIO handles large PNG resizing/encoding without slow debug-build
-            // pixel loops. Read from the already captured snapshot, not the source
-            // path, so concurrent source changes cannot mix preview and fingerprint.
-            use std::io::Write;
-            let mut snapshot = tempfile::NamedTempFile::new()?;
-            snapshot.write_all(data)?;
-            drop(decoder);
-            crate::inline_images::thumbnail_png(snapshot.path(), 4000)?
-        } else {
-            let decoded = image::DynamicImage::from_decoder(decoder)?;
-            let mut out = Cursor::new(Vec::new());
-            // Float EXR/HDR pixels must be converted before PNG encoding. This is an
-            // SDR preview, not a color-managed HDR mastering surface.
-            let preview = if matches!(
-                decoded,
-                image::DynamicImage::ImageRgb32F(_) | image::DynamicImage::ImageRgba32F(_)
-            ) {
-                image::DynamicImage::ImageRgba8(decoded.to_rgba8())
-            } else {
-                decoded
-            };
-            let preview = if preview.width() > 4000 || preview.height() > 4000 {
-                preview.thumbnail(4000, 4000)
-            } else {
-                preview
-            };
-            preview.write_to(&mut out, image::ImageFormat::Png)?;
-            out.into_inner()
-        }
-    };
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("gif"))
+    {
+        let stamp = std::fs::metadata(path)?;
+        GifPlayback::from_file(path.to_path_buf())?;
+        return Ok(ImageDocument {
+            path: std::path::absolute(path)?,
+            png: Vec::new(),
+            fingerprint: format!("gif:{}:{:?}", stamp.len(), stamp.modified().ok()),
+            gif: true,
+            pages: Vec::new(),
+        });
+    }
+    let stamp = std::fs::metadata(path)?;
+    let png = crate::inline_images::thumbnail_png(path, reader_limits::IMAGE_PREVIEW_EDGE)?;
     Ok(ImageDocument {
         path: std::path::absolute(path)?,
         png,
-        fingerprint,
-        gif: ext == "gif",
-        pages,
+        fingerprint: format!("image:{}:{:?}", stamp.len(), stamp.modified().ok()),
+        gif: false,
+        pages: Vec::new(),
     })
 }
 
 /// Sequential, original-resolution GIF decoding with bounded compositing state.
 /// The UI decodes small batches on its background executor. Display previews
 /// are bounded independently of the original-resolution compositing canvas.
+#[derive(Clone)]
+pub enum GifInput {
+    Bytes(std::sync::Arc<[u8]>),
+    File(PathBuf),
+    Temporary(std::sync::Arc<tempfile::NamedTempFile>),
+}
+impl GifInput {
+    fn open(&self) -> Result<Box<dyn Read + Send>> {
+        Ok(match self {
+            Self::Bytes(bytes) => Box::new(Cursor::new(bytes.clone())),
+            Self::File(path) => Box::new(std::io::BufReader::new(std::fs::File::open(path)?)),
+            Self::Temporary(file) => Box::new(std::io::BufReader::new(file.reopen()?)),
+        })
+    }
+}
 pub struct GifPlayback {
-    bytes: std::sync::Arc<[u8]>,
-    decoder: gif::Decoder<Cursor<std::sync::Arc<[u8]>>>,
+    input: GifInput,
+    cancel: crate::work::Cancellation,
+    decoder: gif::Decoder<Box<dyn Read + Send>>,
+    logical: (u32, u32),
     canvas: image::RgbaImage,
     restore: Option<image::RgbaImage>,
     disposal: gif::DisposalMethod,
@@ -159,17 +97,33 @@ pub struct GifPlayback {
 }
 impl GifPlayback {
     pub fn new(bytes: std::sync::Arc<[u8]>) -> Result<Self> {
-        let decoder = Self::decoder(bytes.clone())?;
-        let (width, height) = (u32::from(decoder.width()), u32::from(decoder.height()));
-        // Allow room for canvas, restore, decoder, displayed frame and next frame.
-        ensure!(
-            u64::from(width) * u64::from(height) * 4 * 5 <= 512 * 1024 * 1024,
-            "GIF canvas exceeds 512 MiB playback memory budget"
-        );
-        ensure!(width > 0 && height > 0, "GIF has an empty canvas");
+        Self::from_input(GifInput::Bytes(bytes))
+    }
+    pub fn from_file(path: PathBuf) -> Result<Self> {
+        Self::from_input(GifInput::File(path))
+    }
+    pub fn from_input(input: GifInput) -> Result<Self> {
+        Self::from_input_cancellable(input, crate::work::Cancellation::default())
+    }
+    pub fn from_input_cancellable(
+        input: GifInput,
+        cancel: crate::work::Cancellation,
+    ) -> Result<Self> {
+        let decoder = Self::decoder(&input, &cancel)?;
+        let logical = (u32::from(decoder.width()), u32::from(decoder.height()));
+        ensure!(logical.0 > 0 && logical.1 > 0, "GIF has an empty canvas");
+        let budget_pixels =
+            (reader_limits::GIF_CANVAS_BYTES / (4 * GIF_COMPOSITING_BUFFERS)).max(1);
+        let scale = (budget_pixels as f64 / (f64::from(logical.0) * f64::from(logical.1)))
+            .sqrt()
+            .min(1.);
+        let width = ((f64::from(logical.0) * scale).floor() as u32).max(1);
+        let height = ((f64::from(logical.1) * scale).floor() as u32).max(1);
         Ok(Self {
-            bytes,
+            input,
+            cancel,
             decoder,
+            logical,
             canvas: image::RgbaImage::new(width, height),
             restore: None,
             disposal: gif::DisposalMethod::Keep,
@@ -179,15 +133,17 @@ impl GifPlayback {
             finished: false,
         })
     }
-
-    fn decoder(bytes: std::sync::Arc<[u8]>) -> Result<gif::Decoder<Cursor<std::sync::Arc<[u8]>>>> {
+    fn decoder(
+        input: &GifInput,
+        cancel: &crate::work::Cancellation,
+    ) -> Result<gif::Decoder<Box<dyn Read + Send>>> {
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
         options.check_frame_consistency(true);
-        options.set_memory_limit(gif::MemoryLimit::Bytes(
-            std::num::NonZeroU64::new(512 * 1024 * 1024 / 5).unwrap(),
-        ));
-        Ok(options.read_info(Cursor::new(bytes))?)
+        Ok(options.read_info(Box::new(crate::work::Reader {
+            inner: input.open()?,
+            cancel: cancel.clone(),
+        }) as Box<dyn Read + Send>)?)
     }
 
     pub fn preview_frame_bytes(&self) -> usize {
@@ -198,12 +154,16 @@ impl GifPlayback {
     fn preview_dimensions(&self) -> (u32, u32) {
         let (width, height) = self.canvas.dimensions();
         let edge = width.max(height);
-        if edge <= 2048 {
+        if edge <= reader_limits::GIF_PREVIEW_EDGE {
             (width, height)
         } else {
             (
-                ((u64::from(width) * 2048 / u64::from(edge)) as u32).max(1),
-                ((u64::from(height) * 2048 / u64::from(edge)) as u32).max(1),
+                ((u64::from(width) * u64::from(reader_limits::GIF_PREVIEW_EDGE) / u64::from(edge))
+                    as u32)
+                    .max(1),
+                ((u64::from(height) * u64::from(reader_limits::GIF_PREVIEW_EDGE) / u64::from(edge))
+                    as u32)
+                    .max(1),
             )
         }
     }
@@ -240,7 +200,7 @@ impl GifPlayback {
             }
             _ => {}
         }
-        if self.decoder.read_next_frame()?.is_none() {
+        if self.decoder.next_frame_info()?.is_none() {
             ensure!(self.frames > 0, "GIF contains no frames");
             self.loops = self.loops.saturating_add(1);
             if let gif::Repeat::Finite(repeats) = self.decoder.repeat()
@@ -249,56 +209,71 @@ impl GifPlayback {
                 self.finished = true;
                 return Ok(None);
             }
-            self.decoder = Self::decoder(self.bytes.clone())?;
+            self.decoder = Self::decoder(&self.input, &self.cancel)?;
             self.canvas.fill(0);
             self.restore = None;
             self.frames = 0;
             ensure!(
-                self.decoder.read_next_frame()?.is_some(),
+                self.decoder.next_frame_info()?.is_some(),
                 "GIF contains no frames"
             );
         }
         let frame = self
             .decoder
             .current_frame_info()
-            .context("GIF frame is missing")?;
+            .context("GIF frame is missing")?
+            .clone();
         self.frames += 1;
-        let left = u32::from(frame.left);
-        let top = u32::from(frame.top);
+        let source_left = u32::from(frame.left);
+        let source_top = u32::from(frame.top);
         let width = u32::from(frame.width);
         let height = u32::from(frame.height);
+        let (cw, ch) = self.canvas.dimensions();
+        let scaled = |value: u32, dest: u32, source: u32| {
+            (u64::from(value) * u64::from(dest)).div_ceil(u64::from(source)) as u32
+        };
+        let left = scaled(source_left, cw, self.logical.0);
+        let right = scaled(source_left + width, cw, self.logical.0);
+        let top = scaled(source_top, ch, self.logical.1);
+        let bottom = scaled(source_top + height, ch, self.logical.1);
         self.restore =
             (frame.dispose == gif::DisposalMethod::Previous).then(|| self.canvas.clone());
-        let stride = self.canvas.width() as usize * 4;
-        let row_bytes = width as usize * 4;
-        let canvas: &mut [u8] = self.canvas.as_mut();
-        if row_bytes > 0 {
-            for (y, source) in frame
-                .buffer
-                .chunks_exact(row_bytes.max(1))
-                .take(height as usize)
-                .enumerate()
-            {
-                let start = (top as usize + y) * stride + left as usize * 4;
-                let destination = &mut canvas[start..start + row_bytes];
-                if frame.transparent.is_none() {
-                    destination.copy_from_slice(source);
-                } else {
-                    for (source, destination) in source
-                        .as_chunks::<4>()
-                        .0
-                        .iter()
-                        .zip(destination.as_chunks_mut::<4>().0.iter_mut())
-                    {
-                        if source[3] != 0 {
-                            destination.copy_from_slice(source);
-                        }
+        // GIF's row width is a format-bounded u16. Decode one row at a time,
+        // including interlace passes, instead of allocating a complete frame.
+        let mut row = vec![0; width as usize * 4];
+        let passes: &[(u32, u32)] = if frame.interlaced {
+            &[(0, 8), (4, 8), (2, 4), (1, 2)]
+        } else {
+            &[(0, 1)]
+        };
+        for &(first, step) in passes {
+            for y in (first..height).step_by(step as usize) {
+                self.cancel.check()?;
+                if row.is_empty() {
+                    continue;
+                }
+                ensure!(self.decoder.fill_buffer(&mut row)?, "Truncated GIF frame");
+                let source_y = source_top + y;
+                let dy = scaled(source_y, ch, self.logical.1);
+                if dy >= ch
+                    || u64::from(dy) * u64::from(self.logical.1) / u64::from(ch)
+                        != u64::from(source_y)
+                {
+                    continue;
+                }
+                for dx in left..right {
+                    let sx = (u64::from(dx) * u64::from(self.logical.0) / u64::from(cw)) as u32
+                        - source_left;
+                    let pixel = &row[sx as usize * 4..sx as usize * 4 + 4];
+                    if pixel[3] != 0 {
+                        self.canvas
+                            .put_pixel(dx, dy, image::Rgba(pixel.try_into()?));
                     }
                 }
             }
         }
         self.disposal = frame.dispose;
-        self.rectangle = (left, top, width, height);
+        self.rectangle = (left, top, right - left, bottom - top);
         // Match browser handling of zero/one-centisecond delays to avoid busy loops.
         let delay_ms = if frame.delay <= 1 {
             100
@@ -307,7 +282,10 @@ impl GifPlayback {
         };
         Ok(Some((
             image::Frame::new(
-                if preview && self.canvas.width().max(self.canvas.height()) > 2048 {
+                if preview
+                    && self.canvas.width().max(self.canvas.height())
+                        > reader_limits::GIF_PREVIEW_EDGE
+                {
                     let (width, height) = self.preview_dimensions();
                     image::imageops::resize(
                         &self.canvas,
@@ -324,99 +302,6 @@ impl GifPlayback {
     }
 }
 
-fn tiff_pages(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
-    use tiff::{
-        ColorType,
-        decoder::{Decoder, DecodingResult},
-    };
-    let mut limits = tiff::decoder::Limits::default();
-    limits.decoding_buffer_size = 512 * 1024 * 1024;
-    let mut decoder = Decoder::new(Cursor::new(bytes))
-        .context("TIFF header is damaged")?
-        .with_limits(limits);
-    let mut pages = Vec::new();
-    let mut budget = 0_u64;
-    let mut pixel_budget = 0_u64;
-    loop {
-        ensure!(pages.len() < 500, "TIFF exceeds 500 pages");
-        let (width, height) = decoder.dimensions()?;
-        ensure!(
-            u64::from(width) * u64::from(height) <= 100_000_000,
-            "TIFF page exceeds 100 megapixels"
-        );
-        let color = decoder.colortype()?;
-        let pixels = match decoder
-            .read_image()
-            .context("TIFF page is damaged or its encoding is unsupported")?
-        {
-            DecodingResult::U8(data) => data,
-            DecodingResult::U16(data) => data.into_iter().map(|v| (v >> 8) as u8).collect(),
-            _ => anyhow::bail!("TIFF page uses unsupported pixel sample type"),
-        };
-        let decoded = match color {
-            ColorType::RGB(8 | 16) => image::DynamicImage::ImageRgb8(
-                image::RgbImage::from_raw(width, height, pixels)
-                    .context("Invalid TIFF RGB pixels")?,
-            ),
-            ColorType::RGBA(8 | 16) => image::DynamicImage::ImageRgba8(
-                image::RgbaImage::from_raw(width, height, pixels)
-                    .context("Invalid TIFF RGBA pixels")?,
-            ),
-            ColorType::Gray(8 | 16) => image::DynamicImage::ImageLuma8(
-                image::GrayImage::from_raw(width, height, pixels)
-                    .context("Invalid TIFF grayscale pixels")?,
-            ),
-            ColorType::GrayA(8 | 16) => image::DynamicImage::ImageLumaA8(
-                image::GrayAlphaImage::from_raw(width, height, pixels)
-                    .context("Invalid TIFF grayscale alpha pixels")?,
-            ),
-            _ => anyhow::bail!("TIFF page color encoding is unsupported: {color:?}"),
-        };
-        let mut out = Cursor::new(Vec::new());
-        let preview = if decoded.width() > 4000 || decoded.height() > 4000 {
-            decoded.thumbnail(4000, 4000)
-        } else {
-            decoded
-        };
-        pixel_budget += u64::from(preview.width()) * u64::from(preview.height()) * 4;
-        ensure!(
-            pixel_budget <= 512 * 1024 * 1024,
-            "TIFF page previews exceed 512 MiB decoded memory"
-        );
-        preview.write_to(&mut out, image::ImageFormat::Png)?;
-        let png = out.into_inner();
-        budget += png.len() as u64;
-        ensure!(budget <= 256 * 1024 * 1024, "TIFF previews exceed 256 MiB");
-        pages.push(png);
-        if !decoder.more_images() {
-            break;
-        }
-        decoder.next_image()?;
-    }
-    Ok(pages)
-}
-// Modern macOS ICNS contains PNG representations; choose the largest representation.
-fn icns_png(bytes: &[u8]) -> Result<&[u8]> {
-    ensure!(
-        bytes.starts_with(b"icns") && bytes.len() >= 8,
-        "Invalid ICNS file"
-    );
-    let mut offset = 8;
-    let mut best: Option<&[u8]> = None;
-    while offset + 8 <= bytes.len() {
-        let len = u32::from_be_bytes(bytes[offset + 4..offset + 8].try_into()?) as usize;
-        ensure!(
-            len >= 8 && len <= bytes.len() - offset,
-            "Invalid ICNS entry"
-        );
-        let data = &bytes[offset + 8..offset + len];
-        if data.starts_with(b"\x89PNG\r\n\x1a\n") && best.is_none_or(|b| data.len() > b.len()) {
-            best = Some(data);
-        }
-        offset += len;
-    }
-    best.context("This legacy ICNS has no PNG representation")
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -565,8 +450,10 @@ mod tests {
         ] {
             assert!(read_image(&root.join(p))?.png.starts_with(b"\x89PNG"));
         }
-        assert!(icns_png(b"icns\0\0\0\x10bad!\0\0\0\0").is_err());
         let temp = tempfile::tempdir()?;
+        let malformed = temp.path().join("malformed.icns");
+        std::fs::write(&malformed, b"icns\0\0\0\x10bad!\0\0\0\0")?;
+        assert!(read_image(&malformed).is_err());
         let path = temp.path().join("large.svg");
         std::fs::write(
             &path,

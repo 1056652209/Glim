@@ -1,5 +1,7 @@
 use glim_services::json::JsonNode;
+use glim_services::limits as reader_limits;
 use gpui_kit::{
+    base::InteractiveElementExt as _,
     component::{ActiveTheme, Icon, v_flex},
     prelude::FluentBuilder,
     *,
@@ -52,8 +54,14 @@ impl JsonTree {
                         v.nodes = nodes;
                         v.expanded.insert(0);
                         if let Some(root) = v.nodes.first() {
-                            for &child in root.children.iter().take(16) {
-                                if v.nodes[child].children.len() <= 16 {
+                            for &child in root
+                                .children
+                                .iter()
+                                .take(reader_limits::JSON_AUTO_EXPAND_CHILDREN)
+                            {
+                                if v.nodes[child].children.len()
+                                    <= reader_limits::JSON_AUTO_EXPAND_CHILDREN
+                                {
                                     v.expanded.insert(child);
                                 }
                             }
@@ -142,6 +150,20 @@ impl Render for JsonTree {
                                     .pl(px(12. + depth.min(20) as f32 * 16.))
                                     .pr_3()
                                     .text_sm()
+                                    .on_double_click(cx.listener(move |view, _, window, cx| {
+                                        if let Some(node) = view.nodes.get(index) {
+                                            let text = node.full_value.as_ref().map_or_else(
+                                                || node.full_key.clone(),
+                                                |value| format!("{}\n\n{value}", node.full_key),
+                                            );
+                                            super::source::show_text_dialog(
+                                                glim_services::locale::tr("Full cell value"),
+                                                text,
+                                                window,
+                                                cx,
+                                            );
+                                        }
+                                    }))
                                     .when(expandable, |row| row.cursor_pointer())
                                     .child(div().w(px(14.)).flex_shrink_0().when(expandable, |v| {
                                         v.child(Icon::new(if expanded {

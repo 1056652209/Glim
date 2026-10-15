@@ -52,11 +52,8 @@ fn read_at(path: &std::path::Path) -> Result<ReadingState> {
     if !path.exists() {
         return Ok(ReadingState::default());
     }
-    ensure!(
-        std::fs::metadata(path)?.len() <= 128 * 1024,
-        "Reading preferences exceed size limit"
-    );
-    let state: ReadingState = serde_json::from_slice(&std::fs::read(path)?)?;
+    let state: ReadingState =
+        serde_json::from_reader(std::io::BufReader::new(std::fs::File::open(path)?))?;
     validate(&state)?;
     Ok(state)
 }
@@ -67,10 +64,10 @@ fn validate(state: &ReadingState) -> Result<()> {
             && (14. ..=32.).contains(&state.font_size)
             && (1.3..=2.2).contains(&state.line_height)
             && (480. ..=1000.).contains(&state.page_width)
-            && state.bookmarks.len() <= 100
-            && state.bookmarks.iter().all(|b| b.fraction.is_finite()
-                && (0. ..=1.).contains(&b.fraction)
-                && b.label.len() <= 512),
+            && state
+                .bookmarks
+                .iter()
+                .all(|b| b.fraction.is_finite() && (0. ..=1.).contains(&b.fraction)),
         "Reading preferences are outside supported limits"
     );
     Ok(())

@@ -1,14 +1,13 @@
 //! HTML picture selection and bounded remote image preparation, independent of UI.
+use crate::limits as reader_limits;
 use anyhow::{Context, Result, ensure};
 use html5ever::{parse_document, tendril::TendrilSink};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use std::{
     collections::{HashMap, HashSet},
-    io::{Read, Write},
     process::{Command, Stdio},
     sync::{Arc, OnceLock},
 };
-const LIMIT: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PictureSources {
@@ -16,7 +15,7 @@ pub struct PictureSources {
     pub dark: Option<String>,
 }
 pub fn picture_sources(text: &str, html: bool) -> HashMap<String, PictureSources> {
-    if text.len() > 8 * 1024 * 1024 || !text.to_ascii_lowercase().contains("<picture") {
+    if !text.to_ascii_lowercase().contains("<picture") {
         return HashMap::new();
     }
     let mut fragments = Vec::new();
@@ -153,9 +152,6 @@ fn download_url(value: &str) -> Result<url::Url> {
 /// Code blocks and examples do not initiate downloads.
 pub fn image_uris(text: &str, html: bool) -> HashSet<String> {
     use markdown::mdast::Node;
-    if text.len() > 8 * 1024 * 1024 {
-        return HashSet::new();
-    }
     let mut images = HashSet::new();
     let mut fragments = Vec::new();
     if html {
@@ -226,39 +222,61 @@ fn github_api_url(url: &url::Url) -> Option<url::Url> {
 }
 
 pub fn fetch_image(url: &str) -> Result<Vec<u8>> {
-    prepare_image(&fetch_image_data(url)?)
+    fetch_image_cancellable(url, &crate::work::Cancellation::default())
 }
-
+pub fn fetch_image_cancellable(url: &str, cancel: &crate::work::Cancellation) -> Result<Vec<u8>> {
+    let file = fetch_image_file(url, cancel)?;
+    crate::inline_images::thumbnail_png_cancellable(
+        file.path(),
+        reader_limits::IMAGE_PREVIEW_EDGE,
+        cancel,
+    )
+}
 pub fn fetch_inline_image(url: &str) -> Result<image::Frame> {
-    let bytes = fetch_image_data(url)?;
-    if image::guess_format(&bytes).is_ok() {
-        crate::inline_images::from_bytes(&bytes)
-    } else {
-        crate::inline_images::from_bytes(&svg_png(&bytes)?)
-    }
+    fetch_inline_image_cancellable(url, &crate::work::Cancellation::default())
 }
-
-fn fetch_image_data(url: &str) -> Result<Vec<u8>> {
-    use std::time::{Duration, Instant};
+pub fn fetch_inline_image_cancellable(
+    url: &str,
+    cancel: &crate::work::Cancellation,
+) -> Result<image::Frame> {
+    let file = fetch_image_file(url, cancel)?;
+    crate::inline_images::from_file_cancellable(file.path(), cancel)
+}
+pub fn fetch_image_file(
+    url: &str,
+    cancel: &crate::work::Cancellation,
+) -> Result<tempfile::NamedTempFile> {
     let url = download_url(url)?;
     let fallback = github_api_url(&url);
-    let started = Instant::now();
-    let first_timeout = Duration::from_secs(if fallback.is_some() { 8 } else { 20 });
-    let bytes = match download_image(&url, first_timeout, false) {
-        Ok(bytes) => bytes,
+    let first = if fallback.is_some() {
+        reader_limits::REMOTE_IMAGE_FIRST_ATTEMPT_SECONDS
+    } else {
+        reader_limits::REMOTE_IMAGE_CONNECT_SECONDS
+    };
+    match download_image(&url, first, false, cancel) {
+        Ok(file) => Ok(file),
         Err(error) => {
-            let remaining = Duration::from_secs(20).saturating_sub(started.elapsed());
-            let Some(fallback) = fallback.filter(|_| !remaining.is_zero()) else {
+            cancel.check()?;
+            let Some(fallback) = fallback else {
                 return Err(error);
             };
-            download_image(&fallback, remaining, true)
-                .context("GitHub raw image and API fallback requests failed")?
+            download_image(
+                &fallback,
+                reader_limits::REMOTE_IMAGE_CONNECT_SECONDS,
+                true,
+                cancel,
+            )
+            .context("GitHub raw image and API fallback requests failed")
         }
-    };
-    Ok(bytes)
+    }
 }
-
-fn download_image(url: &url::Url, timeout: std::time::Duration, api: bool) -> Result<Vec<u8>> {
+fn download_image(
+    url: &url::Url,
+    connect: u64,
+    api: bool,
+    cancel: &crate::work::Cancellation,
+) -> Result<tempfile::NamedTempFile> {
+    let file = tempfile::NamedTempFile::new()?;
     let mut command = Command::new("/usr/bin/curl");
     command
         .args([
@@ -267,9 +285,13 @@ fn download_image(url: &url::Url, timeout: std::time::Duration, api: bool) -> Re
             "--silent",
             "--location",
             "--max-redirs",
-            "5",
+            &reader_limits::REMOTE_IMAGE_REDIRECTS.to_string(),
             "--connect-timeout",
-            "8",
+            &connect.to_string(),
+            "--speed-time",
+            &reader_limits::REMOTE_IMAGE_TIMEOUT_SECONDS.to_string(),
+            "--speed-limit",
+            &reader_limits::REMOTE_IMAGE_MINIMUM_BYTES_PER_SECOND.to_string(),
             "--proto",
             "=http,https",
             "--proto-redir",
@@ -279,40 +301,31 @@ fn download_image(url: &url::Url, timeout: std::time::Duration, api: bool) -> Re
             "--url",
             url.as_str(),
         ])
-        .arg("--max-time")
-        .arg(timeout.as_secs_f64().to_string())
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .stdout(Stdio::from(file.reopen()?))
         .stderr(Stdio::null());
-
     if api {
         command.args(["--header", "Accept: application/vnd.github.raw+json"]);
     }
-    let mut child = command
-        .spawn()
-        .context("Cannot start the image downloader")?;
-    let mut bytes = Vec::new();
-    let read = child
-        .stdout
-        .take()
-        .context("Image downloader has no output")?
-        .take(LIMIT as u64 + 1)
-        .read_to_end(&mut bytes);
-    if read.is_err() || bytes.len() > LIMIT {
-        let _ = child.kill();
-        let _ = child.wait();
-        read?;
-        anyhow::bail!("Remote image exceeds 16 MiB");
-    }
-    ensure!(child.wait()?.success(), "Remote image request failed");
-    ensure!(!bytes.is_empty(), "Remote image is empty");
-    Ok(bytes)
+    ensure!(
+        crate::work::run(&mut command, cancel)?.success(),
+        "Remote image request failed"
+    );
+    ensure!(
+        file.as_file().metadata()?.len() > 0,
+        "Remote image is empty"
+    );
+    Ok(file)
 }
+#[cfg(test)]
 fn prepare_image(bytes: &[u8]) -> Result<Vec<u8>> {
-    ensure!(bytes.len() <= LIMIT, "Remote image exceeds 16 MiB");
+    use std::io::Write;
     let Ok(format) = image::guess_format(bytes) else {
         return svg_png(bytes);
     };
+    if format == image::ImageFormat::Gif {
+        return Ok(bytes.to_vec());
+    }
     let suffix = match format {
         image::ImageFormat::Gif => ".gif",
         image::ImageFormat::Tiff => ".tiff",
@@ -341,7 +354,9 @@ fn svg_png(bytes: &[u8]) -> Result<Vec<u8>> {
     let decode_data = resvg::usvg::ImageHrefResolver::default_data_resolver();
     options.image_href_resolver.resolve_data = Box::new(move |mime, data, options| {
         // Nested SVG and oversized embedded rasters must not bypass the canvas budget.
-        if mime.contains("svg") || data.len() > LIMIT {
+        if mime.contains("svg")
+            || data.len() as u64 > reader_limits::REMOTE_IMAGE_SVG_EMBEDDED_BYTES
+        {
             return None;
         }
         let reader = image::ImageReader::new(std::io::Cursor::new(data.as_slice()))
@@ -357,16 +372,22 @@ fn svg_png(bytes: &[u8]) -> Result<Vec<u8>> {
                 std::sync::atomic::Ordering::Relaxed,
                 |old| {
                     old.checked_add(size)
-                        .filter(|total| *total <= 64 * 1024 * 1024)
+                        .filter(|total| *total <= reader_limits::REMOTE_IMAGE_SVG_EMBEDDED_BYTES)
                 },
             )
             .ok()?;
         decode_data(mime, data, options)
     });
     let tree = resvg::usvg::Tree::from_data(bytes, &options)?;
-    let scale = (4000. / tree.size().width().max(tree.size().height())).min(1.);
-    let width = (tree.size().width() * scale).ceil().clamp(1., 4000.) as u32;
-    let height = (tree.size().height() * scale).ceil().clamp(1., 4000.) as u32;
+    let scale = (reader_limits::IMAGE_PREVIEW_EDGE as f32
+        / tree.size().width().max(tree.size().height()))
+    .min(1.);
+    let width = (tree.size().width() * scale)
+        .ceil()
+        .clamp(1., reader_limits::IMAGE_PREVIEW_EDGE as f32) as u32;
+    let height = (tree.size().height() * scale)
+        .ceil()
+        .clamp(1., reader_limits::IMAGE_PREVIEW_EDGE as f32) as u32;
     let mut pixmap =
         resvg::tiny_skia::Pixmap::new(width, height).context("Invalid remote SVG dimensions")?;
     resvg::render(

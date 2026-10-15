@@ -1,6 +1,7 @@
 use super::*;
 use glim_core::{GitOperation, GitRequest, GitSnapshot, GraphRow};
 use glim_services::git::management;
+use glim_services::limits as reader_limits;
 use gpui_kit::component::WindowExt;
 
 #[derive(Clone)]
@@ -62,7 +63,7 @@ impl GitState {
             operation: None,
             graph_collapsed: true,
             graph_all: true,
-            graph_limit: 200,
+            graph_limit: reader_limits::GIT_HISTORY_BATCH,
             graph_more: false,
             graph_refresh_pending: false,
             graph_rows: Vec::new(),
@@ -131,7 +132,7 @@ impl Changes {
         self.git.file_tasks.clear();
         self.git.selected_commit = None;
         self.git.graph_task = None;
-        self.git.graph_limit = 200;
+        self.git.graph_limit = reader_limits::GIT_HISTORY_BATCH;
         self.git.graph_more = false;
         self.git.graph_refresh_pending = false;
         self.git.graph_scroll = UniformListScrollHandle::new();
@@ -476,7 +477,7 @@ impl Changes {
                             };
                             v.select_repository(index, w, cx);
                             v.git.graph_all = all;
-                            v.git.graph_limit = 200;
+                            v.git.graph_limit = reader_limits::GIT_HISTORY_BATCH;
                             v.git.graph_more = false;
                             v.git.graph_rows.clear();
                             v.git.graph_scroll = UniformListScrollHandle::new();
@@ -773,7 +774,7 @@ impl Changes {
                 }
                 match result {
                     Ok(rows) => {
-                        v.git.graph_more = limit < 1000
+                        v.git.graph_more = limit < reader_limits::GIT_HISTORY_COMMITS
                             && rows.iter().filter(|row| row.commit.is_some()).count() >= limit;
                         if v.git.graph_rows != rows {
                             v.git.graph_rows = rows;
@@ -958,8 +959,9 @@ impl Changes {
                                                 && v.repository().map(|r| &r.root) == root.as_ref()
                                                 && v.git.graph_all == scope
                                             {
-                                                v.git.graph_limit =
-                                                    (v.git.graph_limit + 200).min(1000);
+                                                v.git.graph_limit = (v.git.graph_limit
+                                                    + reader_limits::GIT_HISTORY_BATCH)
+                                                    .min(reader_limits::GIT_HISTORY_COMMITS);
                                                 v.reload_graph(cx);
                                             }
                                         });

@@ -48,6 +48,7 @@ func glimPreviewLayout(_ handle: UnsafeMutableRawPointer, _ parentPointer: Unsaf
         preview.host.isHidden = hidden
         preview.host.updateAccessibility()
     }
+    preview.imagePreview?.resume()
     preview.resumePendingPlayback()
 }
 
@@ -64,6 +65,7 @@ func glimPreviewHide(_ handle: UnsafeMutableRawPointer) {
     preview.host.updateAccessibility()
     preview.pendingPlayback = false
     preview.player.pause()
+    preview.imagePreview?.pause()
 }
 
 @_cdecl("glim_preview_release")

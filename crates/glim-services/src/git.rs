@@ -1,3 +1,4 @@
+use crate::limits as reader_limits;
 use std::{
     ffi::{OsStr, OsString},
     io::Read,
@@ -8,7 +9,7 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use glim_core::{DiffDocument, DiffScope, GitChange, Repository};
 
-const MAX_GIT_OUTPUT: u64 = 8 * 1024 * 1024;
+const MAX_GIT_OUTPUT: u64 = reader_limits::GIT_OUTPUT_BYTES;
 
 struct GitOutput {
     code: Option<i32>,
@@ -47,7 +48,10 @@ fn run_with_limit(root: &Path, args: &[&OsStr], limit: u64) -> Result<GitOutput>
     let mut stderr = child.stderr.take().context("Missing Git stderr")?;
     let errors = std::thread::spawn(move || {
         let mut bytes = Vec::new();
-        let _ = stderr.by_ref().take(64 * 1024).read_to_end(&mut bytes);
+        let _ = stderr
+            .by_ref()
+            .take(reader_limits::GIT_STDERR_BYTES)
+            .read_to_end(&mut bytes);
         // Keep draining so a verbose hook cannot block the child on a full pipe.
         let _ = std::io::copy(&mut stderr, &mut std::io::sink());
         String::from_utf8_lossy(&bytes).into_owned()
@@ -91,7 +95,10 @@ fn checked(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
         bail!(
             "Git exited with {:?}: {}",
             output.code,
-            message.chars().take(16_384).collect::<String>()
+            message
+                .chars()
+                .take(reader_limits::GIT_ERROR_CHARS)
+                .collect::<String>()
         );
     }
     Ok(output.bytes)
@@ -217,7 +224,7 @@ pub fn read_diff(root: &Path, change: &GitChange) -> Result<DiffDocument> {
         }
     }
     let refs: Vec<_> = args.iter().map(OsString::as_os_str).collect();
-    let output = run_with_limit(root, &refs, 256 * 1024 * 1024)?;
+    let output = run_with_limit(root, &refs, reader_limits::GIT_DIFF_OUTPUT_BYTES)?;
     ensure!(
         output.code == Some(0) || (change.scope == DiffScope::Untracked && output.code == Some(1)),
         "{}",

@@ -2,7 +2,7 @@ use super::super::minimap::Minimap;
 use glim_core::DiffSpan;
 use gpui_kit::{
     component::{
-        ActiveTheme,
+        ActiveTheme, WindowExt,
         input::{Editor, EditorState, InputEvent, TextDecoration, TextDecorationCollection},
     },
     *,
@@ -23,7 +23,7 @@ pub(super) struct SourceReader {
     readonly: bool,
     locked: bool,
     baseline: Rc<RefCell<String>>,
-    dirty: Rc<Cell<bool>>,
+    pub(super) dirty: Rc<Cell<bool>>,
     _edit_subscription: Subscription,
 }
 impl SourceReader {
@@ -95,6 +95,9 @@ impl SourceReader {
         self.locked = locked;
         self.state
             .update(cx, |s, cx| s.set_readonly(self.readonly || locked, cx));
+    }
+    pub fn is_readonly(&self) -> bool {
+        self.readonly
     }
     pub fn is_dirty(&self) -> bool {
         !self.readonly && self.dirty.get()
@@ -249,4 +252,30 @@ mod format_registry_tests {
             );
         }
     }
+}
+
+struct TextDialog(SourceReader);
+impl Render for TextDialog {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.0.render(cx)
+    }
+}
+pub(super) fn show_text_dialog(title: String, text: String, window: &mut Window, cx: &mut App) {
+    let content = cx.new(|cx| {
+        TextDialog(SourceReader::new(
+            &text,
+            "plain",
+            true,
+            Vec::new(),
+            ScrollHandle::new(),
+            window,
+            cx,
+        ))
+    });
+    window.open_dialog(cx, move |dialog, _, _| {
+        dialog
+            .title(title.clone())
+            .width(px(640.))
+            .child(div().h(px(360.)).child(content.clone()))
+    });
 }

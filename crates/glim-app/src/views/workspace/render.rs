@@ -26,6 +26,9 @@ const GIT_NAVIGATION_VISIBLE: bool = false;
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.page != Page::Document || self.active_reader().is_none() {
+            self.file_fullscreen = false;
+        }
         if let Some(mode) = cx
             .try_global::<crate::app::ReaderPreferences>()
             .and_then(|p| p.diff_side_by_side)
@@ -85,17 +88,19 @@ impl Render for Workspace {
             .size_full()
             .min_w_0()
             .overflow_hidden()
-            .rounded(px(14.))
-            .border_1()
-            .border_color(cx.theme().border)
+            .when(!self.file_fullscreen, |view| {
+                view.rounded(px(14.))
+                    .border_1()
+                    .border_color(cx.theme().border)
+            })
             .bg(cx.theme().background)
             .when(
-                self.page == Page::Document && !self.tabs.is_empty(),
+                self.page == Page::Document && !self.tabs.is_empty() && !self.file_fullscreen,
                 |view| view.child(tab_bar),
             )
             .when_some(
                 self.active_reader()
-                    .filter(|_| self.page == Page::Document)
+                    .filter(|_| self.page == Page::Document && !self.file_fullscreen)
                     .and_then(|reader| reader.history_summary()),
                 |view, (subject, detail)| {
                     view.child(
@@ -309,6 +314,112 @@ impl Render for Workspace {
         } else {
             sidebar.into_any_element()
         };
+        let body = if self.file_fullscreen {
+            div()
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                .child(viewer)
+                .into_any_element()
+        } else {
+            div()
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                .pr(px(2.))
+                .pb(px(2.))
+                .when(!self.sidebar_visible, |view| view.pl_2())
+                .child(
+                    h_resizable("workspace-panels")
+                        .with_state(&self.sidebar_layout)
+                        .on_resize(cx.listener(
+                            |view,
+                             state: &Entity<gpui_kit::component::resizable::ResizableState>,
+                             window,
+                             cx| {
+                                if let Some(width) = state.read(cx).sizes().first().copied() {
+                                    if f32::from(width) <= SIDEBAR_COLLAPSE_WIDTH {
+                                        view.sidebar_visible = false;
+                                        view.sidebar_window_width = 0.;
+                                    } else {
+                                        view.sidebar_ratio = (f32::from(width)
+                                            / f32::from(window.viewport_size().width))
+                                        .min(0.5);
+                                    }
+                                    cx.notify();
+                                }
+                            },
+                        ))
+                        .with_handle_appearance({
+                            let appearance =
+                                gpui_kit::component::resizable::resize_handle_appearance();
+                            let layout = self.sidebar_layout.clone();
+                            let workspace = cx.entity().downgrade();
+                            std::rc::Rc::new(move |handle, window, cx| {
+                                if handle.is_active()
+                                    && layout.read(cx).sizes().first().is_some_and(|size| {
+                                        f32::from(*size) <= SIDEBAR_COLLAPSE_WIDTH
+                                    })
+                                {
+                                    let workspace = workspace.clone();
+                                    cx.defer(move |cx| {
+                                        let _ = workspace.update(cx, |view, cx| {
+                                            view.sidebar_visible = false;
+                                            view.sidebar_window_width = 0.;
+                                            cx.notify();
+                                        });
+                                    });
+                                }
+                                appearance(handle, window, cx).map(|line| {
+                                    let layout = layout.clone();
+                                    let workspace = workspace.clone();
+                                    // Keep the visible line inset, but use the full drag band for double clicks.
+                                    div()
+                                        .id("workspace-sidebar-resize-handle")
+                                        .flex()
+                                        .justify_center()
+                                        .w(px(9.))
+                                        .ml(px(-4.))
+                                        .h_full()
+                                        .pt(px(14.))
+                                        .pb(px(14.))
+                                        .child(line)
+                                        .on_double_click(move |_, window, cx| {
+                                            let _ = workspace.update(cx, |view, cx| {
+                                                view.sidebar_ratio = DEFAULT_SIDEBAR_RATIO;
+                                                cx.notify();
+                                            });
+                                            layout.update(cx, |state, cx| {
+                                                state.resize_panel(
+                                                    0,
+                                                    window.viewport_size().width
+                                                        * DEFAULT_SIDEBAR_RATIO,
+                                                    window,
+                                                    cx,
+                                                );
+                                            });
+                                            cx.stop_propagation();
+                                        })
+                                        .into_any_element()
+                                })
+                            })
+                        })
+                        .child(
+                            resizable_panel()
+                                .visible(self.sidebar_visible)
+                                .size(px(sidebar_width))
+                                .flex_none()
+                                .size_range(px(80.)..px(window_width * 0.5))
+                                .child(sidebar),
+                        )
+                        .child(
+                            resizable_panel()
+                                .size_range(px(280.)..px(10000.))
+                                .child(viewer),
+                        ),
+                )
+                .into_any_element()
+        };
         v_flex()
             .relative()
             .size_full()
@@ -316,6 +427,14 @@ impl Render for Workspace {
             .bg(cx.theme().sidebar)
             .text_color(cx.theme().foreground)
             .child(header)
+            .capture_key_down(cx.listener(|view, event: &KeyDownEvent, _, cx| {
+                if view.file_fullscreen && event.keystroke.key == "escape" {
+                    view.file_fullscreen = false;
+                    view.sidebar_window_width = 0.;
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
             .on_mouse_down(
                 MouseButton::Navigate(NavigationDirection::Back),
                 cx.listener(|v, _, w, cx| {
@@ -368,7 +487,10 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|v, _: &NavigateBack, w, cx| v.navigate(false, w, cx)))
             .on_action(cx.listener(|v, _: &NavigateForward, w, cx| v.navigate(true, w, cx)))
-            .on_action(cx.listener(|v, _: &CloseWorkspace, w, cx| v.request_close_window(w, cx)))
+            .on_action(cx.listener(|v, _: &CloseWorkspace, w, cx| {
+                v.request_close_window(w, cx);
+                cx.stop_propagation();
+            }))
             .on_action(cx.listener(|v, _: &AddFolder, w, cx| v.choose_add_folder(w, cx)))
             .on_action(cx.listener(|v, _: &OpenFile, w, cx| v.choose_path(false, w, cx)))
             .on_action(cx.listener(|v, _: &OpenFolder, w, cx| v.choose_path(true, w, cx)))
@@ -380,105 +502,9 @@ impl Render for Workspace {
                 } else {
                     v.request_close_window(w, cx);
                 }
+                cx.stop_propagation();
             }))
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .w_full()
-                    .pr(px(2.))
-                    .pb(px(2.))
-                    .when(!self.sidebar_visible, |view| view.pl_2())
-                    .child(
-                        h_resizable("workspace-panels")
-                            .with_state(&self.sidebar_layout)
-                            .on_resize(cx.listener(
-                                |view,
-                                 state: &Entity<gpui_kit::component::resizable::ResizableState>,
-                                 window,
-                                 cx| {
-                                    if let Some(width) = state.read(cx).sizes().first().copied() {
-                                        if f32::from(width) <= SIDEBAR_COLLAPSE_WIDTH {
-                                            view.sidebar_visible = false;
-                                            view.sidebar_window_width = 0.;
-                                        } else {
-                                            view.sidebar_ratio = (f32::from(width)
-                                                / f32::from(window.viewport_size().width))
-                                            .min(0.5);
-                                        }
-                                        cx.notify();
-                                    }
-                                },
-                            ))
-                            .with_handle_appearance({
-                                let appearance =
-                                    gpui_kit::component::resizable::resize_handle_appearance();
-                                let layout = self.sidebar_layout.clone();
-                                let workspace = cx.entity().downgrade();
-                                std::rc::Rc::new(move |handle, window, cx| {
-                                    if handle.is_active()
-                                        && layout.read(cx).sizes().first().is_some_and(|size| {
-                                            f32::from(*size) <= SIDEBAR_COLLAPSE_WIDTH
-                                        })
-                                    {
-                                        let workspace = workspace.clone();
-                                        cx.defer(move |cx| {
-                                            let _ = workspace.update(cx, |view, cx| {
-                                                view.sidebar_visible = false;
-                                                view.sidebar_window_width = 0.;
-                                                cx.notify();
-                                            });
-                                        });
-                                    }
-                                    appearance(handle, window, cx).map(|line| {
-                                        let layout = layout.clone();
-                                        let workspace = workspace.clone();
-                                        // Keep the visible line inset, but use the full drag band for double clicks.
-                                        div()
-                                            .id("workspace-sidebar-resize-handle")
-                                            .flex()
-                                            .justify_center()
-                                            .w(px(9.))
-                                            .ml(px(-4.))
-                                            .h_full()
-                                            .pt(px(14.))
-                                            .pb(px(14.))
-                                            .child(line)
-                                            .on_double_click(move |_, window, cx| {
-                                                let _ = workspace.update(cx, |view, cx| {
-                                                    view.sidebar_ratio = DEFAULT_SIDEBAR_RATIO;
-                                                    cx.notify();
-                                                });
-                                                layout.update(cx, |state, cx| {
-                                                    state.resize_panel(
-                                                        0,
-                                                        window.viewport_size().width
-                                                            * DEFAULT_SIDEBAR_RATIO,
-                                                        window,
-                                                        cx,
-                                                    );
-                                                });
-                                                cx.stop_propagation();
-                                            })
-                                            .into_any_element()
-                                    })
-                                })
-                            })
-                            .child(
-                                resizable_panel()
-                                    .visible(self.sidebar_visible)
-                                    .size(px(sidebar_width))
-                                    .flex_none()
-                                    .size_range(px(80.)..px(window_width * 0.5))
-                                    .child(sidebar),
-                            )
-                            .child(
-                                resizable_panel()
-                                    .size_range(px(280.)..px(10000.))
-                                    .child(viewer),
-                            ),
-                    ),
-            )
+            .child(body)
             .when_some(self.error.clone(), |view, error| {
                 view.child(
                     deferred(

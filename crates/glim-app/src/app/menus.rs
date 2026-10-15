@@ -1,6 +1,6 @@
 use super::actions::{
-    About, AddFolder, CheckForUpdates, NewWindow, OpenFile, OpenFolder, OpenSettings, Quit,
-    SaveFile, TogglePreview, ToggleSidebar, ToggleWordWrap,
+    About, AddFolder, CheckForUpdates, CloseWorkspace, NewWindow, OpenFile, OpenFolder,
+    OpenSettings, Quit, SaveFile, TogglePreview, ToggleSidebar, ToggleWordWrap,
 };
 use glim_services::locale::tr;
 use gpui_kit::{App, Menu, MenuItem};
@@ -31,6 +31,8 @@ pub(super) fn update(cx: &mut App) {
                 MenuItem::action(tr("Add Folder to Workspace…"), AddFolder),
                 MenuItem::separator(),
                 MenuItem::action(tr("Save"), SaveFile),
+                MenuItem::separator(),
+                MenuItem::action(tr("Close Window"), CloseWorkspace),
             ],
         },
         Menu {

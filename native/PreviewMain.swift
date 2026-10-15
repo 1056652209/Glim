@@ -21,6 +21,16 @@ final class SettingsApp: NSObject, NSApplicationDelegate {
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
+// Foundation performs a recoverable move, including volume-specific Trash handling.
+if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--trash" {
+    do {
+        try FileManager.default.trashItem(at: URL(fileURLWithPath: CommandLine.arguments[2]), resultingItemURL: nil)
+        exit(0)
+    } catch {
+        FileHandle.standardError.write(Data(error.localizedDescription.utf8))
+        exit(1)
+    }
+}
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
 let delegate = SettingsApp()

@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 import CoreServices
 import CoreText
 
-struct Playlist: Decodable { let files: [String]; let shuffle: Bool; let autoplay: Bool?; let office: Bool?; let associations: String?; let font: Bool?; let sqlite: String?; let sqliteInfo: String?; let spreadsheet: String?; let language: String?; let localizations: [String: String]? }
+struct Playlist: Decodable { let files: [String]; let shuffle: Bool; let autoplay: Bool?; let playbackFiles: [String: String]?; let matroskaFiles: [String]?; let mediaHelper: String?; let mediaDirectory: String?; let mediaErrors: [String: String]?; let office: Bool?; let image: Bool?; let imagePath: String?; let associations: String?; let font: Bool?; let sqlite: String?; let sqliteInfo: String?; let spreadsheet: String?; let language: String?; let localizations: [String: String]? }
 
 var nativeTranslations: [String: String] = [:]
 func L(_ text: String) -> String { nativeTranslations[text] ?? text }
@@ -34,7 +34,7 @@ final class AssociationWindow: NSObject, NSWindowDelegate, NSTableViewDataSource
         ("Fonts", ["ttf", "otf", "ttc", "otc", "dfont"]),
         ("PDF", ["pdf"]), ("Mind maps", ["xmind"]), ("Ebooks", ["epub", "fb2", "cbz"]), ("Images", ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "tiff"]),
         ("Audio", ["mp3", "m4a", "wav", "aac", "flac", "aiff", "caf"]),
-        ("Video", ["mp4", "mov", "m4v"]),
+        ("Video", ["mp4", "mov", "m4v", "mkv"]),
         ("Keynote", ["key"]), ("Pages", ["pages"]), ("Numbers", ["numbers"]),
         ("Word", ["doc", "docx", "rtf"]), ("Excel", ["xls", "xlsx"]), ("PowerPoint", ["ppt", "pptx"])
     ]
@@ -167,10 +167,8 @@ final class AssociationWindow: NSObject, NSWindowDelegate, NSTableViewDataSource
 // the container URL even though it can decode the embedded font data.
 func resourceFontDescriptors(_ url: URL) throws -> [CTFontDescriptor] {
     let data = try Data(contentsOf: url, options: .mappedIfSafe)
-    guard data.count <= 128 * 1024 * 1024 else {
-        throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "Font exceeds 128 MiB"])
-    }
-    let bytes = [UInt8](data)
+
+    let bytes = data
     func integer(_ offset: Int, _ count: Int) throws -> Int {
         guard offset >= 0, count > 0, offset <= bytes.count - count else {
             throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "Truncated dfont resource map"])
@@ -181,7 +179,6 @@ func resourceFontDescriptors(_ url: URL) throws -> [CTFontDescriptor] {
     let mapOffset = try integer(4, 4)
     let typeList = mapOffset + (try integer(mapOffset + 24, 2))
     let typeCount = (try integer(typeList, 2)) + 1
-    guard typeCount <= 4096 else { throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid dfont resource type count"]) }
     var fonts: [CTFontDescriptor] = []
     for index in 0..<typeCount {
         let entry = typeList + 2 + index * 8
@@ -189,7 +186,6 @@ func resourceFontDescriptors(_ url: URL) throws -> [CTFontDescriptor] {
         guard type == 0x73666e74 else { continue } // sfnt
         let count = (try integer(entry + 4, 2)) + 1
         let references = typeList + (try integer(entry + 6, 2))
-        guard count <= 256 else { throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "dfont exceeds 256 embedded fonts"]) }
         for face in 0..<count {
             let resource = dataOffset + (try integer(references + face * 12 + 5, 3))
             let length = try integer(resource, 4)
@@ -197,7 +193,7 @@ func resourceFontDescriptors(_ url: URL) throws -> [CTFontDescriptor] {
             guard length > 0, start <= bytes.count, length <= bytes.count - start else {
                 throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "Truncated dfont sfnt resource"])
             }
-            let fontData = Data(bytes[start..<(start + length)])
+            let fontData = data[start..<(start + length)]
             fonts += CTFontManagerCreateFontDescriptorsFromData(fontData as CFData) as? [CTFontDescriptor] ?? []
         }
     }
@@ -250,7 +246,7 @@ final class FontPreview: NSObject, NSTextFieldDelegate {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.availableFaces = loadedFonts.count
-                self.descriptors = Array(loadedFonts.prefix(256))
+                self.descriptors = loadedFonts
                 guard !self.descriptors.isEmpty else {
                     self.metadata.stringValue = L(failureMessage)
                     self.selector.isHidden = true
@@ -272,14 +268,14 @@ final class FontPreview: NSObject, NSTextFieldDelegate {
         let index = selector.indexOfSelectedItem
         guard descriptors.indices.contains(index) else { return }
         let font = CTFontCreateWithFontDescriptor(descriptors[index], 16, nil)
-        metadata.stringValue = "\(CTFontCopyFamilyName(font)) · \(CTFontCopyPostScriptName(font)) · " + L("%glyphs glyphs · %faces faces").replacingOccurrences(of: "%glyphs", with: String(CTFontGetGlyphCount(font))).replacingOccurrences(of: "%faces", with: String(availableFaces)) + (availableFaces > 256 ? L(" (showing first 256)") : "")
+        metadata.stringValue = "\(CTFontCopyFamilyName(font)) · \(CTFontCopyPostScriptName(font)) · " + L("%glyphs glyphs · %faces faces").replacingOccurrences(of: "%glyphs", with: String(CTFontGetGlyphCount(font))).replacingOccurrences(of: "%faces", with: String(availableFaces))
         updateSamples()
     }
     func controlTextDidChange(_ notification: Notification) { updateSamples() }
     func updateSamples() {
         let index = selector.indexOfSelectedItem
         guard descriptors.indices.contains(index) else { return }
-        let text = String(input.stringValue.prefix(512))
+        let text = input.stringValue
         for (label, size) in zip(samples, sizes) {
             label.font = CTFontCreateWithFontDescriptor(descriptors[index], size, nil) as NSFont
             label.stringValue = text
@@ -383,6 +379,39 @@ final class NativePreviewHost: NSView {
     }
 }
 
+// A selected video's helper is cancellable independently of the player and source file.
+final class MediaPreparation {
+    private let lock = NSLock()
+    private let process = Process()
+    private var cancelled = false
+    func cancel() {
+        lock.lock(); defer { lock.unlock() }
+        cancelled = true
+        if process.isRunning { process.terminate() }
+    }
+    func run(helper: URL, source: URL, destination: URL) throws {
+        let log = destination.appendingPathExtension("log")
+        FileManager.default.createFile(atPath: log.path, contents: nil)
+        let stderr = try FileHandle(forWritingTo: log)
+        defer { try? stderr.close() }
+        lock.lock()
+        if cancelled { lock.unlock(); throw CocoaError(.userCancelled) }
+        process.executableURL = helper
+        process.arguments = ["--prepare-matroska", source.path, destination.path]
+        process.standardInput = FileHandle.nullDevice; process.standardOutput = FileHandle.nullDevice
+        process.standardError = stderr
+        do { try process.run(); lock.unlock() } catch { lock.unlock(); throw error }
+        process.waitUntilExit()
+        lock.lock(); let stopped = cancelled; lock.unlock()
+        if stopped { throw CocoaError(.userCancelled) }
+        if process.terminationStatus != 0 {
+            let input = try FileHandle(forReadingFrom: log); defer { try? input.close() }
+            let bytes = try input.read(upToCount: ReaderLimits.IO_BUFFER_BYTES) ?? Data()
+            throw NSError(domain: "Glim", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: String(decoding: bytes, as: UTF8.self)])
+        }
+    }
+}
+
 final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     var closed = false
     let host = NativePreviewHost(frame: NSRect(x: 0, y: 0, width: 1000, height: 740))
@@ -398,12 +427,22 @@ final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableVie
     let detailLabel = NSTextField(labelWithString: "")
     let table = NSTableView()
     var urls: [URL] = []
+    var playbackFiles: [String: String] = [:]
+    var mediaErrors: [String: String] = [:]
+    var matroskaFiles = Set<String>()
+    var mediaHelper: URL?
+    var mediaDirectory: URL?
+    var mediaPreparation: MediaPreparation?
+    var mediaGeneration = 0
+    var preparedMedia: URL?
+
     var index = 0
     var token: NSKeyValueObservation?
     var pdf = false
     var officeView: QLPreviewView?
     var spreadsheetView: WKWebView?
     var fontPreview: FontPreview?
+    var imagePreview: ImagePreview?
     var sqlitePreview: SQLitePreview?
     var failed = Set<URL>()
 
@@ -418,6 +457,11 @@ final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableVie
         host.setAccessibilityLabel(playlist.files.first.map { URL(fileURLWithPath: $0).lastPathComponent } ?? L("Preview"))
         urls = playlist.files.map { URL(fileURLWithPath: $0) }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        playbackFiles = playlist.playbackFiles ?? [:]
+        mediaErrors = playlist.mediaErrors ?? [:]
+        matroskaFiles = Set(playlist.matroskaFiles ?? [])
+        mediaHelper = playlist.mediaHelper.map { URL(fileURLWithPath: $0) }
+        mediaDirectory = playlist.mediaDirectory.map { URL(fileURLWithPath: $0) }
         if playlist.shuffle { urls.shuffle() }
         guard !urls.isEmpty else { throw NSError(domain: "Glim", code: 1, userInfo: [NSLocalizedDescriptionKey: "No media files found."]) }
         pdf = urls.count == 1 && urls[0].pathExtension.lowercased() == "pdf"
@@ -427,6 +471,12 @@ final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableVie
             preview.view.autoresizingMask = [.width, .height]
             host.addSubview(preview.view)
             return
+        }
+        if playlist.image == true {
+            let imageURL = playlist.imagePath.map { URL(fileURLWithPath: $0) } ?? urls[0]
+            let preview = ImagePreview(url: imageURL); imagePreview = preview
+            preview.view.frame = host.bounds; preview.view.autoresizingMask = [.width, .height]
+            host.addSubview(preview.view); return
         }
         if playlist.font == true {
             let preview = FontPreview(url: urls[0]); fontPreview = preview
@@ -581,12 +631,64 @@ final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableVie
     }
     @objc func openOfficeExternally() { if let url = urls.first { NSWorkspace.shared.open(url) } }
 
+    private func prepareVideo(_ next: Int, autoplay: Bool) {
+        guard let helper = mediaHelper, let directory = mediaDirectory else { return }
+        mediaPreparation?.cancel(); mediaGeneration += 1
+        let generation = mediaGeneration
+        let source = urls[next]
+        let jobDirectory = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let destination = jobDirectory.appendingPathComponent("preview.mp4")
+        let obsolete = preparedMedia
+        playbackFiles.removeAll(); preparedMedia = nil
+        player.pause(); player.replaceCurrentItem(with: nil); pendingPlayback = false
+        titleLabel.stringValue = source.lastPathComponent; detailLabel.stringValue = L("Preparing video…")
+        let preparation = MediaPreparation(); mediaPreparation = preparation
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            if let obsolete = obsolete { try? FileManager.default.removeItem(at: obsolete.deletingLastPathComponent()) }
+            let result = Result {
+                try FileManager.default.createDirectory(at: jobDirectory, withIntermediateDirectories: false)
+                try preparation.run(helper: helper, source: source, destination: destination)
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !self.closed, self.mediaGeneration == generation else {
+                    DispatchQueue.global().async { try? FileManager.default.removeItem(at: jobDirectory) }
+                    return
+                }
+                self.mediaPreparation = nil
+                switch result {
+                case .success:
+                    self.playbackFiles[source.path] = destination.path; self.preparedMedia = destination
+                    self.play(next, autoplay: autoplay)
+                case .failure(let error):
+                    DispatchQueue.global().async { try? FileManager.default.removeItem(at: jobDirectory) }
+                    self.mediaErrors[source.path] = error.localizedDescription
+                    self.play(next, autoplay: autoplay)
+                }
+            }
+        }
+    }
     func play(_ next: Int, autoplay: Bool = true) {
-        guard urls.indices.contains(next) else { player.pause(); return }
+        var next = next
+        while urls.indices.contains(next), let error = mediaErrors[urls[next].path] {
+            titleLabel.stringValue = urls[next].lastPathComponent
+            detailLabel.stringValue = error
+            next += 1
+        }
+        guard urls.indices.contains(next) else {
+            pendingPlayback = false
+            player.pause()
+            player.replaceCurrentItem(with: nil)
+            return
+        }
         token = nil; index = next
-        let item = AVPlayerItem(url: urls[index])
+        if matroskaFiles.contains(urls[index].path) && playbackFiles[urls[index].path] == nil {
+            prepareVideo(next, autoplay: autoplay); return
+        }
+        mediaPreparation?.cancel(); mediaPreparation = nil; mediaGeneration += 1
+        let playbackURL = playbackFiles[urls[index].path].map { URL(fileURLWithPath: $0) } ?? urls[index]
+        let item = AVPlayerItem(url: playbackURL)
         player.replaceCurrentItem(with: item)
-        updateAudioArtwork(urls[index], item: item)
+        updateAudioArtwork(playbackURL, item: item)
         titleLabel.stringValue = urls[index].lastPathComponent
         detailLabel.stringValue = "\(index + 1) / \(urls.count)"
         if urls.count > 1 {
@@ -630,9 +732,9 @@ final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableVie
             let album = value(.commonKeyAlbumName)
             var image: CGImage?
             if let data = AVMetadataItem.metadataItems(from: metadata, withKey: AVMetadataKey.commonKeyArtwork, keySpace: .common).first?.dataValue,
-                data.count <= 8 * 1024 * 1024,
+                data.count <= ReaderLimits.AUDIO_ARTWORK_INPUT_BYTES,
                 let source = CGImageSourceCreateWithData(data as CFData, nil) {
-                image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 600, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary)
+                image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: ReaderLimits.AUDIO_ARTWORK_PREVIEW_EDGE, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary)
             }
             DispatchQueue.main.async {
                 guard let self = self, let item = item, self.player.currentItem === item else { return }
@@ -669,6 +771,8 @@ final class NativePreviewController: NSObject, NSTableViewDataSource, NSTableVie
     func close() {
         closed = true
         NotificationCenter.default.removeObserver(self)
+        mediaPreparation?.cancel(); mediaPreparation = nil; mediaGeneration += 1
+        imagePreview?.close()
         sqlitePreview?.close()
         officeView?.previewItem = nil
         officeView?.close()

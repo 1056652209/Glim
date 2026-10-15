@@ -67,3 +67,10 @@ for (const file of ['D2-LICENSE.txt', 'D2-THIRD-PARTY-NOTICES.txt']) {
 const pikchrSource = await readFile(path.join(here, 'node_modules/pikchr-wasm/pikchr/pikchr.c'), 'utf8');
 notices.push(`\n## Pikchr implementation (D. Richard Hipp, 0BSD)\n\n${pikchrSource.slice(pikchrSource.indexOf('/*\n** Zero-Clause'), pikchrSource.indexOf('****************************************************************************'))}`);
 await writeFile(path.join(output, 'THIRD_PARTY_LICENSES.txt'), notices.join('\n'));
+
+// npm archives may carry CRLF text; keep generated repository assets reproducible.
+for (const name of ['renderer.js', 'plantuml.js', 'themes.js', 'emoji.js', 'openiconic.js', 'THIRD_PARTY_LICENSES.txt']) {
+  const target = path.join(output, name);
+  const text = await readFile(target, 'utf8');
+  await writeFile(target, text.replace(/\r\n/g, '\n'));
+}

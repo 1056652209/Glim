@@ -108,12 +108,13 @@ pub fn recent_workspaces() -> Result<Vec<RecentWorkspace>> {
 
 pub fn remember_recent_workspace(workspace: RecentWorkspace) -> Result<Vec<RecentWorkspace>> {
     let mut recent = recent_workspaces()?;
-    if workspace.folders.is_empty() {
-        return Ok(recent);
+    recent.retain(|entry| {
+        entry.id != workspace.id
+            && (workspace.folders.is_empty() || entry.folders != workspace.folders)
+    });
+    if !workspace.folders.is_empty() {
+        recent.insert(0, workspace);
     }
-    recent.retain(|entry| entry.id != workspace.id && entry.folders != workspace.folders);
-    recent.insert(0, workspace);
-    recent.truncate(30);
     let path = directory()?.join("recent-workspaces.json");
     let parent = path.parent().context("Invalid preferences path")?;
     std::fs::create_dir_all(parent)?;

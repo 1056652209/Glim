@@ -1,6 +1,7 @@
 use crate::app::actions::{
     BookContents, BookNextChapter, BookNextPage, BookPreviousChapter, BookPreviousPage,
 };
+use glim_services::limits as reader_limits;
 use glim_services::{
     books::{
         self, Book, ChapterContent, Format,
@@ -285,14 +286,14 @@ impl BookReader {
             b.chapter == self.state.chapter && (b.fraction - self.state.fraction).abs() < 0.02
         }) {
             self.state.bookmarks.remove(index);
-        } else if self.state.bookmarks.len() < 100 {
+        } else {
             self.state.bookmarks.push(Bookmark {
                 chapter: self.state.chapter,
                 fraction: self.state.fraction,
                 label: self.book.chapters[self.state.chapter]
                     .title
                     .chars()
-                    .take(120)
+                    .take(reader_limits::BOOK_STATE_LABEL_CHARS)
                     .collect(),
             });
         }

@@ -48,6 +48,16 @@ impl AssetSource for Assets {
                     "../../../../assets/navigation/appearance.svg"
                 ))));
             }
+            "navigation/file-fullscreen.svg" => {
+                return Ok(Some(Cow::Borrowed(include_bytes!(
+                    "../../../../assets/navigation/file-fullscreen.svg"
+                ))));
+            }
+            "navigation/file-fullscreen-exit.svg" => {
+                return Ok(Some(Cow::Borrowed(include_bytes!(
+                    "../../../../assets/navigation/file-fullscreen-exit.svg"
+                ))));
+            }
             "navigation/wrap.svg" => {
                 return Ok(Some(Cow::Borrowed(include_bytes!(
                     "../../../../assets/navigation/wrap.svg"

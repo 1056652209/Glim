@@ -26,8 +26,8 @@ mermaid.initialize({
   flowchart: { htmlLabels: false },
   journey: { textPlacement: 'svg' },
   htmlLabels: false,
-  maxTextSize: 262144,
-  maxEdges: 1000,
+  maxTextSize: window.GLIM_LIMITS.DIAGRAM_SOURCE_BYTES,
+  maxEdges: window.GLIM_LIMITS.DIAGRAM_MERMAID_EDGES,
 });
 const externalDiagramsReady = mermaid.registerExternalDiagrams([zenuml]);
 window.Viz = { instance };
@@ -41,8 +41,8 @@ const mathDocument = mathjax.document('', {
     // noundefined paints unknown commands red instead of reporting a parse
     // error, which would make malformed or disabled commands look successful.
     packages: AllPackages.filter(name => !['require', 'autoload', 'html', 'noundefined'].includes(name)),
-    maxBuffer: 262144,
-    maxMacros: 1000,
+    maxBuffer: window.GLIM_LIMITS.DIAGRAM_SOURCE_BYTES,
+    maxMacros: window.GLIM_LIMITS.DIAGRAM_MATH_MACROS,
   }),
   OutputJax: new SVG({ fontCache: 'none' }),
 });
@@ -221,9 +221,9 @@ async function main() {
     try {
       const result = normalize(await Promise.race([
         render(requests[index], index),
-        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('此图表渲染超过 8 秒')), 8000); }),
+        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error(`此图表渲染超过 ${window.GLIM_LIMITS.DIAGRAM_BLOCK_SECONDS} 秒`)), window.GLIM_LIMITS.DIAGRAM_BLOCK_SECONDS * 1000); }),
       ]));
-      if (new TextEncoder().encode(result.svg).byteLength > 8 * 1024 * 1024) throw new Error('图表 SVG 超过 8 MiB');
+      if (new TextEncoder().encode(result.svg).byteLength > window.GLIM_LIMITS.DIAGRAM_SVG_BYTES) throw new Error(`图表 SVG 超过 ${window.GLIM_LIMITS.DIAGRAM_SVG_BYTES} 字节`) ;
       window.ipc.postMessage(JSON.stringify({ index, ...result }));
     } catch (error) {
       window.ipc.postMessage(JSON.stringify({ index, error: String(error).slice(0, 2000) }));

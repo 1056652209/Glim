@@ -1,5 +1,5 @@
 //! Snapshot SQLite families before previewing, so WAL recovery never touches source files.
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::{
     fs,
     io::{Read, Write},
@@ -7,7 +7,6 @@ use std::{
     time::SystemTime,
 };
 
-const MAX_SNAPSHOT: u64 = 4 * 1024 * 1024 * 1024;
 pub fn supports(path: &Path) -> bool {
     let name = path
         .file_name()
@@ -73,6 +72,9 @@ pub struct Snapshot {
     _directory: Option<tempfile::TempDir>,
 }
 pub fn prepare(path: &Path) -> Result<Snapshot> {
+    prepare_cancellable(path, &crate::work::Cancellation::default())
+}
+pub fn prepare_cancellable(path: &Path, cancel: &crate::work::Cancellation) -> Result<Snapshot> {
     let main = main_path(path);
     if main != path && !main.is_file() {
         let mut info = format!(
@@ -115,15 +117,6 @@ pub fn prepare(path: &Path) -> Result<Snapshot> {
     ];
     for _ in 0..3 {
         let before = files.iter().map(|p| stamp(p)).collect::<Result<Vec<_>>>()?;
-        let total = before
-            .iter()
-            .flatten()
-            .try_fold(0u64, |sum, s| sum.checked_add(s.size))
-            .context("Database family size overflow")?;
-        ensure!(
-            total <= MAX_SNAPSHOT,
-            "SQLite preview snapshot is limited to 4 GiB including its WAL; choose a smaller database copy"
-        );
         let directory = tempfile::tempdir()?;
         let database = directory.path().join("snapshot.sqlite");
         for ((source, state), suffix) in files.iter().zip(&before).zip(["", "-wal", "-journal"]) {
@@ -133,6 +126,7 @@ pub fn prepare(path: &Path) -> Result<Snapshot> {
                 let mut buffer = [0; 64 * 1024];
                 let mut copied = 0;
                 loop {
+                    cancel.check()?;
                     let count = input.read(&mut buffer)?;
                     if count == 0 {
                         break;

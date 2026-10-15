@@ -1,6 +1,17 @@
 use std::{env, path::PathBuf, process::Command};
 
 fn main() {
+    println!("cargo:rerun-if-changed=../../assets/reader-limits.json");
+    println!("cargo:rerun-if-changed=../../scripts/generate-reader-limits.py");
+    let limits_out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let generated = Command::new("python3")
+        .arg("../../scripts/generate-reader-limits.py")
+        .arg("--out-dir")
+        .arg(&limits_out)
+        .status()
+        .expect("Generate shared reader limits");
+    assert!(generated.success(), "Reader limit generation failed");
+
     println!("cargo:rerun-if-changed=../../assets/locales");
     println!("cargo:rerun-if-changed=../../scripts/check-locales.py");
     println!("cargo:rerun-if-changed=../../crates/glim-app/src");
@@ -31,6 +42,7 @@ fn main() {
     )
     .expect("embed locale catalogs");
     println!("cargo:rerun-if-changed=../../native/Preview.swift");
+    println!("cargo:rerun-if-changed=../../native/ImagePreview.swift");
     println!("cargo:rerun-if-changed=../../native/SQLitePreview.swift");
     println!("cargo:rerun-if-changed=../../native/PreviewMain.swift");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
@@ -55,7 +67,9 @@ fn main() {
             &format!("{arch}-apple-macos11.0"),
             "../../native/SQLitePreview.swift",
             "../../native/Preview.swift",
+            "../../native/ImagePreview.swift",
         ])
+        .arg(output.with_file_name("ReaderLimits.swift"))
         .arg(main)
         .arg("-o")
         .arg(output)

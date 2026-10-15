@@ -1,4 +1,5 @@
 //! Conservative first-pass document projection. Original text stays editable.
+use crate::limits as reader_limits;
 use std::path::Path;
 pub fn supports(path: &Path) -> bool {
     path.file_name()
@@ -135,7 +136,10 @@ fn coordinates(text: &str) -> String {
             }
             Ok(Event::Text(value)) if in_coordinates => {
                 if let Ok(value) = value.decode() {
-                    for point in value.split_whitespace().take(10_000 - count) {
+                    for point in value
+                        .split_whitespace()
+                        .take(reader_limits::GEO_POINTS - count)
+                    {
                         let values: Vec<_> = point
                             .split(',')
                             .filter_map(|v| v.parse::<f64>().ok())
@@ -159,10 +163,8 @@ fn coordinates(text: &str) -> String {
             Err(error) => return format!("{}: {error}", crate::locale::tr("XML parsing failed")),
             _ => {}
         }
-        if count >= 10_000 {
-            output.push_str(&crate::locale::tr(
-                "\nOnly the first 10,000 coordinates are shown\n",
-            ));
+        if count >= reader_limits::GEO_POINTS {
+            output.push_str(&crate::locale::tr("\nCoordinate preview truncated\n"));
             break;
         }
     }

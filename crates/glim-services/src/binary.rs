@@ -1,4 +1,5 @@
 //! Bounded, read-only byte inspection for dotfiles that cannot be decoded as text.
+use crate::limits as reader_limits;
 use anyhow::{Result, ensure};
 use std::{
     fmt::Write as _,
@@ -6,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const PREVIEW_BYTES: usize = 256 * 1024;
+pub const PREVIEW_BYTES: usize = reader_limits::BINARY_PREVIEW_BYTES;
 pub struct BytePreview {
     pub path: PathBuf,
     pub text: String,
@@ -24,7 +25,7 @@ pub fn read_preview(path: &Path) -> Result<BytePreview> {
         "Read-only byte preview · {} bytes shown{}\nOffset    Hex bytes                                         ASCII\n",
         bytes.len(),
         if truncated {
-            " · truncated to first 256 KiB"
+            " · preview truncated"
         } else {
             ""
         }

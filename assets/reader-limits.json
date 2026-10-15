@@ -1,0 +1,1345 @@
+{
+  "schema_version": 1,
+  "description": "Shared reader policy: total-size gates are replaced by scalable access. Null values retire a gate; finite values describe active pages, previews and resource budgets.",
+  "limits": {
+    "text": {
+      "editable_bytes": {
+        "value": 33554432,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "fallback",
+        "description": "Large/long-line text switches to editable pages; saving streams unchanged ranges through an atomic replacement without a total file-size cap."
+      },
+      "editable_newlines": {
+        "value": 400000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Large/long-line text switches to editable pages; saving streams unchanged ranges through an atomic replacement without a total file-size cap."
+      },
+      "line_bytes": {
+        "value": 65536,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "fallback",
+        "description": "Large/long-line text switches to editable pages; saving streams unchanged ranges through an atomic replacement without a total file-size cap."
+      },
+      "page_bytes": {
+        "value": 1048576,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "text: page bytes"
+      },
+      "full_bytes": {
+        "value": 268435456,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Maximum bytes in an expanded read-only page, independent of total file size."
+      },
+      "full_newlines": {
+        "value": 4000000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "budget",
+        "description": "Maximum newlines in an expanded page; remaining text stays available on the next page."
+      }
+    },
+    "binary": {
+      "preview_bytes": {
+        "value": 262144,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "page",
+        "description": "Bytes read per hex page; previous/next navigation exposes the complete file."
+      }
+    },
+    "image": {
+      "input_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "File-backed native image loading or streamed thumbnail preparation; source size and pixel count do not reject the file."
+      },
+      "pixels": {
+        "value": null,
+        "type": "u64",
+        "unit": "pixels",
+        "effect": "unlimited",
+        "description": "File-backed native image loading or streamed thumbnail preparation; source size and pixel count do not reject the file."
+      },
+      "decoded_bytes": {
+        "value": 536870912,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Active scanline/encoder working budget for QOI conversion; native image decoding loads one requested page."
+      },
+      "preview_edge": {
+        "value": 4000,
+        "type": "u32",
+        "unit": "pixels",
+        "effect": "budget",
+        "description": "Initial ImageIO preview resolution. Original resolution loads explicitly for the current page, with pan/zoom."
+      }
+    },
+    "gif": {
+      "preview_edge": {
+        "value": 2048,
+        "type": "u32",
+        "unit": "pixels",
+        "effect": "budget",
+        "description": "Displayed animation texture size, independent of source size and frame count."
+      },
+      "canvas_bytes": {
+        "value": 536870912,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Compositing working memory. Oversized canvases are sampled while decoding rows, rather than rejecting the animation."
+      },
+      "batch_bytes": {
+        "value": 16777216,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "gif: batch bytes"
+      },
+      "batch_frames": {
+        "value": 3,
+        "type": "usize",
+        "unit": "items",
+        "effect": "budget",
+        "description": "gif: batch frames"
+      }
+    },
+    "tiff": {
+      "decode_buffer_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Native ImageIO loads the requested TIFF page on demand; page count and aggregate decoded/encoded preview totals do not gate opening."
+      },
+      "pages": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Native ImageIO loads the requested TIFF page on demand; page count and aggregate decoded/encoded preview totals do not gate opening."
+      },
+      "preview_decoded_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Native ImageIO loads the requested TIFF page on demand; page count and aggregate decoded/encoded preview totals do not gate opening."
+      },
+      "preview_encoded_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Native ImageIO loads the requested TIFF page on demand; page count and aggregate decoded/encoded preview totals do not gate opening."
+      }
+    },
+    "inline_image": {
+      "preview_edge": {
+        "value": 2048,
+        "type": "u32",
+        "unit": "pixels",
+        "effect": "budget",
+        "description": "Inline thumbnail resolution; complete source images remain available in their standalone reader."
+      },
+      "encoded_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "File-backed native image loading or streamed thumbnail preparation; source size and pixel count do not reject the file."
+      },
+      "decoded_bytes": {
+        "value": 67108864,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "inline image: decoded bytes"
+      },
+      "output_overhead_bytes": {
+        "value": 1048576,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "inline image: output overhead bytes"
+      }
+    },
+    "font": {
+      "input_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "System font metadata is loaded from the file; all faces and sample text remain accessible."
+      },
+      "faces": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "System font metadata is loaded from the file; all faces and sample text remain accessible."
+      },
+      "resource_types": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "System font metadata is loaded from the file; all faces and sample text remain accessible."
+      },
+      "sample_chars": {
+        "value": null,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "unlimited",
+        "description": "System font metadata is loaded from the file; all faces and sample text remain accessible."
+      }
+    },
+    "playlist": {
+      "files": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Playlist rows are virtualized; no application total-file-count gate."
+      }
+    },
+    "mkv": {
+      "playlist_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Read source frames from disk, index timestamps in a disk-backed database, and write fragmented MP4. Prepare only the selected playlist item in a cancellable helper; no total size/count/duration gate."
+      },
+      "input_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Read source frames from disk, index timestamps in a disk-backed database, and write fragmented MP4. Prepare only the selected playlist item in a cancellable helper; no total size/count/duration gate."
+      },
+      "frame_bytes": {
+        "value": 16777216,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Active compressed frame/codec-metadata allocation budget, independent of the movie size."
+      },
+      "frames": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Read source frames from disk, index timestamps in a disk-backed database, and write fragmented MP4. Prepare only the selected playlist item in a cancellable helper; no total size/count/duration gate."
+      },
+      "parser_read_bytes": {
+        "value": 2147483648,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Per-progress parser allowance, reset after each frame; optional seek indexes are skipped without loading them. Not a cumulative movie-length limit."
+      },
+      "parser_operations": {
+        "value": 20000000,
+        "type": "u64",
+        "unit": "operations",
+        "effect": "budget",
+        "description": "Per-progress parser allowance, reset after each frame; optional seek indexes are skipped without loading them. Not a cumulative movie-length limit."
+      },
+      "tracks": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Read source frames from disk, index timestamps in a disk-backed database, and write fragmented MP4. Prepare only the selected playlist item in a cancellable helper; no total size/count/duration gate."
+      },
+      "duration_seconds": {
+        "value": null,
+        "type": "u64",
+        "unit": "seconds",
+        "effect": "unlimited",
+        "description": "Read source frames from disk, index timestamps in a disk-backed database, and write fragmented MP4. Prepare only the selected playlist item in a cancellable helper; no total size/count/duration gate."
+      },
+      "nal_units": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Read source frames from disk, index timestamps in a disk-backed database, and write fragmented MP4. Prepare only the selected playlist item in a cancellable helper; no total size/count/duration gate."
+      },
+      "nesting": {
+        "value": 16,
+        "type": "usize",
+        "unit": "levels",
+        "effect": "budget",
+        "description": "Parser stack budget for track metadata; optional chapters/tags/cues are skipped in a streaming pass."
+      },
+      "elements": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Read source frames from disk, index timestamps in a disk-backed database, and write fragmented MP4. Prepare only the selected playlist item in a cancellable helper; no total size/count/duration gate."
+      }
+    },
+    "json": {
+      "input_bytes": {
+        "value": 16777216,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "fallback",
+        "description": "Structured-tree working budget. Complete content remains accessible and editable in Source, using pages for large files."
+      },
+      "field_chars": {
+        "value": 512,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "budget",
+        "description": "Tree-label summary only. Expand containers or double-click a field to inspect the complete key/value; Source preserves full content."
+      },
+      "nodes": {
+        "value": 250000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Structured-tree working budget. Complete content remains accessible and editable in Source, using pages for large files."
+      },
+      "description_chars": {
+        "value": 80,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "budget",
+        "description": "Tree-label summary only. Expand containers or double-click a field to inspect the complete key/value; Source preserves full content."
+      },
+      "array_summary_chars": {
+        "value": 120,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "budget",
+        "description": "Tree-label summary only. Expand containers or double-click a field to inspect the complete key/value; Source preserves full content."
+      },
+      "auto_expand_children": {
+        "value": 16,
+        "type": "usize",
+        "unit": "items",
+        "effect": "budget",
+        "description": "json: auto expand children"
+      }
+    },
+    "csv": {
+      "input_bytes": {
+        "value": 16777216,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Active page and individual record decoding budget; not a total file-size gate. Oversized individual records remain accessible in the editable Source pages."
+      },
+      "rows": {
+        "value": 100000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "page",
+        "description": "Active table page/window budget. Row and column navigation expose the remaining records."
+      },
+      "columns": {
+        "value": 256,
+        "type": "usize",
+        "unit": "items",
+        "effect": "page",
+        "description": "Active table page/window budget. Row and column navigation expose the remaining records."
+      },
+      "cells": {
+        "value": 1000000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "page",
+        "description": "Active table page/window budget. Row and column navigation expose the remaining records."
+      },
+      "cell_chars": {
+        "value": 4096,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "budget",
+        "description": "Visible cell excerpt; double-click displays the complete current cell in a selectable read-only editor."
+      }
+    },
+    "spreadsheet": {
+      "sheets": {
+        "value": 128,
+        "type": "usize",
+        "unit": "items",
+        "effect": "truncate",
+        "description": "spreadsheet: sheets"
+      },
+      "rows": {
+        "value": 5000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "truncate",
+        "description": "spreadsheet: rows"
+      },
+      "columns": {
+        "value": 256,
+        "type": "usize",
+        "unit": "items",
+        "effect": "truncate",
+        "description": "spreadsheet: columns"
+      },
+      "cell_chars": {
+        "value": 4096,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "truncate",
+        "description": "spreadsheet: cell chars"
+      },
+      "input_bytes": {
+        "value": 134217728,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "spreadsheet: input bytes"
+      },
+      "sheet_text_bytes": {
+        "value": 33554432,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "spreadsheet: sheet text bytes"
+      },
+      "html_bytes": {
+        "value": 67108864,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "spreadsheet: html bytes"
+      }
+    },
+    "xmind": {
+      "title_bytes": {
+        "value": 16384,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "nesting": {
+        "value": 64,
+        "type": "usize",
+        "unit": "levels",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "content_bytes": {
+        "value": 16777216,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "topics": {
+        "value": 10000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "input_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Open the ZIP container from disk without a total file-size or entry-count gate.",
+        "description_zh": "从磁盘打开 ZIP 容器，不以文件总大小或条目总数拒绝打开。"
+      },
+      "archive_entries": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Open the ZIP container from disk without a total file-size or entry-count gate.",
+        "description_zh": "从磁盘打开 ZIP 容器，不以文件总大小或条目总数拒绝打开。"
+      },
+      "sheets": {
+        "value": 100,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "relationships": {
+        "value": 10000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "note_bytes": {
+        "value": 65536,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "labels": {
+        "value": 128,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "xml_nodes": {
+        "value": 200000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "xml_nesting": {
+        "value": 256,
+        "type": "usize",
+        "unit": "levels",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "link_bytes": {
+        "value": 16384,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      },
+      "labels_bytes": {
+        "value": 16384,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "fallback",
+        "description": "Interactive mind-map working budget. When exceeded, complete content.json/content.xml remains accessible through cancellable, on-demand decompressed pages.",
+        "description_zh": "交互式思维导图的工作预算。超出后改为完整 content.json/content.xml 分页，按需解压并支持取消，不丢弃内容。"
+      }
+    },
+    "archive": {
+      "entries": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Enumerate and spool every entry to disk; the UI reads bounded pages."
+      },
+      "bytes": {
+        "value": 33554432,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Small-document XML parsing buffer; larger content is streamed in full to a paged text view."
+      }
+    },
+    "numpy": {
+      "header_bytes": {
+        "value": 65536,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Metadata interpretation window; the complete header remains available in the generated paged report."
+      },
+      "values": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Numeric values stream to a disk-backed paged report; no prefix-only preview."
+      }
+    },
+    "geometry": {
+      "input_bytes": {
+        "value": 16777216,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "fallback",
+        "description": "Static projection working budget; oversized projections open complete source pages instead of rejecting or silently truncating the file.",
+        "description_zh": "静态投影的工作预算；超出后打开完整源文件分页，不拒绝文件，也不静默截断内容。"
+      },
+      "vertices": {
+        "value": 100000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Static projection working budget; oversized projections open complete source pages instead of rejecting or silently truncating the file.",
+        "description_zh": "静态投影的工作预算；超出后打开完整源文件分页，不拒绝文件，也不静默截断内容。"
+      },
+      "faces": {
+        "value": 100000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Static projection working budget; oversized projections open complete source pages instead of rejecting or silently truncating the file.",
+        "description_zh": "静态投影的工作预算；超出后打开完整源文件分页，不拒绝文件，也不静默截断内容。"
+      },
+      "polygon_vertices": {
+        "value": 256,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Static projection working budget; oversized projections open complete source pages instead of rejecting or silently truncating the file.",
+        "description_zh": "静态投影的工作预算；超出后打开完整源文件分页，不拒绝文件，也不静默截断内容。"
+      }
+    },
+    "bdf": {
+      "glyph_edge": {
+        "value": 64,
+        "type": "usize",
+        "unit": "pixels",
+        "effect": "fallback",
+        "description": "Static projection working budget; oversized projections open complete source pages instead of rejecting or silently truncating the file.",
+        "description_zh": "静态投影的工作预算；超出后打开完整源文件分页，不拒绝文件，也不静默截断内容。"
+      },
+      "glyphs": {
+        "value": 64,
+        "type": "usize",
+        "unit": "items",
+        "effect": "fallback",
+        "description": "Static projection working budget; oversized projections open complete source pages instead of rejecting or silently truncating the file.",
+        "description_zh": "静态投影的工作预算；超出后打开完整源文件分页，不拒绝文件，也不静默截断内容。"
+      }
+    },
+    "executable": {
+      "input_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Executable headers are read on demand through ReadCache and the complete report is spooled to disk for paging."
+      },
+      "name_chars": {
+        "value": null,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "unlimited",
+        "description": "Executable headers are read on demand through ReadCache and the complete report is spooled to disk for paging."
+      },
+      "architectures": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Executable headers are read on demand through ReadCache and the complete report is spooled to disk for paging."
+      },
+      "hex_bytes": {
+        "value": 4096,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Hex excerpt in the metadata report; file bytes remain accessible through the paged raw view."
+      },
+      "segments": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Executable headers are read on demand through ReadCache and the complete report is spooled to disk for paging."
+      },
+      "sections": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Executable headers are read on demand through ReadCache and the complete report is spooled to disk for paging."
+      },
+      "report_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Executable headers are read on demand through ReadCache and the complete report is spooled to disk for paging."
+      },
+      "libraries": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Executable headers are read on demand through ReadCache and the complete report is spooled to disk for paging."
+      },
+      "dynamic_entries": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Executable headers are read on demand through ReadCache and the complete report is spooled to disk for paging."
+      },
+      "name_scan_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Executable headers are read on demand through ReadCache and the complete report is spooled to disk for paging."
+      }
+    },
+    "tensor": {
+      "header_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Stream tensor header entries to a disk-backed report; retain complete names, metadata, shapes and rows. Tensor payloads are not loaded."
+      },
+      "rows": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Stream tensor header entries to a disk-backed report; retain complete names, metadata, shapes and rows. Tensor payloads are not loaded."
+      },
+      "report_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Stream tensor header entries to a disk-backed report; retain complete names, metadata, shapes and rows. Tensor payloads are not loaded."
+      },
+      "shape_dimensions": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Stream tensor header entries to a disk-backed report; retain complete names, metadata, shapes and rows. Tensor payloads are not loaded."
+      },
+      "metadata_entries": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Stream tensor header entries to a disk-backed report; retain complete names, metadata, shapes and rows. Tensor payloads are not loaded."
+      },
+      "name_chars": {
+        "value": null,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "unlimited",
+        "description": "Stream tensor header entries to a disk-backed report; retain complete names, metadata, shapes and rows. Tensor payloads are not loaded."
+      },
+      "dtype_chars": {
+        "value": null,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "unlimited",
+        "description": "Stream tensor header entries to a disk-backed report; retain complete names, metadata, shapes and rows. Tensor payloads are not loaded."
+      },
+      "metadata_key_chars": {
+        "value": null,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "unlimited",
+        "description": "Stream tensor header entries to a disk-backed report; retain complete names, metadata, shapes and rows. Tensor payloads are not loaded."
+      },
+      "metadata_value_chars": {
+        "value": null,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "unlimited",
+        "description": "Stream tensor header entries to a disk-backed report; retain complete names, metadata, shapes and rows. Tensor payloads are not loaded."
+      }
+    },
+    "sqlite": {
+      "snapshot_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "The snapshot copies in fixed-size blocks, without a total database size gate."
+      },
+      "page_rows": {
+        "value": 500,
+        "type": "usize",
+        "unit": "rows",
+        "effect": "budget",
+        "description": "sqlite: page rows"
+      },
+      "tables": {
+        "value": 5000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "page",
+        "description": "Column/catalog page size with explicit navigation to remaining items."
+      },
+      "columns": {
+        "value": 256,
+        "type": "usize",
+        "unit": "columns",
+        "effect": "page",
+        "description": "Column/catalog page size with explicit navigation to remaining items."
+      },
+      "value_bytes": {
+        "value": null,
+        "type": "i32",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Retain native SQLite format limits; full values and definitions load on explicit request."
+      },
+      "text_bytes": {
+        "value": 512,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Cell summary only; double-click loads the complete value (BLOB shown as hex)."
+      },
+      "schema_text_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Retain native SQLite format limits; full values and definitions load on explicit request."
+      },
+      "blob_bytes": {
+        "value": 16,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Cell summary only; double-click loads the complete value (BLOB shown as hex)."
+      },
+      "query_seconds": {
+        "value": 5,
+        "type": "u64",
+        "unit": "seconds",
+        "effect": "timeout",
+        "description": "Initial query allowance; Retry with more time extends it explicitly instead of imposing a permanent timeout."
+      },
+      "busy_milliseconds": {
+        "value": 1000,
+        "type": "i32",
+        "unit": "milliseconds",
+        "effect": "timeout",
+        "description": "sqlite: busy milliseconds"
+      },
+      "cache_kib": {
+        "value": 8192,
+        "type": "i32",
+        "unit": "KiB",
+        "effect": "budget",
+        "description": "sqlite: cache kib"
+      }
+    },
+    "markup": {
+      "scan_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Scan the current document text for picture/image references; large source documents already use bounded editor pages."
+      }
+    },
+    "remote_image": {
+      "input_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "HTTP data streams into a temporary file; static previews decode bounded thumbnails and GIFs stream from the file."
+      },
+      "timeout_seconds": {
+        "value": 20,
+        "type": "u64",
+        "unit": "seconds",
+        "effect": "timeout",
+        "description": "Idle/no-progress timeout; active downloads have no fixed total elapsed time cap."
+      },
+      "first_attempt_seconds": {
+        "value": 8,
+        "type": "u64",
+        "unit": "seconds",
+        "effect": "timeout",
+        "description": "Connection allowance for the first raw GitHub URL before the API fallback."
+      },
+      "svg_embedded_bytes": {
+        "value": 67108864,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Per-embedded-image preview working memory; SVG images are processed individually instead of accumulating a document-wide rejection budget."
+      },
+      "redirects": {
+        "value": 5,
+        "type": "usize",
+        "unit": "items",
+        "effect": "budget",
+        "description": "Redirect-chain budget prevents request loops; it does not constrain image size."
+      },
+      "connect_seconds": {
+        "value": 8,
+        "type": "u64",
+        "unit": "seconds",
+        "effect": "timeout",
+        "description": "remote image: connect seconds"
+      },
+      "minimum_bytes_per_second": {
+        "value": 1,
+        "type": "u64",
+        "unit": "bytes/second",
+        "effect": "timeout",
+        "description": "Minimum progress used with the idle timeout; not a bandwidth ceiling."
+      }
+    },
+    "diagram": {
+      "blocks": {
+        "value": 128,
+        "type": "usize",
+        "unit": "items",
+        "effect": "reject",
+        "description": "diagram: blocks"
+      },
+      "source_bytes": {
+        "value": 262144,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "diagram: source bytes"
+      },
+      "svg_bytes": {
+        "value": 8388608,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "diagram: svg bytes"
+      },
+      "aggregate_encoded_bytes": {
+        "value": 67108864,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "diagram: aggregate encoded bytes"
+      },
+      "aggregate_decoded_bytes": {
+        "value": 134217728,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "diagram: aggregate decoded bytes"
+      },
+      "preview_edge": {
+        "value": 2400,
+        "type": "u32",
+        "unit": "pixels",
+        "effect": "truncate",
+        "description": "diagram: preview edge"
+      },
+      "startup_seconds": {
+        "value": 15,
+        "type": "u64",
+        "unit": "seconds",
+        "effect": "timeout",
+        "description": "diagram: startup seconds"
+      },
+      "block_seconds": {
+        "value": 8,
+        "type": "u64",
+        "unit": "seconds",
+        "effect": "timeout",
+        "description": "diagram: block seconds"
+      },
+      "ipc_bytes": {
+        "value": 134217728,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "diagram: ipc bytes"
+      },
+      "slot_bytes": {
+        "value": 16777216,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "diagram: slot bytes"
+      },
+      "max_upscale": {
+        "value": 2,
+        "type": "u32",
+        "unit": "scale",
+        "effect": "budget",
+        "description": "diagram: max upscale"
+      },
+      "request_bytes": {
+        "value": 67108864,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "diagram: request bytes"
+      },
+      "message_bytes": {
+        "value": 16781312,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "diagram: message bytes"
+      },
+      "mermaid_edges": {
+        "value": 1000,
+        "type": "usize",
+        "unit": "edges",
+        "effect": "reject",
+        "description": "diagram: mermaid edges"
+      },
+      "math_macros": {
+        "value": 1000,
+        "type": "usize",
+        "unit": "expansions",
+        "effect": "reject",
+        "description": "diagram: math macros"
+      }
+    },
+    "book": {
+      "chapter_bytes": {
+        "value": 4194304,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "book: chapter bytes"
+      },
+      "xml_nodes": {
+        "value": 250000,
+        "type": "u32",
+        "unit": "nodes",
+        "effect": "reject",
+        "description": "book: xml nodes"
+      },
+      "resource_bytes": {
+        "value": 33554432,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "book: resource bytes"
+      },
+      "preview_edge": {
+        "value": 2400,
+        "type": "u32",
+        "unit": "pixels",
+        "effect": "truncate",
+        "description": "book: preview edge"
+      },
+      "input_bytes": {
+        "value": 268435456,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "book: input bytes"
+      },
+      "text_bytes": {
+        "value": 67108864,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "book: text bytes"
+      },
+      "archive_entries": {
+        "value": 20000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "reject",
+        "description": "book: archive entries"
+      },
+      "chapters": {
+        "value": 2000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "reject",
+        "description": "book: chapters"
+      },
+      "metadata_bytes": {
+        "value": 16384,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "book: metadata bytes"
+      },
+      "toc_entries": {
+        "value": 10000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "reject",
+        "description": "book: toc entries"
+      },
+      "toc_depth": {
+        "value": 32,
+        "type": "usize",
+        "unit": "levels",
+        "effect": "truncate",
+        "description": "book: toc depth"
+      },
+      "fb2_depth": {
+        "value": 64,
+        "type": "usize",
+        "unit": "levels",
+        "effect": "reject",
+        "description": "book: fb2 depth"
+      },
+      "html_depth": {
+        "value": 128,
+        "type": "usize",
+        "unit": "levels",
+        "effect": "reject",
+        "description": "book: html depth"
+      },
+      "chapter_decoded_bytes": {
+        "value": 134217728,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "book: chapter decoded bytes"
+      },
+      "chapter_images": {
+        "value": 128,
+        "type": "usize",
+        "unit": "items",
+        "effect": "reject",
+        "description": "book: chapter images"
+      },
+      "image_decoded_bytes": {
+        "value": 134217728,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "book: image decoded bytes"
+      },
+      "image_edge": {
+        "value": 10000,
+        "type": "u32",
+        "unit": "pixels",
+        "effect": "reject",
+        "description": "book: image edge"
+      }
+    },
+    "book_state": {
+      "bookmarks": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "All bookmarks are persisted; no total bookmark count gate."
+      },
+      "label_bytes": {
+        "value": null,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Persist complete bookmark labels without an arbitrary byte gate."
+      },
+      "input_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Reading-state JSON is streamed from disk without a total input-size gate."
+      },
+      "label_chars": {
+        "value": 120,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "budget",
+        "description": "Derived bookmark label excerpt; the complete chapter remains accessible at the bookmark location."
+      }
+    },
+    "geo": {
+      "points": {
+        "value": 10000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "truncate",
+        "description": "geo: points"
+      }
+    },
+    "git": {
+      "output_bytes": {
+        "value": 8388608,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "git: output bytes"
+      },
+      "diff_output_bytes": {
+        "value": 268435456,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "reject",
+        "description": "git: diff output bytes"
+      },
+      "stderr_bytes": {
+        "value": 65536,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "truncate",
+        "description": "git: stderr bytes"
+      },
+      "error_chars": {
+        "value": 16384,
+        "type": "usize",
+        "unit": "characters",
+        "effect": "truncate",
+        "description": "git: error chars"
+      },
+      "history_commits": {
+        "value": 1000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "reject",
+        "description": "git: history commits"
+      },
+      "history_batch": {
+        "value": 200,
+        "type": "usize",
+        "unit": "items",
+        "effect": "budget",
+        "description": "git: history batch"
+      },
+      "stashes": {
+        "value": 100,
+        "type": "usize",
+        "unit": "items",
+        "effect": "truncate",
+        "description": "git: stashes"
+      },
+      "refs": {
+        "value": 1000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "truncate",
+        "description": "Maximum references listed by the repository panel"
+      }
+    },
+    "diff": {
+      "preview_bytes": {
+        "value": 16777216,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "truncate",
+        "description": "diff: preview bytes"
+      },
+      "lines": {
+        "value": 50000,
+        "type": "usize",
+        "unit": "items",
+        "effect": "truncate",
+        "description": "diff: lines"
+      },
+      "line_bytes": {
+        "value": 65536,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "truncate",
+        "description": "diff: line bytes"
+      }
+    },
+    "workspace": {
+      "search_results": {
+        "value": 60,
+        "type": "usize",
+        "unit": "items",
+        "effect": "page",
+        "description": "Visible page/batch size; later results or history remain accessible through navigation."
+      },
+      "search_entries": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Search walks all eligible entries and supports cancellable paged results."
+      },
+      "recent_workspaces": {
+        "value": 30,
+        "type": "usize",
+        "unit": "items",
+        "effect": "page",
+        "description": "Visible page/batch size; later results or history remain accessible through navigation."
+      }
+    },
+    "update": {
+      "session_bytes": {
+        "value": null,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "unlimited",
+        "description": "Stream JSON session I/O and retain all actual windows, roots and tabs; validate identities and active indexes."
+      },
+      "workspaces": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Stream JSON session I/O and retain all actual windows, roots and tabs; validate identities and active indexes."
+      },
+      "roots_per_workspace": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Stream JSON session I/O and retain all actual windows, roots and tabs; validate identities and active indexes."
+      },
+      "tabs_per_workspace": {
+        "value": null,
+        "type": "usize",
+        "unit": "items",
+        "effect": "unlimited",
+        "description": "Stream JSON session I/O and retain all actual windows, roots and tabs; validate identities and active indexes."
+      }
+    },
+    "audio_artwork": {
+      "input_bytes": {
+        "value": 8388608,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "audio artwork: input bytes"
+      },
+      "preview_edge": {
+        "value": 600,
+        "type": "u32",
+        "unit": "pixels",
+        "effect": "truncate",
+        "description": "audio artwork: preview edge"
+      }
+    },
+    "io": {
+      "buffer_bytes": {
+        "value": 65536,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Working buffer for cancellable streaming reads and temporary-text generation; independent of total file size."
+      },
+      "cache_bytes": {
+        "value": 67108864,
+        "type": "u64",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "Rolling decoded-text cache. Older ranges are evicted and can be regenerated by seeking through the source stream."
+      }
+    },
+    "svg": {
+      "event_bytes": {
+        "value": 67108864,
+        "type": "usize",
+        "unit": "bytes",
+        "effect": "budget",
+        "description": "One active XML markup/text record in the streaming SVG sanitizer; independent of total document size."
+      }
+    }
+  }
+}

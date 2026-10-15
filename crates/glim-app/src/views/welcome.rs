@@ -12,7 +12,7 @@ use gpui_kit::{
 pub fn welcome(
     current: &super::workspace::Workspace,
     current_id: EntityId,
-    cx: &App,
+    cx: &mut Context<super::workspace::Workspace>,
 ) -> impl IntoElement {
     let show_open_folder = current.folder_roots().is_empty();
     let recent = cx
@@ -26,6 +26,7 @@ pub fn welcome(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let more = recent.len() > current.recent_visible();
     let content = v_flex()
         .w_full()
         .max_w(px(640.))
@@ -109,61 +110,78 @@ pub fn welcome(
                             .w_full()
                             .min_w_0()
                             .gap_1()
-                            .children(recent.into_iter().enumerate().map(|(index, workspace)| {
-                                let title = workspace
-                                    .folders
-                                    .iter()
-                                    .map(|path| {
-                                        path.file_name()
-                                            .unwrap_or(path.as_os_str())
-                                            .to_string_lossy()
-                                            .into_owned()
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join(" · ");
-                                let paths = workspace
-                                    .folders
-                                    .iter()
-                                    .map(|path| path.display().to_string())
-                                    .collect::<Vec<_>>()
-                                    .join(" · ");
-                                let action = glim_services::locale::tr(
-                                    if crate::app::recent_workspace_is_open(
-                                        &workspace, current_id, cx,
-                                    ) {
-                                        "Switch to Window"
-                                    } else {
-                                        "Open in New Window"
-                                    },
-                                );
-                                Button::new(("recent-workspace", index))
-                                    .ghost()
-                                    .w_full()
-                                    .h(px(64.))
-                                    .px_3()
-                                    .flex_shrink_0()
-                                    .tooltip(format!("{}\n{}", action, paths))
-                                    .accessibility_label(format!("{}: {}", action, title))
-                                    .child(
-                                        v_flex()
+                            .children(
+                                recent
+                                    .into_iter()
+                                    .take(current.recent_visible())
+                                    .enumerate()
+                                    .map(|(index, workspace)| {
+                                        let title = workspace
+                                            .folders
+                                            .iter()
+                                            .map(|path| {
+                                                path.file_name()
+                                                    .unwrap_or(path.as_os_str())
+                                                    .to_string_lossy()
+                                                    .into_owned()
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join(" · ");
+                                        let paths = workspace
+                                            .folders
+                                            .iter()
+                                            .map(|path| path.display().to_string())
+                                            .collect::<Vec<_>>()
+                                            .join(" · ");
+                                        let action = glim_services::locale::tr(
+                                            if crate::app::recent_workspace_is_open(
+                                                &workspace, current_id, cx,
+                                            ) {
+                                                "Switch to Window"
+                                            } else {
+                                                "Open in New Window"
+                                            },
+                                        );
+                                        Button::new(("recent-workspace", index))
+                                            .ghost()
                                             .w_full()
-                                            .min_w_0()
-                                            .text_left()
-                                            .gap_1()
-                                            .child(div().text_sm().truncate().child(title))
+                                            .h(px(64.))
+                                            .px_3()
+                                            .flex_shrink_0()
+                                            .tooltip(format!("{}\n{}", action, paths))
+                                            .accessibility_label(format!("{}: {}", action, title))
                                             .child(
-                                                div()
-                                                    .text_xs()
-                                                    .truncate()
-                                                    .text_color(cx.theme().muted_foreground)
-                                                    .child(paths),
-                                            ),
-                                    )
-                                    .on_click(move |_, _, cx| {
-                                        crate::app::open_recent_workspace(workspace.clone(), cx);
-                                    })
-                            })),
-                    ),
+                                                v_flex()
+                                                    .w_full()
+                                                    .min_w_0()
+                                                    .text_left()
+                                                    .gap_1()
+                                                    .child(div().text_sm().truncate().child(title))
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .truncate()
+                                                            .text_color(cx.theme().muted_foreground)
+                                                            .child(paths),
+                                                    ),
+                                            )
+                                            .on_click(move |_, _, cx| {
+                                                crate::app::open_recent_workspace(
+                                                    workspace.clone(),
+                                                    cx,
+                                                );
+                                            })
+                                    }),
+                            ),
+                    )
+                    .when(more, |view| {
+                        view.child(
+                            Button::new("recent-more")
+                                .ghost()
+                                .label(glim_services::locale::tr("Show more"))
+                                .on_click(cx.listener(|view, _, _, cx| view.show_more_recent(cx))),
+                        )
+                    }),
             )
         });
 

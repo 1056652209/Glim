@@ -83,13 +83,18 @@ impl Workspace {
         let editor = reader.editor().unwrap();
         let path = reader.path.clone();
         let expected = reader.snapshot.clone();
+        let page = reader.page_save_request(cx);
         let text = editor.read(cx).value().to_string();
         self.saving = Some(id);
         self.error = None;
         // A pre-save read must not arrive later and replace the just-saved buffer.
         self.refresh_task = None;
         let work = cx.background_executor().spawn(async move {
-            let result = glim_services::files::save_document(&path, &expected, &text);
+            let result = if let Some(page) = page {
+                glim_services::paged::save_page(&page, &text).map(Some)
+            } else {
+                glim_services::files::save_document(&path, &expected, &text).map(|()| None)
+            };
             (text, result)
         });
         self.save_task = Some(cx.spawn_in(window, async move |view, cx| {
@@ -97,17 +102,30 @@ impl Workspace {
             let _ = view.update_in(cx, |v, window, cx| {
                 v.saving = None;
                 match result {
-                    Ok(()) => {
+                    Ok(page) => {
                         if let Some(reader) = v
                             .tabs
                             .iter_mut()
                             .find(|r| r.editor().is_some_and(|s| s.entity_id() == id))
                         {
-                            reader.mark_saved(text, cx);
+                            if let Some(page) = page {
+                                reader.page_saved(text, page, cx);
+                            } else {
+                                reader.mark_saved(text, cx);
+                            }
                         }
                         v.refresh(window, cx);
                     }
-                    Err(error) => v.error = Some(format!("Save failed: {error:#}").into()),
+                    Err(error) => {
+                        if let Some(reader) = v
+                            .tabs
+                            .iter()
+                            .find(|r| r.editor().is_some_and(|e| e.entity_id() == id))
+                        {
+                            reader.finish_page_save();
+                        }
+                        v.error = Some(format!("Save failed: {error:#}").into());
+                    }
                 }
                 while v.saving.is_none() {
                     let Some(next) = v.save_queue.pop_front() else {

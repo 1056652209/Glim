@@ -6,7 +6,18 @@ pub fn is_media(path: &Path) -> bool {
     path.extension().and_then(|s| s.to_str()).is_some_and(|s| {
         matches!(
             s.to_ascii_lowercase().as_str(),
-            "mp3" | "mp4" | "m4a" | "m4v" | "mov" | "aac" | "wav" | "aif" | "aiff" | "caf" | "flac"
+            "mp3"
+                | "mp4"
+                | "mkv"
+                | "m4a"
+                | "m4v"
+                | "mov"
+                | "aac"
+                | "wav"
+                | "aif"
+                | "aiff"
+                | "caf"
+                | "flac"
         )
     })
 }
@@ -18,6 +29,13 @@ pub fn folder_has_media(path: &Path) -> Result<bool> {
         }
     }
     Ok(false)
+}
+
+pub fn is_image(path: &Path) -> bool {
+    crate::media::supports(path)
+        && !path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("gif"))
 }
 
 pub fn is_font(path: &Path) -> bool {
@@ -74,6 +92,7 @@ pub fn can_open(path: &Path) -> bool {
 pub fn supports(path: &Path) -> bool {
     crate::sqlite::supports(path)
         || is_media(path)
+        || is_image(path)
         || is_font(path)
         || is_office(path)
         || path
@@ -82,25 +101,16 @@ pub fn supports(path: &Path) -> bool {
             .is_some_and(|s| s.eq_ignore_ascii_case("pdf"))
 }
 
-fn playlist(path: &Path, folder: bool) -> Result<Vec<PathBuf>> {
+fn playlist(path: &Path, folder: bool, cancel: &crate::work::Cancellation) -> Result<Vec<PathBuf>> {
     if !folder {
         ensure!(can_open(path), "Unsupported or missing preview file");
-        if is_font(path) {
-            ensure!(
-                std::fs::metadata(path)?.len() <= 128 * 1024 * 1024,
-                "Font preview is limited to 128 MiB"
-            );
-        }
         return Ok(vec![path.to_path_buf()]);
     }
     let mut paths = Vec::new();
     for entry in std::fs::read_dir(path)? {
+        cancel.check()?;
         let entry = entry?;
         if is_media(&entry.path()) && entry.file_type()?.is_file() {
-            ensure!(
-                paths.len() < 10_000,
-                "A playlist supports up to 10,000 files; choose a smaller folder"
-            );
             paths.push(entry.path());
         }
     }
@@ -113,9 +123,12 @@ fn playlist(path: &Path, folder: bool) -> Result<Vec<PathBuf>> {
 }
 
 pub struct PreparedPreview {
+    pub image_stamp: Option<(u64, Option<std::time::SystemTime>)>,
     pub configuration: Vec<u8>,
     // The native SQLite view must close before its private snapshot is removed.
     _sqlite: Option<crate::sqlite::Snapshot>,
+    _media_directory: Option<tempfile::TempDir>,
+    _image: Option<tempfile::NamedTempFile>,
 }
 
 pub fn prepare(
@@ -124,13 +137,48 @@ pub fn prepare(
     shuffle: bool,
     autoplay: bool,
 ) -> Result<PreparedPreview> {
-    let paths = playlist(path, folder)?;
+    prepare_cancellable(
+        path,
+        folder,
+        shuffle,
+        autoplay,
+        &crate::work::Cancellation::default(),
+    )
+}
+pub fn prepare_cancellable(
+    path: &Path,
+    folder: bool,
+    shuffle: bool,
+    autoplay: bool,
+    cancel: &crate::work::Cancellation,
+) -> Result<PreparedPreview> {
+    let image_stamp = if !folder && is_image(path) {
+        let metadata = std::fs::metadata(path)?;
+        Some((metadata.len(), metadata.modified().ok()))
+    } else {
+        None
+    };
+    let paths = playlist(path, folder, cancel)?;
     let files = paths
         .iter()
         .map(|path| path.to_str().context("Native preview requires UTF-8 paths"))
         .collect::<Result<Vec<_>>>()?;
+    let mut matroska = Vec::new();
+    for path in paths.iter().filter(|p| is_media(p)) {
+        cancel.check()?;
+        match crate::matroska::has_header(path) {
+            Ok(true) => matroska.push(path.to_str().context("Invalid media path")?.to_owned()),
+            Err(error) if !folder => return Err(error),
+            _ => {}
+        }
+    }
+    let media_directory = if matroska.is_empty() {
+        None
+    } else {
+        Some(tempfile::tempdir()?)
+    };
     let sqlite = if !folder && (crate::sqlite::supports(path) || crate::sqlite::has_header(path)) {
-        Some(crate::sqlite::prepare(path)?)
+        Some(crate::sqlite::prepare_cancellable(path, cancel)?)
     } else {
         None
     };
@@ -144,15 +192,61 @@ pub fn prepare(
     } else {
         None
     };
+    let image = if !folder
+        && path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("qoi"))
+    {
+        Some(crate::qoi::prepare(path, cancel)?)
+    } else if !folder
+        && path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"))
+    {
+        Some(crate::svg_preview::prepare(path, cancel)?)
+    } else {
+        None
+    };
     let mut configuration = serde_json::json!({"files": files, "shuffle": shuffle, "autoplay": autoplay, "office": !folder && is_office(path), "font": !folder && is_font(path),
         "sqlite": sqlite.as_ref().and_then(|s| s.database.as_ref()).and_then(|p| p.to_str()),
         "sqliteInfo": sqlite.as_ref().map(|s| &s.information), "spreadsheet": spreadsheet});
+    configuration["image"] = serde_json::json!(!folder && is_image(path));
+    configuration["imagePath"] =
+        serde_json::json!(image.as_ref().and_then(|image| image.path().to_str()));
+    configuration["matroskaFiles"] = serde_json::json!(matroska);
+    if let Some(directory) = &media_directory {
+        configuration["mediaDirectory"] = serde_json::json!(
+            directory
+                .path()
+                .to_str()
+                .context("Invalid media directory")?
+        );
+        configuration["mediaHelper"] = serde_json::json!(
+            std::env::current_exe()?
+                .to_str()
+                .context("Invalid helper path")?
+        );
+    }
     configuration["language"] = serde_json::json!(crate::locale::code());
     configuration["localizations"] = crate::locale::translations();
     Ok(PreparedPreview {
+        image_stamp,
         configuration: serde_json::to_vec(&configuration)?,
         _sqlite: sqlite,
+        _media_directory: media_directory,
+        _image: image,
     })
+}
+
+pub fn prepare_matroska_file(source: &Path, destination: &Path) -> Result<()> {
+    let directory = destination
+        .parent()
+        .context("Media destination has no parent")?;
+    ensure!(!destination.exists(), "Media destination already exists");
+    let file = crate::matroska::prepare(source, directory, &crate::work::Cancellation::default())?;
+    file.persist_noclobber(destination)
+        .map_err(|error| error.error)?;
+    Ok(())
 }
 
 pub fn open_associations(cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Result<()> {

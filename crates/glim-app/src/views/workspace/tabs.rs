@@ -155,6 +155,19 @@ impl Workspace {
                     }),
             );
         }
+        let reader = &self.tabs[index];
+        if !reader.historical && reader.diff.is_none() {
+            let path = reader.path.clone();
+            let view = cx.entity().downgrade();
+            menu = menu.separator().item(
+                PopupMenuItem::new(glim_services::locale::tr("Move to Trash…")).on_click(
+                    move |_, window, cx| {
+                        let _ = view
+                            .update(cx, |view, cx| view.confirm_trash(path.clone(), window, cx));
+                    },
+                ),
+            );
+        }
         menu
     }
 

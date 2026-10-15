@@ -1,3 +1,4 @@
+use crate::limits as reader_limits;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
@@ -203,29 +204,107 @@ pub fn repositories_for_roots(roots: &[PathBuf]) -> RepositoryScan {
     scan
 }
 
+pub struct SearchPage {
+    pub paths: Vec<PathBuf>,
+    pub more: bool,
+}
 pub fn search_files(root: &Path, query: &str) -> Vec<PathBuf> {
-    let query = query.to_lowercase();
-    if query.trim().is_empty() {
-        return Vec::new();
+    search_page(
+        &[root.to_path_buf()],
+        query,
+        0,
+        &crate::work::Cancellation::default(),
+    )
+    .map(|page| page.paths)
+    .unwrap_or_default()
+}
+pub fn search_page(
+    roots: &[PathBuf],
+    query: &str,
+    offset: usize,
+    cancel: &crate::work::Cancellation,
+) -> Result<SearchPage> {
+    let query = query.trim().to_lowercase();
+    let mut paths = Vec::new();
+    if query.is_empty() {
+        return Ok(SearchPage { paths, more: false });
     }
-    WalkBuilder::new(root)
-        .hidden(false)
-        .follow_links(false)
-        .filter_entry(|e| e.file_name() != ".git")
-        .build()
-        .take(100_000)
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
-        .map(|e| e.into_path())
-        .filter(|p| {
-            p.strip_prefix(root)
-                .unwrap_or(p)
+    let mut roots = roots.to_vec();
+    roots.sort();
+    roots.dedup();
+    let roots: Vec<_> = roots
+        .iter()
+        .filter(|root| {
+            !roots
+                .iter()
+                .any(|other| other != *root && root.starts_with(other))
+        })
+        .collect();
+    let mut skipped = 0;
+    for root in roots {
+        for entry in WalkBuilder::new(root)
+            .hidden(false)
+            .follow_links(false)
+            .filter_entry(|entry| entry.file_name() != ".git")
+            .sort_by_file_name(|a, b| a.cmp(b))
+            .build()
+        {
+            cancel.check()?;
+            let Ok(entry) = entry else {
+                continue;
+            };
+            if !entry.file_type().is_some_and(|t| t.is_file()) {
+                continue;
+            }
+            let path = entry.into_path();
+            if !path
+                .strip_prefix(root)
+                .unwrap_or(&path)
                 .to_string_lossy()
                 .to_lowercase()
                 .contains(&query)
-        })
-        .take(60)
-        .collect()
+            {
+                continue;
+            }
+            if skipped < offset {
+                skipped += 1;
+                continue;
+            }
+            if paths.len() == reader_limits::WORKSPACE_SEARCH_RESULTS {
+                return Ok(SearchPage { paths, more: true });
+            }
+            paths.push(path);
+        }
+    }
+    Ok(SearchPage { paths, more: false })
+}
+
+/// Move the entry itself to macOS Trash. Never resolve a symlink to its target.
+pub fn trash_entry(path: &Path) -> Result<()> {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+    let _guard = crate::files::SAVE_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("File operation lock unavailable"))?;
+    let path = std::path::absolute(path)?;
+    ensure!(
+        path.parent().is_some() && path.file_name().is_some(),
+        "Cannot trash a filesystem root"
+    );
+    std::fs::symlink_metadata(&path).context("The item no longer exists")?;
+    let directory = tempfile::tempdir()?;
+    let helper = directory.path().join("glim-file-operation");
+    std::fs::write(
+        &helper,
+        include_bytes!(concat!(env!("OUT_DIR"), "/glim-preview")),
+    )?;
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700))?;
+    let output = Command::new(helper).arg("--trash").arg(&path).output()?;
+    ensure!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
 }
 
 #[cfg(test)]

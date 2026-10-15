@@ -50,8 +50,12 @@ pub type OpenLink = Arc<dyn Fn(PathBuf, Option<String>, &mut Window, &mut App) +
 /// syntax-aware folding; Markdown owns preview state as well as a source editor.
 enum Renderer {
     Source(SourceReader),
-    Paged(Entity<paged::PagedReader>),
-    Bytes(SourceReader),
+    Paged {
+        view: Entity<paged::PagedReader>,
+        editor: Option<Entity<gpui_kit::component::input::EditorState>>,
+        dirty: std::rc::Rc<std::cell::Cell<bool>>,
+        saving: std::rc::Rc<std::cell::Cell<bool>>,
+    },
     Markup(Box<MarkupReader>),
     Diff(DiffReader),
     Image(ImageReader),
@@ -205,19 +209,58 @@ impl Reader {
         }
     }
 
-    pub fn from_page(page: glim_services::paged::TextPage, cx: &mut App) -> Self {
+    pub fn from_page(
+        page: glim_services::paged::TextPage,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self {
+        let path = page.path.clone();
+        let snapshot = page.fingerprint();
+        let view = cx.new(|cx| paged::PagedReader::new(page, window, cx));
+        let editor = view
+            .read(cx)
+            .source_editor
+            .as_ref()
+            .map(|source| source.state.clone());
+        let dirty = view
+            .read(cx)
+            .source_editor
+            .as_ref()
+            .map(|source| source.dirty.clone())
+            .unwrap_or_default();
+        let saving = view.read(cx).saving.clone();
+        let csv = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .filter(|s| s.eq_ignore_ascii_case("csv") || s.eq_ignore_ascii_case("tsv"))
+            .map(|ext| {
+                let delimiter = if ext.eq_ignore_ascii_case("tsv") {
+                    b'\t'
+                } else {
+                    b','
+                };
+                (
+                    cx.new(|_| csv::CsvTable::from_file(path.clone(), delimiter)),
+                    false,
+                )
+            });
         Self {
-            title: page.path.display().to_string().into(),
-            path: page.path.clone(),
-            snapshot: page.fingerprint(),
+            title: path.display().to_string().into(),
+            path,
+            snapshot,
             repository_root: None,
             diff: None,
             historical: false,
             commit_id: None,
             commit_file: None,
             json: None,
-            csv: None,
-            renderer: Renderer::Paged(cx.new(|_| paged::PagedReader::new(page))),
+            csv,
+            renderer: Renderer::Paged {
+                view,
+                editor,
+                dirty,
+                saving,
+            },
         }
     }
     pub fn from_commit(
@@ -281,6 +324,7 @@ impl Reader {
             }),
         }
     }
+    #[cfg(test)]
     pub fn from_bytes(
         document: glim_services::binary::BytePreview,
         window: &mut Window,
@@ -306,7 +350,7 @@ impl Reader {
             commit_file: None,
             json: None,
             csv: None,
-            renderer: Renderer::Bytes(source),
+            renderer: Renderer::Source(source),
         }
     }
     pub fn from_diff(
@@ -341,7 +385,7 @@ impl Reader {
         cx: &mut App,
     ) -> Self {
         let renderer = if document.gif {
-            Renderer::Gif(cx.new(|cx| GifReader::new(document.png, cx)))
+            Renderer::Gif(cx.new(|cx| GifReader::from_file(document.path.clone(), cx)))
         } else {
             let pages = if document.pages.is_empty() {
                 vec![document.png]
@@ -463,7 +507,7 @@ impl Reader {
     }
     fn source(&self) -> Option<&SourceReader> {
         match &self.renderer {
-            Renderer::Source(s) | Renderer::Bytes(s) => Some(s),
+            Renderer::Source(s) => Some(s),
             Renderer::Markup(m) => Some(&m.source),
             Renderer::Diff(d) => Some(&d.source),
             _ => None,
@@ -474,8 +518,9 @@ impl Reader {
             return None;
         }
         match &self.renderer {
-            Renderer::Source(s) => Some(s.state.clone()),
+            Renderer::Source(s) if !s.is_readonly() => Some(s.state.clone()),
             Renderer::Markup(m) => Some(m.source.state.clone()),
+            Renderer::Paged { editor, .. } => editor.clone(),
             _ => None,
         }
     }
@@ -483,6 +528,11 @@ impl Reader {
         match &mut self.renderer {
             Renderer::Source(s) => s.set_locked(locked, cx),
             Renderer::Markup(m) => m.source.set_locked(locked, cx),
+            Renderer::Paged { view, .. } => view.update(cx, |page, cx| {
+                if let Some(source) = &mut page.source_editor {
+                    source.set_locked(locked, cx);
+                }
+            }),
             _ => {}
         }
     }
@@ -490,7 +540,37 @@ impl Reader {
         match &self.renderer {
             Renderer::Source(s) => s.is_dirty(),
             Renderer::Markup(m) => m.source.is_dirty(),
+            Renderer::Paged { dirty, .. } => dirty.get(),
             _ => false,
+        }
+    }
+    pub fn native_image_stamp(&self, cx: &App) -> Option<(u64, Option<std::time::SystemTime>)> {
+        match &self.renderer {
+            Renderer::Native(view) => view.read(cx).image_stamp(),
+            _ => None,
+        }
+    }
+    pub fn page_save_request(&self, cx: &mut App) -> Option<glim_services::paged::PageEdit> {
+        if let Renderer::Paged { view, .. } = &self.renderer {
+            view.update(cx, |page, _| page.save_request())
+        } else {
+            None
+        }
+    }
+    pub fn page_saved(
+        &mut self,
+        text: String,
+        saved: glim_services::paged::PageSaved,
+        cx: &mut App,
+    ) {
+        if let Renderer::Paged { view, .. } = &self.renderer {
+            self.snapshot = format!("paged:{}:{:?}", saved.total, saved.modified);
+            view.update(cx, |page, cx| page.saved(text, saved, cx));
+        }
+    }
+    pub fn finish_page_save(&self) {
+        if let Renderer::Paged { saving, .. } = &self.renderer {
+            saving.set(false);
         }
     }
     pub fn mark_saved(&mut self, text: String, cx: &App) {
@@ -508,8 +588,7 @@ impl Reader {
             self.set_preview(true, cx);
         }
         match (&mut self.renderer, &old.renderer) {
-            (Renderer::Source(s), Renderer::Source(o))
-            | (Renderer::Bytes(s), Renderer::Bytes(o)) => s.inherit(o, cx),
+            (Renderer::Source(s), Renderer::Source(o)) => s.inherit(o, cx),
             (Renderer::Markup(s), Renderer::Markup(o)) => {
                 s.source.inherit(&o.source, cx);
                 s.preview = o.preview;
@@ -550,7 +629,7 @@ impl Reader {
             return Some(Vec::new());
         }
         match &self.renderer {
-            Renderer::Paged(_) => None,
+            Renderer::Paged { .. } => None,
             Renderer::Markup(m) if m.preview => Some(vec![m.scroll.offset().x]),
             Renderer::Diff(d) if d.side_by_side => {
                 d.split.as_ref().map(|s| s.read(cx).horizontal_offsets(cx))
@@ -608,6 +687,13 @@ impl Reader {
         self.csv.is_some() || self.json.is_some() || matches!(self.renderer, Renderer::Markup(_))
     }
     pub fn set_preview(&mut self, preview: bool, cx: &mut App) {
+        if preview
+            && self.is_dirty()
+            && let Renderer::Paged { view, .. } = &self.renderer
+        {
+            view.update(cx, |page, cx| page.request_save_before_preview(cx));
+            return;
+        }
         if self.csv.is_some() {
             let text = if preview {
                 self.source().map(|s| s.state.read(cx).value().to_string())
@@ -632,6 +718,8 @@ impl Reader {
                             cx,
                         )
                     });
+                } else if preview {
+                    table.update(cx, |table, cx| table.reload(cx));
                 }
             }
         }
@@ -700,7 +788,7 @@ impl Reader {
             return tree.clone().into_any_element();
         }
         match &mut self.renderer {
-            Renderer::Source(s) | Renderer::Bytes(s) => s.render(cx),
+            Renderer::Source(s) => s.render(cx),
             Renderer::Markup(m) => m.render(open, cx),
             Renderer::Diff(d) => d.render(cx),
             Renderer::Image(i) => i.render(cx),
@@ -711,7 +799,7 @@ impl Reader {
             Renderer::XMind(v) => v.clone().into_any_element(),
             Renderer::Book(v, _) => v.clone().into_any_element(),
             Renderer::Native(n) => n.clone().into_any_element(),
-            Renderer::Paged(p) => p.clone().into_any_element(),
+            Renderer::Paged { view, .. } => view.clone().into_any_element(),
             Renderer::Unavailable(e) => e.render(cx),
         }
     }

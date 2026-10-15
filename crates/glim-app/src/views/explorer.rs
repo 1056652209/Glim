@@ -20,6 +20,8 @@ use gpui_kit::{
 pub enum ExplorerEvent {
     SelectionChanged,
     OpenFile(PathBuf),
+    RemoveFolder(u64),
+    TrashEntry(PathBuf),
     PlayFolder(PathBuf, bool),
     Error(String),
     ExpansionChanged(Vec<PathBuf>, Vec<PathBuf>),
@@ -50,6 +52,8 @@ impl Row {
 /// Only expanded directories are loaded, and only visible rows are rendered.
 pub struct Explorer {
     roots: Vec<PathBuf>,
+    root_ids: Vec<u64>,
+    next_root_id: u64,
     directories: HashMap<PathBuf, Vec<DirectoryEntry>>,
     expanded: Vec<HashSet<PathBuf>>,
     tasks: HashMap<PathBuf, Task<()>>,
@@ -82,8 +86,10 @@ impl Explorer {
     pub fn new(root: PathBuf, entries: Vec<DirectoryEntry>, cx: &mut Context<Self>) -> Self {
         let mut view = Self {
             roots: vec![root.clone()],
+            root_ids: vec![0],
+            next_root_id: 1,
             directories: HashMap::from([(root.clone(), entries)]),
-            expanded: vec![HashSet::new()],
+            expanded: vec![HashSet::from([root])],
             tasks: HashMap::new(),
             media_presence: HashMap::new(),
             media_tasks: HashMap::new(),
@@ -108,10 +114,62 @@ impl Explorer {
         cx: &mut Context<Self>,
     ) {
         self.roots.push(root.clone());
+        self.root_ids.push(self.next_root_id);
+        self.next_root_id += 1;
         self.expanded.push(HashSet::from([root.clone()]));
         self.directories.insert(root, entries);
         self.rebuild();
         cx.notify();
+    }
+
+    /// Remove one root occurrence without touching its files or other root entries.
+    pub fn remove_folder(&mut self, root_id: u64, cx: &mut Context<Self>) -> Option<usize> {
+        let index = self.root_ids.iter().position(|id| *id == root_id)?;
+        let selected = self
+            .selected
+            .and_then(|i| self.rows.get(i))
+            .map(|row| (self.root_ids[row.root_index], row.entry.path.clone()));
+        let clicked = self
+            .clicked_root
+            .and_then(|i| self.root_ids.get(i))
+            .copied();
+        self.roots.remove(index);
+        self.root_ids.remove(index);
+        self.expanded.remove(index);
+        self.selected = None;
+        self.clicked_root =
+            clicked.and_then(|id| self.root_ids.iter().position(|root| *root == id));
+        if self.clicked_root.is_none() {
+            self.clicked_path = None;
+        }
+        self.pending_reveal = None;
+        self.preserve_next_reveal = None;
+        self.clipped_labels.clear();
+        let roots = &self.roots;
+        let retained = |path: &PathBuf| roots.iter().any(|root| path.starts_with(root));
+        self.directories.retain(|path, _| retained(path));
+        self.tasks.retain(|path, _| retained(path));
+        self.media_presence.retain(|path, _| retained(path));
+        self.media_tasks.retain(|path, _| retained(path));
+        self.rows.clear();
+        self.rebuild();
+        if let Some((id, path)) = selected {
+            self.selected = self
+                .rows
+                .iter()
+                .position(|row| self.root_ids[row.root_index] == id && row.entry.path == path);
+        }
+        cx.notify();
+        Some(index)
+    }
+
+    pub fn root_ids_under(&self, path: &std::path::Path) -> Vec<u64> {
+        self.roots
+            .iter()
+            .zip(&self.root_ids)
+            .filter(|(root, _)| root.starts_with(path))
+            .map(|(_, id)| *id)
+            .collect()
     }
 
     pub fn clear_clicked_selection(&mut self, cx: &mut Context<Self>) {
@@ -482,6 +540,7 @@ impl Explorer {
         let right_click_path = row_path.clone();
         let menu_path = row.entry.path.clone();
         let menu_is_dir = row.entry.is_dir;
+        let menu_root_id = (row.depth == 0).then_some(self.root_ids[root_index]);
         let menu_view = cx.entity().downgrade();
         let hover_path = menu_path.clone();
 
@@ -713,7 +772,32 @@ impl Explorer {
                         )
                         .separator();
                 }
-                path_menu(menu, &menu_path, &menu_root)
+                let mut menu = path_menu(menu, &menu_path, &menu_root);
+                let trash_path = menu_path.clone();
+                let trash_view = menu_view.clone();
+                menu = menu.separator().item(
+                    PopupMenuItem::new(glim_services::locale::tr("Move to Trash…")).on_click(
+                        move |_, _, cx| {
+                            let _ = trash_view.update(cx, |_, cx| {
+                                cx.emit(ExplorerEvent::TrashEntry(trash_path.clone()));
+                            });
+                        },
+                    ),
+                );
+                if let Some(root_id) = menu_root_id {
+                    let view = menu_view.clone();
+                    menu = menu.separator().item(
+                        PopupMenuItem::new(glim_services::locale::tr(
+                            "Remove Folder from Workspace",
+                        ))
+                        .on_click(move |_, _, cx| {
+                            let _ = view.update(cx, |_, cx| {
+                                cx.emit(ExplorerEvent::RemoveFolder(root_id));
+                            });
+                        }),
+                    );
+                }
+                menu
             });
         div()
             .w_full()
@@ -1067,23 +1151,45 @@ mod interaction_tests {
     }
 
     #[gpui_kit::test]
-    fn new_roots_are_collapsed_and_navigation_cancels_pending_reveal(cx: &mut TestAppContext) {
+    fn new_roots_expand_one_level_and_navigation_cancels_pending_reveal(cx: &mut TestAppContext) {
         cx.update(gpui_kit::init);
         cx.update(|cx| {
             let view = cx.new(|cx| {
                 Explorer::new(
                     "/fixture".into(),
-                    vec![DirectoryEntry {
-                        path: "/fixture/file.txt".into(),
-                        is_dir: false,
-                        is_symlink: false,
-                    }],
+                    vec![
+                        DirectoryEntry {
+                            path: "/fixture/nested".into(),
+                            is_dir: true,
+                            is_symlink: false,
+                        },
+                        DirectoryEntry {
+                            path: "/fixture/file.txt".into(),
+                            is_dir: false,
+                            is_symlink: false,
+                        },
+                    ],
                     cx,
                 )
             });
             view.update(cx, |view, cx| {
-                assert_eq!(view.rows.len(), 1);
-                assert!(view.expanded.iter().all(|expanded| expanded.is_empty()));
+                assert_eq!(view.rows.len(), 3);
+                assert!(view.rows.iter().all(|row| row.depth <= 1));
+                assert_eq!(view.expanded[0].len(), 1);
+                assert!(view.expanded[0].contains(std::path::Path::new("/fixture")));
+                view.add_folder(
+                    "/another".into(),
+                    vec![DirectoryEntry {
+                        path: "/another/nested".into(),
+                        is_dir: true,
+                        is_symlink: false,
+                    }],
+                    cx,
+                );
+                assert_eq!(view.rows.len(), 5);
+                assert_eq!(view.expanded[1].len(), 1);
+                assert!(view.expanded[1].contains(std::path::Path::new("/another")));
+                assert!(view.rows.iter().all(|row| row.depth <= 1));
                 view.pending_reveal = Some("/fixture/file.txt".into());
                 view.preserve_next_reveal = Some("/fixture/file.txt".into());
                 view.clear_clicked_selection(cx);

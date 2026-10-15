@@ -1,4 +1,5 @@
 //! Static projections for small mesh and bitmap font files. No document execution.
+use crate::limits as reader_limits;
 use crate::media::ImageDocument;
 use anyhow::{Context, Result, ensure};
 use std::{fmt::Write as _, io::Read, path::Path};
@@ -10,12 +11,12 @@ pub fn supports(path: &Path) -> bool {
 pub fn read_preview(path: &Path) -> Result<ImageDocument> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
-        .take(16 * 1024 * 1024 + 1)
+        .take(reader_limits::GEOMETRY_INPUT_BYTES as u64 + 1)
         .read_to_end(&mut bytes)?;
-    ensure!(
-        bytes.len() <= 16 * 1024 * 1024,
-        "Static geometry preview exceeds 16 MiB"
-    );
+    reader_limits::preview_budget(
+        bytes.len() <= reader_limits::GEOMETRY_INPUT_BYTES,
+        "Static geometry exceeds the preview input size limit",
+    )?;
     let ext = path
         .extension()
         .and_then(|s| s.to_str())
@@ -55,6 +56,11 @@ fn mesh(bytes: &[u8], ext: &str) -> Result<String> {
         84_u64 + u64::from(count) * 50 == bytes.len() as u64
     };
     if binary {
+        reader_limits::preview_budget(
+            (bytes.len() - 84) / 50 <= reader_limits::GEOMETRY_FACES
+                && (bytes.len() - 84) / 50 <= reader_limits::GEOMETRY_VERTICES / 3,
+            "Mesh preview working budget exceeded",
+        )?;
         for facet in bytes[84..].as_chunks::<50>().0 {
             let mut face = Vec::new();
             for data in facet[12..48].as_chunks::<12>().0 {
@@ -101,22 +107,30 @@ fn mesh(bytes: &[u8], ext: &str) -> Result<String> {
                             Ok(index as usize)
                         })
                         .collect::<Result<Vec<_>>>()?;
-                    ensure!(face.len() >= 3 && face.len() <= 256, "Invalid OBJ polygon");
+                    ensure!(face.len() >= 3, "Invalid OBJ polygon");
+                    reader_limits::preview_budget(
+                        face.len() <= reader_limits::GEOMETRY_POLYGON_VERTICES,
+                        "Polygon preview working budget exceeded",
+                    )?;
                     faces.push(face);
                 }
                 _ => {}
             }
-            ensure!(
-                vertices.len() <= 100_000 && faces.len() <= 100_000,
-                "Mesh exceeds 100,000 vertices/faces"
-            );
+            reader_limits::preview_budget(
+                vertices.len() <= reader_limits::GEOMETRY_VERTICES
+                    && faces.len() <= reader_limits::GEOMETRY_FACES,
+                "Mesh vertex/face count exceeds the preview limit",
+            )?;
         }
     }
     ensure!(
         !vertices.is_empty() && !faces.is_empty(),
         "Mesh contains no faces"
     );
-    ensure!(vertices.len() <= 100_000, "Mesh exceeds 100,000 vertices");
+    reader_limits::preview_budget(
+        vertices.len() <= reader_limits::GEOMETRY_VERTICES,
+        "Mesh vertex count exceeds the preview limit",
+    )?;
     ensure!(
         vertices.iter().flatten().all(|v| v.is_finite()),
         "Non-finite mesh coordinates"
@@ -178,13 +192,19 @@ fn font(text: &str) -> Result<String> {
                 .nth(1)
                 .context("Missing glyph width")?
                 .parse::<usize>()?;
-            ensure!(width <= 64, "BDF glyph exceeds 64 pixels");
+            reader_limits::preview_budget(
+                width <= reader_limits::BDF_GLYPH_EDGE,
+                "BDF glyph width exceeds the preview limit",
+            )?;
             let height = line
                 .split_whitespace()
                 .nth(2)
                 .context("Missing glyph height")?
                 .parse::<usize>()?;
-            ensure!(height <= 64, "BDF glyph exceeds 64 rows");
+            reader_limits::preview_budget(
+                height <= reader_limits::BDF_GLYPH_EDGE,
+                "BDF glyph height exceeds the preview limit",
+            )?;
             pixel = (100 / width.max(1)).min(70 / height.max(1)).min(6);
         } else if line == "BITMAP" {
             bitmap = true;
@@ -192,15 +212,23 @@ fn font(text: &str) -> Result<String> {
         } else if line == "ENDCHAR" {
             bitmap = false;
             glyph += 1;
-            if glyph == 64 {
-                break;
-            }
+            reader_limits::preview_budget(
+                glyph <= reader_limits::BDF_GLYPHS,
+                "Glyph preview working budget exceeded",
+            )?;
         } else if bitmap {
-            ensure!(row < 64, "BDF glyph exceeds 64 rows");
+            reader_limits::preview_budget(
+                row < reader_limits::BDF_GLYPH_EDGE,
+                "BDF glyph height exceeds the preview limit",
+            )?;
+            reader_limits::preview_budget(
+                line.len() <= reader_limits::BDF_GLYPH_EDGE / 4,
+                "Glyph row preview working budget exceeded",
+            )?;
             let bits = u64::from_str_radix(line, 16)?;
             let bit_width = line.len() * 4;
             ensure!(
-                bit_width <= 64 && bit_width >= width,
+                bit_width <= reader_limits::BDF_GLYPH_EDGE && bit_width >= width,
                 "Invalid BDF bitmap row"
             );
             for col in 0..width {

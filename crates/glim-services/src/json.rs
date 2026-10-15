@@ -1,17 +1,20 @@
 //! Bounded JSON structure for an on-demand, read-only tree.
+use crate::limits as reader_limits;
 use anyhow::{Result, ensure};
 use serde_json::Value;
 
 pub struct JsonNode {
     pub key: String,
+    pub full_key: String,
+    pub full_value: Option<String>,
     pub value: String,
     pub kind: &'static str,
     pub children: Vec<usize>,
 }
 pub fn parse(text: &str) -> Result<Vec<JsonNode>> {
     ensure!(
-        text.len() <= 16 * 1024 * 1024,
-        "Tree view is limited to 16 MiB; use Source for larger JSON."
+        text.len() <= reader_limits::JSON_INPUT_BYTES,
+        "Tree input exceeds the preview size limit; use Source for larger JSON."
     );
     let value: Value = serde_json::from_str(text)?;
     nodes_for_value(value)
@@ -20,8 +23,8 @@ fn nodes_for_value(value: Value) -> Result<Vec<JsonNode>> {
     let mut nodes = Vec::new();
     fn add(key: String, value: Value, nodes: &mut Vec<JsonNode>) -> Result<usize> {
         ensure!(
-            nodes.len() < 250_000,
-            "Tree view is limited to 250,000 nodes; use Source."
+            nodes.len() < reader_limits::JSON_NODES,
+            "Tree node count exceeds the preview limit; use Source."
         );
         let index = nodes.len();
         let (kind, label) = match &value {
@@ -35,7 +38,10 @@ fn nodes_for_value(value: Value) -> Result<Vec<JsonNode>> {
                     match description {
                         Some(description) => format!(
                             "{} · {{ {} keys }}",
-                            description.chars().take(80).collect::<String>(),
+                            description
+                                .chars()
+                                .take(reader_limits::JSON_DESCRIPTION_CHARS)
+                                .collect::<String>(),
                             v.len()
                         ),
                         None => format!("{{ {} keys }}", v.len()),
@@ -48,7 +54,7 @@ fn nodes_for_value(value: Value) -> Result<Vec<JsonNode>> {
                         .iter()
                         .filter_map(Value::as_str)
                         .flat_map(str::chars)
-                        .take(120)
+                        .take(reader_limits::JSON_ARRAY_SUMMARY_CHARS)
                         .collect();
                     format!(
                         "[ {} items ] {}",
@@ -64,16 +70,29 @@ fn nodes_for_value(value: Value) -> Result<Vec<JsonNode>> {
                 "string",
                 format!(
                     "{:?}{}",
-                    v.chars().take(512).collect::<String>(),
-                    if v.chars().count() > 512 { "…" } else { "" }
+                    v.chars()
+                        .take(reader_limits::JSON_FIELD_CHARS)
+                        .collect::<String>(),
+                    if v.chars().count() > reader_limits::JSON_FIELD_CHARS {
+                        "…"
+                    } else {
+                        ""
+                    }
                 ),
             ),
             Value::Number(v) => ("number", v.to_string()),
             Value::Bool(v) => ("boolean", v.to_string()),
             Value::Null => ("null", "null".into()),
         };
+        let full_value = match &value {
+            Value::Object(_) | Value::Array(_) => None,
+            Value::String(text) => Some(text.clone()),
+            _ => Some(value.to_string()),
+        };
         nodes.push(JsonNode {
-            key: key.chars().take(512).collect(),
+            full_key: key.clone(),
+            full_value,
+            key: key.chars().take(reader_limits::JSON_FIELD_CHARS).collect(),
             value: label,
             kind,
             children: Vec::new(),
@@ -102,8 +121,8 @@ fn nodes_for_value(value: Value) -> Result<Vec<JsonNode>> {
 /// Strip JSONC comments and trailing commas outside strings without changing offsets.
 pub fn parse_jsonc(text: &str) -> Result<Vec<JsonNode>> {
     ensure!(
-        text.len() <= 16 * 1024 * 1024,
-        "Tree view is limited to 16 MiB; use Source."
+        text.len() <= reader_limits::JSON_INPUT_BYTES,
+        "Tree input exceeds the preview size limit; use Source."
     );
     let mut bytes = text.as_bytes().to_vec();
     let mut i = 0;
@@ -170,8 +189,8 @@ pub fn parse_jsonc(text: &str) -> Result<Vec<JsonNode>> {
 
 pub fn parse_format(text: &str, format: &str) -> Result<Vec<JsonNode>> {
     ensure!(
-        text.len() <= 16 * 1024 * 1024,
-        "Tree preview exceeds 16 MiB"
+        text.len() <= reader_limits::JSON_INPUT_BYTES,
+        "Tree input exceeds the preview size limit"
     );
     match format {
         "json5" => nodes_for_value(json5::from_str(text)?),

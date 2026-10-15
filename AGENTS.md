@@ -9,6 +9,8 @@
 - Never perform file reads, directory scans, or Git commands inside render methods.
   Schedule blocking work through the background executor and retain/cancel task handles.
 - Keep GPUI entities alive across renders. Use theme tokens for UI colors.
+- Do not impose arbitrary file-size limits or reject a supported file because of its size. Do not add file-size caps unless explicitly requested by the user. Support large files through streaming, paging, incremental processing and on-demand decoding. Bound active memory, buffers and concurrent work independently of total file size; keep operations cancellable. When changing an existing reader with a fixed file-size cap, replace that cap with scalable processing instead of preserving or increasing it.
+- Manage application reader boundaries only in `assets/reader-limits.json`, with explicit units and effects. Rust, Swift and diagram JavaScript must consume the generated shared policy; do not duplicate numeric thresholds in readers or UI hints. Regenerate the bilingual inventories with `python3 scripts/generate-reader-limits.py --docs` after changing policy values. Format-validity rules and implementation invariants stay with their parsers.
 - Keep editing minimal: typing, selection, undo/redo, automatic save and explicit save. Do not add LSP, plugins, speculative abstraction layers, or empty placeholder modules.
 - Pin GPUI Kit; retain Cargo.lock. Enable extra features only when used.
 - After requested code changes, build/package and install the updated local Glim.app by default, verify the installed bundle and launch it. Keep at most the two most recent installation backups. Do not automatically run tests or UI smoke tests; the user handles testing unless explicitly requested.

@@ -1,5 +1,6 @@
 //! Private renderer subprocess entry point, before GPUI initialization. The
 //! system WebView exists only in this process; Markdown HTML never enters it.
+use glim_services::limits as reader_limits;
 
 pub fn run() -> anyhow::Result<()> {
     use anyhow::{Context, ensure};
@@ -27,7 +28,7 @@ pub fn run() -> anyhow::Result<()> {
             .context("Missing renderer output")?,
     );
     ensure!(
-        std::fs::metadata(&input)?.len() <= 64 * 1024 * 1024,
+        std::fs::metadata(&input)?.len() <= reader_limits::DIAGRAM_REQUEST_BYTES,
         "Renderer input too large"
     );
     let request = std::fs::read(input)?;
@@ -47,7 +48,8 @@ pub fn run() -> anyhow::Result<()> {
     }
     let count = values.len();
     let initialization = format!(
-        "window.GLIM_REQUESTS = {}; window.addEventListener('error', function(event) {{ window.ipc.postMessage(JSON.stringify({{ fatal: String(event.message || 'Cannot load ' + (event.target.src || 'renderer asset')).slice(0, 2000) }})); }}, true); window.addEventListener('unhandledrejection', function(event) {{ window.ipc.postMessage(JSON.stringify({{ fatal: String(event.reason).slice(0, 2000) }})); }});",
+        "window.GLIM_LIMITS = {}; window.GLIM_REQUESTS = {}; window.addEventListener('error', function(event) {{ window.ipc.postMessage(JSON.stringify({{ fatal: String(event.message || 'Cannot load ' + (event.target.src || 'renderer asset')).slice(0, 2000) }})); }}, true); window.addEventListener('unhandledrejection', function(event) {{ window.ipc.postMessage(JSON.stringify({{ fatal: String(event.reason).slice(0, 2000) }})); }});",
+        glim_services::limits::JSON,
         serde_json::to_string(&values)?
     );
     let mut results = vec![serde_json::Value::Null; count];
@@ -127,7 +129,7 @@ pub fn run() -> anyhow::Result<()> {
         .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
         .with_download_started_handler(|_, _| false)
         .with_ipc_handler(move |request| {
-            if request.body().len() <= 16 * 1024 * 1024 + 4096
+            if request.body().len() <= reader_limits::DIAGRAM_MESSAGE_BYTES
                 && let Ok(value) = serde_json::from_str(request.body())
             {
                 let _ = proxy.send_event(value);
@@ -162,7 +164,7 @@ pub fn run() -> anyhow::Result<()> {
                     .get("svg")
                     .and_then(|v| v.as_str())
                     .map_or(0, str::len);
-                *slot = if bytes_used <= 64 * 1024 * 1024 {
+                *slot = if bytes_used <= reader_limits::DIAGRAM_AGGREGATE_ENCODED_BYTES {
                     value
                 } else {
                     serde_json::json!({ "error": "图表输出超过 64 MiB" })
@@ -173,7 +175,7 @@ pub fn run() -> anyhow::Result<()> {
                     .map_err(anyhow::Error::from)
                     .and_then(|bytes| {
                         ensure!(
-                            bytes.len() <= 128 * 1024 * 1024,
+                            bytes.len() <= reader_limits::DIAGRAM_IPC_BYTES as usize,
                             "Renderer IPC budget exceeded"
                         );
                         let destination = output.with_extension(format!("{index}.json"));

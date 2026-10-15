@@ -1,5 +1,6 @@
 use super::source::SourceReader;
 use glim_core::{DiffDocument, diff_content, split_diff::split_patch};
+use glim_services::limits as reader_limits;
 use gpui_kit::*;
 pub(super) struct DiffReader {
     pub source: SourceReader,
@@ -12,12 +13,14 @@ impl DiffReader {
         let mut preview = String::new();
         let mut shortened = false;
         for (index, line) in document.patch.split_inclusive('\n').enumerate() {
-            if index >= 50_000 || preview.len() >= 16 * 1024 * 1024 {
+            if index >= reader_limits::DIFF_LINES
+                || preview.len() >= reader_limits::DIFF_PREVIEW_BYTES
+            {
                 shortened = true;
                 break;
             }
-            if line.len() > 64 * 1024 {
-                let mut end = 64 * 1024;
+            if line.len() > reader_limits::DIFF_LINE_BYTES {
+                let mut end = reader_limits::DIFF_LINE_BYTES;
                 while !line.is_char_boundary(end) {
                     end -= 1;
                 }

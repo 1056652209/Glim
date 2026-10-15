@@ -1,10 +1,11 @@
-use glim_services::paged::{FULL_BYTES, TextPage, read_page};
+use glim_services::paged::{PageSource, TextPage};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable,
         button::{Button, ButtonVariants},
         h_flex, v_flex,
     },
+    prelude::FluentBuilder,
     *,
 };
 use std::ops::Range;
@@ -12,7 +13,11 @@ use std::ops::Range;
 /// Virtual rows contain slices into one buffer, not one allocation per line.
 /// Paging replaces the buffer, so browsing an unbounded file stays bounded.
 pub(super) struct PagedReader {
+    pub source_editor: Option<super::source::SourceReader>,
+    pub saving: std::rc::Rc<std::cell::Cell<bool>>,
     page: TextPage,
+    _source_owner: Option<glim_services::work::CancelOnDrop>,
+    report_source: Option<PageSource>,
     rows: Vec<Range<usize>>,
     widest_row: Option<usize>,
     previous: Vec<u64>,
@@ -21,10 +26,25 @@ pub(super) struct PagedReader {
     scroll: UniformListScrollHandle,
 }
 impl PagedReader {
-    pub fn new(page: TextPage) -> Self {
+    pub fn new(mut page: TextPage, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let rows = rows(&page.text);
         let widest_row = widest_row(&page.text, &rows);
+        let source_editor = page.source.is_editable().then(|| {
+            super::source::SourceReader::new(
+                &page.text,
+                "plain",
+                false,
+                Vec::new(),
+                ScrollHandle::new(),
+                window,
+                cx,
+            )
+        });
         Self {
+            _source_owner: page.owner.take(),
+            source_editor,
+            saving: std::rc::Rc::new(std::cell::Cell::new(false)),
+            report_source: page.source.is_generated().then(|| page.source.clone()),
             widest_row,
             page,
             rows,
@@ -34,6 +54,80 @@ impl PagedReader {
             scroll: UniformListScrollHandle::new(),
         }
     }
+    pub fn request_save_before_preview(&mut self, cx: &mut Context<Self>) {
+        self.error = Some(glim_services::locale::tr(
+            "Save this page before navigating.",
+        ));
+        cx.notify();
+    }
+    pub fn save_request(&mut self) -> Option<glim_services::paged::PageEdit> {
+        self.source_editor.as_ref()?;
+        self.saving.set(true);
+        Some(glim_services::paged::PageEdit {
+            path: self.page.path.clone(),
+            start: self.page.start,
+            end: self.page.end,
+            total: self.page.total,
+            modified: self.page.modified,
+            identity: self.page.identity,
+            expected: self.page.text.clone(),
+        })
+    }
+    pub fn saved(
+        &mut self,
+        text: String,
+        saved: glim_services::paged::PageSaved,
+        cx: &mut Context<Self>,
+    ) {
+        self.saving.set(false);
+        if let Some(editor) = &mut self.source_editor {
+            editor.mark_saved(text.clone(), cx);
+        }
+        self.page.text = text;
+        self.page.end = saved.end;
+        self.page.total = saved.total;
+        self.page.modified = saved.modified;
+        self.page.identity = saved.identity;
+        cx.notify();
+    }
+    fn toggle_raw(&mut self, cx: &mut Context<Self>) {
+        if self.task.is_some() {
+            return;
+        }
+        let Some(report) = self.report_source.clone() else {
+            return;
+        };
+        let source = if self.page.source.is_generated() {
+            report.raw()
+        } else {
+            report
+        };
+        let work = cx.background_executor().spawn(async move {
+            let page = source.read(0, false)?;
+            let rows = rows(&page.text);
+            let widest = widest_row(&page.text, &rows);
+            Ok::<_, anyhow::Error>((page, rows, widest))
+        });
+        self.task = Some(cx.spawn(async move |view, cx| {
+            let result = work.await;
+            let _ = view.update(cx, |view, cx| {
+                view.task = None;
+                match result {
+                    Ok((page, rows, widest)) => {
+                        view.page = page;
+                        view.rows = rows;
+                        view.widest_row = widest;
+                        view.previous.clear();
+                        view.error = None;
+                        view.scroll = UniformListScrollHandle::new();
+                    }
+                    Err(error) => view.error = Some(format!("{error:#}")),
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
     fn load(
         &mut self,
         start: u64,
@@ -42,28 +136,32 @@ impl PagedReader {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.task.is_some() {
+        if self.task.is_some() || self.saving.get() {
             return;
         }
-        let path = self.page.path.clone();
-        let stamp = (self.page.total, self.page.modified);
-        let response = all.then(|| window.prompt(PromptLevel::Warning, &glim_services::locale::tr("Load the entire file?"), Some(&glim_services::locale::tr("Full view can use substantially more memory. Files up to 256 MiB can be loaded as read-only virtual text; syntax parsing, editing and minimap are disabled. Larger files remain paged.")), &[glim_services::locale::tr("Cancel").as_str(), glim_services::locale::tr("Load All").as_str()], cx));
+        if self
+            .source_editor
+            .as_ref()
+            .is_some_and(|editor| editor.is_dirty())
+        {
+            self.error = Some(glim_services::locale::tr(
+                "Save this page before navigating.",
+            ));
+            cx.notify();
+            return;
+        }
+        let source = self.page.source.clone();
+        let stamp = (self.page.total, self.page.modified, self.page.identity);
+        let (cancel, guard) = glim_services::work::Cancellation::task();
         self.task = Some(cx.spawn_in(window, async move |view, cx| {
-            if let Some(response) = response
-                && response.await != Ok(1)
-            {
-                let _ = view.update(cx, |v, cx| {
-                    v.task = None;
-                    cx.notify();
-                });
-                return;
-            }
+            let _guard = guard;
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let page = read_page(&path, start, all)?;
+                    let page = source.read_cancellable(start, all, &cancel)?;
                     anyhow::ensure!(
-                        (page.total, page.modified) == stamp,
+                        page.source.is_generated()
+                            || (page.total, page.modified, page.identity) == stamp,
                         "File changed on disk. Reopen or refresh before paging."
                     );
                     let rows = rows(&page.text);
@@ -71,16 +169,20 @@ impl PagedReader {
                     Ok::<_, anyhow::Error>((page, rows, widest))
                 })
                 .await;
-            let _ = view.update(cx, |v, cx| {
+            let _ = view.update_in(cx, |v, window, cx| {
                 v.task = None;
                 match result {
                     Ok((page, rows, widest)) => {
-                        if all {
-                            v.previous.clear();
-                        } else if back {
+                        if back {
                             v.previous.pop();
-                        } else {
+                        } else if page.start != v.page.start {
                             v.previous.push(v.page.start);
+                        }
+                        if let Some(editor) = &mut v.source_editor {
+                            editor.state.update(cx, |state, cx| {
+                                state.set_value(page.text.clone(), window, cx)
+                            });
+                            editor.mark_saved(page.text.clone(), cx);
                         }
                         v.widest_row = widest;
                         v.page = page;
@@ -121,7 +223,7 @@ fn widest_row(text: &str, rows: &[Range<usize>]) -> Option<usize> {
 }
 impl Render for PagedReader {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let busy = self.task.is_some();
+        let busy = self.task.is_some() || self.saving.get();
         let previous = self.previous.last().copied();
         let next = self.page.end;
         v_flex()
@@ -135,9 +237,32 @@ impl Render for PagedReader {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .child(div().flex_1().min_w_0().truncate().child(format!(
-                        "Read-only · bytes {}–{} / {} · long lines split for display",
-                        self.page.start, self.page.end, self.page.total
+                        "{} · bytes {}–{} / {}{}",
+                        glim_services::locale::tr(if self.source_editor.is_some() {
+                            "Editable page"
+                        } else {
+                            "Read-only preview"
+                        }),
+                        self.page.start,
+                        self.page.end,
+                        self.page.total,
+                        if self.page.total_known { "" } else { "+" }
                     )))
+                    .when(self.report_source.is_some(), |bar| {
+                        bar.child(
+                            Button::new("page-raw")
+                                .ghost()
+                                .label(glim_services::locale::tr(
+                                    if self.page.source.is_generated() {
+                                        "File bytes"
+                                    } else {
+                                        "Report"
+                                    },
+                                ))
+                                .disabled(busy)
+                                .on_click(cx.listener(|view, _, _, cx| view.toggle_raw(cx))),
+                        )
+                    })
                     .child(
                         Button::new("page-back")
                             .ghost()
@@ -153,7 +278,7 @@ impl Render for PagedReader {
                         Button::new("page-next")
                             .ghost()
                             .label(glim_services::locale::tr("Next page"))
-                            .disabled(busy || next >= self.page.total)
+                            .disabled(busy || !self.page.more)
                             .on_click(
                                 cx.listener(move |v, _, w, cx| v.load(next, false, false, w, cx)),
                             ),
@@ -161,13 +286,14 @@ impl Render for PagedReader {
                     .child(
                         Button::new("page-all")
                             .ghost()
-                            .label(glim_services::locale::tr("Load all…"))
-                            .tooltip(glim_services::locale::tr("Full view: up to 256 MiB and four million line breaks; larger files stay paged"))
+                            .label(glim_services::locale::tr("Expand this page"))
                             .disabled(
-                                busy || self.page.total > FULL_BYTES
-                                    || (self.page.start == 0 && self.page.end == self.page.total),
+                                busy || self.page.source.binary
+                                    || (self.page.start == 0 && !self.page.more),
                             )
-                            .on_click(cx.listener(|v, _, w, cx| v.load(0, true, false, w, cx))),
+                            .on_click(
+                                cx.listener(|v, _, w, cx| v.load(v.page.start, true, false, w, cx)),
+                            ),
                     ),
             )
             .children(self.error.iter().map(|e| {
@@ -177,21 +303,25 @@ impl Render for PagedReader {
                     .text_color(cx.theme().danger)
                     .child(e.clone())
             }))
-            .child(
+            .child(if let Some(editor) = &mut self.source_editor {
+                editor.render(cx)
+            } else {
                 uniform_list(
                     "large-text",
                     self.rows.len(),
                     cx.processor(|v, range: Range<usize>, _, cx| {
-                        range.map(|i| {
-                            div()
-                                .h(px(22.))
-                                .px_3()
-                                .text_sm()
-                                .font_family("Menlo")
-                                .whitespace_nowrap()
-                                .text_color(cx.theme().foreground)
-                                .child(v.page.text[v.rows[i].clone()].to_owned())
-                        }).collect()
+                        range
+                            .map(|i| {
+                                div()
+                                    .h(px(22.))
+                                    .px_3()
+                                    .text_sm()
+                                    .font_family("Menlo")
+                                    .whitespace_nowrap()
+                                    .text_color(cx.theme().foreground)
+                                    .child(v.page.text[v.rows[i].clone()].to_owned())
+                            })
+                            .collect()
                     }),
                 )
                 .with_width_from_item(self.widest_row)
@@ -199,7 +329,8 @@ impl Render for PagedReader {
                 .track_scroll(&self.scroll)
                 .flex_1()
                 .min_h_0()
-                .w_full(),
-            )
+                .w_full()
+                .into_any_element()
+            })
     }
 }

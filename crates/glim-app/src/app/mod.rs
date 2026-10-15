@@ -4,6 +4,7 @@ mod assets;
 pub(crate) mod diagram_engine;
 mod image_http;
 pub(crate) mod languages;
+pub(crate) mod media_prepare;
 mod menus;
 mod shortcuts;
 #[cfg(feature = "macos-updater")]
@@ -350,8 +351,14 @@ pub fn run() -> Result<()> {
             open_pending.borrow_mut().extend(urls);
         }
     });
+    application.on_reopen(|cx| {
+        if cx.windows().is_empty() && !updates::busy(cx) {
+            open_workspace(None, cx);
+        }
+    });
     application.run(move |cx| {
         gpui_kit::init(cx);
+        cx.set_quit_mode(QuitMode::Explicit);
         gpui_kit::component::set_locale(glim_services::locale::code());
         cx.set_global(LanguageSaveTask::default());
         cx.set_global(LanguagePreference(language));
@@ -439,10 +446,11 @@ pub fn run() -> Result<()> {
             KeyBinding::new("f1", KeyboardShortcuts, None),
         ]);
         menus::update(cx);
-        cx.on_window_closed(|cx, _| {
-            if cx.windows().is_empty() {
-                cx.quit();
-            }
+        cx.on_window_closed(|cx, closed| {
+            cx.global_mut::<OpenWorkspaces>()
+                .0
+                .retain(|(_, handle)| handle.window_id() != closed);
+            cx.refresh_windows();
         })
         .detach();
 
@@ -670,4 +678,21 @@ pub(crate) fn change_language(language: &'static str, cx: &mut App) {
         }
     });
     cx.global_mut::<LanguageSaveTask>().0 = Some(task);
+}
+
+/// Complete a filesystem mutation in every window displaying the same paths.
+pub(crate) fn finish_trash_in_other_windows(
+    exclude: EntityId,
+    path: &std::path::Path,
+    cx: &mut App,
+) {
+    for (view, handle) in OpenWorkspaces::windows(cx) {
+        if let Some(view) = view.upgrade()
+            && view.entity_id() != exclude
+        {
+            let _ = handle.update(cx, |_, window, cx| {
+                view.update(cx, |view, cx| view.did_trash(path, window, cx));
+            });
+        }
+    }
 }

@@ -1,5 +1,16 @@
 use std::{env, path::PathBuf, process::Command};
 fn main() {
+    println!("cargo:rerun-if-changed=../../assets/reader-limits.json");
+    println!("cargo:rerun-if-changed=../../scripts/generate-reader-limits.py");
+    let limits_out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let generated = Command::new("python3")
+        .arg("../../scripts/generate-reader-limits.py")
+        .arg("--out-dir")
+        .arg(&limits_out)
+        .status()
+        .expect("Generate shared reader limits");
+    assert!(generated.success(), "Reader limit generation failed");
+
     println!("cargo:rerun-if-changed=../../assets/macos/Info.plist");
     let metadata =
         std::fs::read_to_string("../../assets/macos/Info.plist").expect("Missing release metadata");
@@ -24,6 +35,7 @@ fn main() {
 fn build_native_preview() {
     for source in [
         "Preview.swift",
+        "ImagePreview.swift",
         "SQLitePreview.swift",
         "EmbeddedPreview.swift",
     ] {
@@ -48,10 +60,12 @@ fn build_native_preview() {
             "-target",
             &format!("{arch}-apple-macos11.0"),
             "../../native/Preview.swift",
+            "../../native/ImagePreview.swift",
             "../../native/SQLitePreview.swift",
             "../../native/EmbeddedPreview.swift",
-            "-o",
         ])
+        .arg(output.join("ReaderLimits.swift"))
+        .args(["-o"])
         .arg(output.join("libGlimNativePreview.a"))
         .status()
         .expect("Native previews require Apple Command Line Tools (swiftc)");

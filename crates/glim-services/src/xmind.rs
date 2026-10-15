@@ -1,4 +1,5 @@
 //! Read bounded XMind ZIP content without extraction, external resources or code execution.
+use crate::limits as reader_limits;
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -8,8 +9,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const CONTENT_LIMIT: u64 = 16 * 1024 * 1024;
-const TOPIC_LIMIT: usize = 10_000;
+const CONTENT_LIMIT: u64 = reader_limits::XMIND_CONTENT_BYTES;
+const TOPIC_LIMIT: usize = reader_limits::XMIND_TOPICS;
 
 pub struct MindMap {
     pub path: PathBuf,
@@ -35,16 +36,8 @@ pub fn supports(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("xmind"))
 }
 pub fn read(path: &Path) -> Result<MindMap> {
-    ensure!(
-        std::fs::metadata(path)?.len() <= 256 * 1024 * 1024,
-        "XMind files are limited to 256 MiB"
-    );
     let mut archive =
         zip::ZipArchive::new(std::fs::File::open(path)?).context("Invalid XMind ZIP container")?;
-    ensure!(
-        archive.len() <= 10_000,
-        "XMind archive has too many entries"
-    );
     let modern = archive.file_names().any(|name| name == "content.json");
     let mut entry = archive
         .by_name(if modern {
@@ -53,18 +46,18 @@ pub fn read(path: &Path) -> Result<MindMap> {
             "content.xml"
         })
         .context("XMind content is missing, encrypted or damaged")?;
-    ensure!(
+    reader_limits::preview_budget(
         entry.size() <= CONTENT_LIMIT,
-        "XMind content exceeds 16 MiB"
-    );
+        "XMind content exceeds the preview size limit",
+    )?;
     let mut bytes = Vec::new();
     (&mut entry)
         .take(CONTENT_LIMIT + 1)
         .read_to_end(&mut bytes)?;
-    ensure!(
+    reader_limits::preview_budget(
         bytes.len() as u64 <= CONTENT_LIMIT,
-        "XMind content exceeds 16 MiB"
-    );
+        "XMind content exceeds the preview size limit",
+    )?;
     let value = if modern {
         serde_json::from_slice(&bytes).context("Invalid XMind JSON content")?
     } else {
@@ -87,18 +80,19 @@ fn sheets(value: Value) -> Result<Vec<Sheet>> {
     let values = value
         .as_array()
         .context("XMind content must contain a list of sheets")?;
-    ensure!(
-        !values.is_empty() && values.len() <= 100,
-        "XMind requires 1–100 sheets"
-    );
+    reader_limits::preview_budget(
+        values.len() <= reader_limits::XMIND_SHEETS,
+        "XMind requires a non-empty sheet list within the preview limit",
+    )?;
+    ensure!(!values.is_empty(), "XMind contains no sheets");
     let mut total = 0;
     values
         .iter()
         .map(|value| {
-            ensure!(
-                text(value, "title").len() <= 16 * 1024,
-                "XMind sheet title exceeds 16 KiB"
-            );
+            reader_limits::preview_budget(
+                text(value, "title").len() <= reader_limits::XMIND_TITLE_BYTES,
+                "XMind sheet title exceeds the text limit",
+            )?;
             let mut sheet = Sheet {
                 title: text(value, "title"),
                 topics: Vec::new(),
@@ -112,10 +106,10 @@ fn sheets(value: Value) -> Result<Vec<Sheet>> {
             let index = add_topic(root, &mut sheet, &mut ids, &mut total, 0)?;
             sheet.roots.insert(0, index);
             if let Some(relationships) = value.get("relationships").and_then(Value::as_array) {
-                ensure!(
-                    relationships.len() <= TOPIC_LIMIT,
-                    "XMind sheet has too many relationships"
-                );
+                reader_limits::preview_budget(
+                    relationships.len() <= reader_limits::XMIND_RELATIONSHIPS,
+                    "XMind sheet has too many relationships",
+                )?;
                 for relation in relationships {
                     if let (Some(&from), Some(&to)) = (
                         ids.get(&text(relation, "end1Id")),
@@ -137,13 +131,16 @@ fn add_topic(
     depth: usize,
 ) -> Result<usize> {
     ensure!(value.is_object(), "Invalid XMind topic");
-    ensure!(
-        depth <= 64 && *total < TOPIC_LIMIT,
-        "XMind preview is limited to 10,000 topics and 64 levels"
-    );
+    reader_limits::preview_budget(
+        depth <= reader_limits::XMIND_NESTING && *total < TOPIC_LIMIT,
+        "XMind topic count or nesting exceeds the preview limit",
+    )?;
     *total += 1;
     let title = text(value, "title");
-    ensure!(title.len() <= 16 * 1024, "XMind topic title exceeds 16 KiB");
+    reader_limits::preview_budget(
+        title.len() <= reader_limits::XMIND_TITLE_BYTES,
+        "XMind topic title exceeds the text limit",
+    )?;
     let index = sheet.topics.len();
     let id = text(value, "id");
     if !id.is_empty() {
@@ -158,7 +155,10 @@ fn add_topic(
         .or_else(|| value.pointer("/notes/plain").and_then(Value::as_str))
         .unwrap_or_default()
         .to_owned();
-    ensure!(notes.len() <= 64 * 1024, "XMind topic note exceeds 64 KiB");
+    reader_limits::preview_budget(
+        notes.len() <= reader_limits::XMIND_NOTE_BYTES,
+        "XMind topic note exceeds the text limit",
+    )?;
     let labels: Vec<String> = value
         .get("labels")
         .and_then(Value::as_array)
@@ -169,17 +169,18 @@ fn add_topic(
                 .collect()
         })
         .unwrap_or_default();
-    ensure!(
-        labels.iter().map(String::len).sum::<usize>() <= 16 * 1024 && labels.len() <= 128,
-        "XMind topic labels exceed preview limits"
-    );
-    ensure!(
+    reader_limits::preview_budget(
+        labels.iter().map(String::len).sum::<usize>() <= reader_limits::XMIND_LABELS_BYTES
+            && labels.len() <= reader_limits::XMIND_LABELS,
+        "XMind topic labels exceed preview limits",
+    )?;
+    reader_limits::preview_budget(
         value
             .get("href")
             .and_then(Value::as_str)
-            .is_none_or(|link| link.len() <= 16 * 1024),
-        "XMind topic link exceeds 16 KiB"
-    );
+            .is_none_or(|link| link.len() <= reader_limits::XMIND_LINK_BYTES),
+        "XMind topic link exceeds the text limit",
+    )?;
     sheet.topics.push(Topic {
         title,
         notes,
@@ -229,10 +230,11 @@ fn legacy_content(bytes: &[u8]) -> Result<Value> {
                     !stack.is_empty() || nodes.is_empty(),
                     "Multiple XMind XML roots"
                 );
-                ensure!(
-                    nodes.len() < 200_000 && stack.len() < 256,
-                    "XMind XML structure exceeds preview limits"
-                );
+                reader_limits::preview_budget(
+                    nodes.len() < reader_limits::XMIND_XML_NODES
+                        && stack.len() < reader_limits::XMIND_XML_NESTING,
+                    "XMind XML structure exceeds preview limits",
+                )?;
                 let index = nodes.len();
                 let attributes = e
                     .attributes()
@@ -308,7 +310,10 @@ fn legacy_content(bytes: &[u8]) -> Result<Value> {
             })
             .unwrap_or_default();
         sheets.push(json!({"title": child_text(&nodes, index, "title"), "rootTopic": xml_topic(&nodes, topic, 0)?, "relationships": relations}));
-        ensure!(sheets.len() <= 100, "XMind requires at most 100 sheets");
+        reader_limits::preview_budget(
+            sheets.len() <= reader_limits::XMIND_SHEETS,
+            "XMind sheet count exceeds the preview limit",
+        )?;
     }
     Ok(Value::Array(sheets))
 }
@@ -325,7 +330,10 @@ fn child_text(nodes: &[XmlNode], index: usize, name: &str) -> String {
         .unwrap_or_default()
 }
 fn xml_topic(nodes: &[XmlNode], index: usize, depth: usize) -> Result<Value> {
-    ensure!(depth <= 64, "XMind preview is limited to 64 levels");
+    reader_limits::preview_budget(
+        depth <= reader_limits::XMIND_NESTING,
+        "XMind nesting exceeds the preview limit",
+    )?;
     let node = &nodes[index];
     let notes = child(nodes, index, "notes")
         .map(|n| child_text(nodes, n, "plain"))
@@ -364,6 +372,25 @@ fn xml_topic(nodes: &[XmlNode], index: usize, depth: usize) -> Result<Value> {
     }
     Ok(
         json!({"id": node.attributes.get("id"), "title": child_text(nodes, index, "title"), "href": node.attributes.get("href"), "notes": {"plain": {"content": notes}}, "labels": labels, "children": {"attached": attached, "detached": detached}}),
+    )
+}
+
+/// Complete source fallback when the interactive mind-map exceeds its working budget.
+pub fn read_source(
+    path: &Path,
+    cancel: &crate::work::Cancellation,
+) -> Result<crate::paged::TextPage> {
+    let archive = zip::ZipArchive::new(std::fs::File::open(path)?)?;
+    let modern = archive.file_names().any(|name| name == "content.json");
+    drop(archive);
+    crate::paged::zip_member(
+        path,
+        if modern {
+            "content.json"
+        } else {
+            "content.xml"
+        },
+        cancel,
     )
 }
 

@@ -1,4 +1,5 @@
 //! Offline ebook structure and chapter resources. All reads/decoding run in the background.
+use crate::limits as reader_limits;
 pub mod preferences;
 
 use anyhow::{Context, Result, ensure};
@@ -11,9 +12,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const ARCHIVE_LIMIT: u64 = 256 * 1024 * 1024;
-const TEXT_LIMIT: u64 = 64 * 1024 * 1024;
-const CHAPTER_LIMIT: u64 = 4 * 1024 * 1024;
+const ARCHIVE_LIMIT: u64 = reader_limits::BOOK_INPUT_BYTES;
+const TEXT_LIMIT: u64 = reader_limits::BOOK_TEXT_BYTES;
+const CHAPTER_LIMIT: u64 = reader_limits::BOOK_CHAPTER_BYTES;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Epub,
@@ -79,12 +80,12 @@ fn bounded(reader: impl Read, limit: u64) -> Result<Vec<u8>> {
 fn archive(path: &Path) -> Result<zip::ZipArchive<std::fs::File>> {
     ensure!(
         std::fs::metadata(path)?.len() <= ARCHIVE_LIMIT,
-        "Ebooks are limited to 256 MiB"
+        "Ebook exceeds the preview input size limit"
     );
     let archive = zip::ZipArchive::new(std::fs::File::open(path)?)
         .context("Damaged or encrypted ebook archive")?;
     ensure!(
-        archive.len() <= 20_000,
+        archive.len() <= reader_limits::BOOK_ARCHIVE_ENTRIES,
         "Ebook archive has too many entries"
     );
     Ok(archive)
@@ -151,7 +152,7 @@ fn xml(text: &str) -> Result<Document<'_>> {
         text,
         roxmltree::ParsingOptions {
             allow_dtd: false,
-            nodes_limit: 250_000,
+            nodes_limit: reader_limits::BOOK_XML_NODES,
             ..Default::default()
         },
     )
@@ -236,7 +237,7 @@ pub fn resolve(base: &str, href: &str) -> Option<String> {
 pub fn read(path: &Path) -> Result<Book> {
     ensure!(
         std::fs::metadata(path)?.len() <= ARCHIVE_LIMIT,
-        "Ebooks are limited to 256 MiB"
+        "Ebook exceeds the preview input size limit"
     );
     let mut file = std::fs::File::open(path)?;
     let mut hash = Sha256::new();
@@ -282,11 +283,13 @@ pub fn read(path: &Path) -> Result<Book> {
             .into_owned();
     }
     ensure!(
-        !book.chapters.is_empty() && book.chapters.len() <= 2000,
-        "Ebook requires 1–2000 chapters or comic pages"
+        !book.chapters.is_empty() && book.chapters.len() <= reader_limits::BOOK_CHAPTERS,
+        "Ebook requires chapters or comic pages within the preview count limit"
     );
     ensure!(
-        book.title.len() <= 16 * 1024 && book.author.len() <= 16 * 1024 && book.toc.len() <= 10_000,
+        book.title.len() <= reader_limits::BOOK_METADATA_BYTES
+            && book.author.len() <= reader_limits::BOOK_METADATA_BYTES
+            && book.toc.len() <= reader_limits::BOOK_TOC_ENTRIES,
         "Ebook metadata exceeds reading limit"
     );
     Ok(book)
@@ -405,7 +408,7 @@ fn epub(path: &Path) -> Result<Book> {
                     book.toc.push(TocEntry {
                         title: text(link),
                         href,
-                        depth: depth.min(32),
+                        depth: depth.min(reader_limits::BOOK_TOC_DEPTH),
                     });
                 }
             }
@@ -435,7 +438,7 @@ fn epub(path: &Path) -> Result<Book> {
                 book.toc.push(TocEntry {
                     title: label,
                     href,
-                    depth: depth.min(32),
+                    depth: depth.min(reader_limits::BOOK_TOC_DEPTH),
                 });
             }
         }
@@ -620,7 +623,10 @@ fn escape(value: &str) -> String {
         .replace('"', "&quot;")
 }
 fn serialize_fb2(node: Node<'_, '_>, out: &mut String, depth: usize) -> Result<()> {
-    ensure!(depth <= 64, "FB2 nesting exceeds reading limit");
+    ensure!(
+        depth <= reader_limits::BOOK_FB2_DEPTH,
+        "FB2 nesting exceeds reading limit"
+    );
     if node.is_text() {
         out.push_str(&escape(node.text().unwrap_or_default()));
         return Ok(());
@@ -670,7 +676,11 @@ pub fn chapter(book: &Book, index: usize) -> Result<ChapterContent> {
     let chapter = book.chapters.get(index).context("Unknown ebook chapter")?;
     if book.format == Format::Comic {
         let mut package = archive(&book.path)?;
-        let bytes = entry(&mut package, &chapter.href, 32 * 1024 * 1024)?;
+        let bytes = entry(
+            &mut package,
+            &chapter.href,
+            reader_limits::BOOK_RESOURCE_BYTES,
+        )?;
         return Ok(ChapterContent {
             html: String::new(),
             images: HashMap::new(),
@@ -716,7 +726,7 @@ pub fn chapter(book: &Book, index: usize) -> Result<ChapterContent> {
             let path = path.split('#').next().unwrap_or(&path);
             package
                 .as_mut()
-                .and_then(|p| entry(p, path, 32 * 1024 * 1024).ok())
+                .and_then(|p| entry(p, path, reader_limits::BOOK_RESOURCE_BYTES).ok())
         } else {
             None
         };
@@ -735,7 +745,8 @@ pub fn chapter(book: &Book, index: usize) -> Result<ChapterContent> {
                 drop(decoder);
                 preview_total += png.len();
                 ensure!(
-                    decoded_total <= 128 * 1024 * 1024 && preview_total as u64 <= TEXT_LIMIT,
+                    decoded_total <= reader_limits::BOOK_CHAPTER_DECODED_BYTES
+                        && preview_total as u64 <= TEXT_LIMIT,
                     "Chapter illustrations exceed decoded memory limit"
                 );
                 output.images.insert(reference, png);
@@ -746,7 +757,7 @@ pub fn chapter(book: &Book, index: usize) -> Result<ChapterContent> {
 }
 fn sanitize(node: Node<'_, '_>, output: &mut ChapterContent, depth: usize) -> Result<()> {
     ensure!(
-        depth <= 128 && output.html.len() as u64 <= CHAPTER_LIMIT,
+        depth <= reader_limits::BOOK_HTML_DEPTH && output.html.len() as u64 <= CHAPTER_LIMIT,
         "Chapter rendering exceeds reading limit"
     );
     if node.is_text() {
@@ -826,7 +837,7 @@ fn sanitize(node: Node<'_, '_>, output: &mut ChapterContent, depth: usize) -> Re
         && let Some(src) = attribute(node, "src").or_else(|| attribute(node, "href"))
     {
         ensure!(
-            output.images.len() < 128,
+            output.images.len() < reader_limits::BOOK_CHAPTER_IMAGES,
             "Chapter contains too many images"
         );
         output.images.insert(src.into(), Vec::new());
@@ -849,7 +860,8 @@ fn image_png(bytes: &[u8], name: &str) -> Result<Vec<u8>> {
     if name.to_ascii_lowercase().ends_with(".svg") {
         let tree = resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())?;
         let size = tree.size();
-        let scale = (2400. / size.width().max(size.height())).min(1.);
+        let scale =
+            (reader_limits::BOOK_PREVIEW_EDGE as f32 / size.width().max(size.height())).min(1.);
         let mut pixmap = resvg::tiny_skia::Pixmap::new(
             (size.width() * scale).ceil().max(1.) as u32,
             (size.height() * scale).ceil().max(1.) as u32,
@@ -864,17 +876,20 @@ fn image_png(bytes: &[u8], name: &str) -> Result<Vec<u8>> {
     }
     let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
     let mut limits = image::Limits::default();
-    limits.max_alloc = Some(128 * 1024 * 1024);
-    limits.max_image_width = Some(10_000);
-    limits.max_image_height = Some(10_000);
+    limits.max_alloc = Some(reader_limits::BOOK_IMAGE_DECODED_BYTES);
+    limits.max_image_width = Some(reader_limits::BOOK_IMAGE_EDGE);
+    limits.max_image_height = Some(reader_limits::BOOK_IMAGE_EDGE);
     reader.limits(limits);
     let decoder = reader.into_decoder()?;
     use image::ImageDecoder;
     ensure!(
-        decoder.total_bytes() <= 128 * 1024 * 1024,
+        decoder.total_bytes() <= reader_limits::BOOK_IMAGE_DECODED_BYTES,
         "Book illustration exceeds decoded memory limit"
     );
-    let image = image::DynamicImage::from_decoder(decoder)?.thumbnail(2400, 2400);
+    let image = image::DynamicImage::from_decoder(decoder)?.thumbnail(
+        reader_limits::BOOK_PREVIEW_EDGE,
+        reader_limits::BOOK_PREVIEW_EDGE,
+    );
     let mut output = Cursor::new(Vec::new());
     image.write_to(&mut output, image::ImageFormat::Png)?;
     Ok(output.into_inner())

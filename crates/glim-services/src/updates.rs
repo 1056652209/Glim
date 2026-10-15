@@ -122,10 +122,6 @@ fn write_session_at(directory: &Path, session: &UpdateSession) -> Result<()> {
     fs::create_dir_all(directory)?;
     let mut file = tempfile::NamedTempFile::new_in(directory)?;
     serde_json::to_writer(&mut file, session)?;
-    ensure!(
-        file.as_file().metadata()?.len() <= 8 * 1024 * 1024,
-        "Update session exceeds size limit"
-    );
     file.flush()?;
     file.as_file().sync_all()?;
     file.persist(directory.join("update-session.json"))?;
@@ -133,15 +129,7 @@ fn write_session_at(directory: &Path, session: &UpdateSession) -> Result<()> {
 }
 fn validate_session(session: &UpdateSession) -> Result<()> {
     ensure!(session.schema == 1, "Unsupported update session format");
-    ensure!(
-        session.workspaces.len() <= 64,
-        "Too many windows to restore"
-    );
     for workspace in &session.workspaces {
-        ensure!(
-            workspace.roots.len() <= 256 && workspace.tabs.len() <= 2000,
-            "Too many items to restore"
-        );
         ensure!(
             workspace.active.is_none_or(|i| i < workspace.tabs.len()),
             "Invalid active tab"
@@ -171,11 +159,8 @@ fn take_session_at(directory: &Path, current_build: &str) -> Result<Option<Updat
         return Ok(None);
     }
     let read = || -> Result<UpdateSession> {
-        ensure!(
-            fs::metadata(&path)?.len() <= 8 * 1024 * 1024,
-            "Update session exceeds size limit"
-        );
-        let session: UpdateSession = serde_json::from_slice(&fs::read(&path)?)?;
+        let session: UpdateSession =
+            serde_json::from_reader(std::io::BufReader::new(fs::File::open(&path)?))?;
         validate_session(&session)?;
         Ok(session)
     };

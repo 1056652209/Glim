@@ -1,4 +1,5 @@
 mod editing;
+mod file_operations;
 mod gestures;
 mod git;
 mod header;
@@ -37,6 +38,7 @@ pub struct Workspace {
     restoring_roots: Option<Vec<PathBuf>>,
     focus: FocusHandle,
     page: Page,
+    file_fullscreen: bool,
     sidebar_selection: Option<&'static str>,
     history: Vec<header::Target>,
     history_cursor: Option<usize>,
@@ -51,6 +53,9 @@ pub struct Workspace {
     preference_task: Option<Task<()>>,
     repository_task: Option<Task<()>>,
     results: Vec<PathBuf>,
+    search_offset: usize,
+    search_more: bool,
+    recent_visible: usize,
     pending_anchor: Option<(PathBuf, String)>,
     search_task: Option<Task<()>>,
     _search_subscription: Subscription,
@@ -86,6 +91,15 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    pub(crate) fn recent_visible(&self) -> usize {
+        self.recent_visible
+    }
+    pub(crate) fn show_more_recent(&mut self, cx: &mut Context<Self>) {
+        self.recent_visible = self
+            .recent_visible
+            .saturating_add(glim_services::limits::WORKSPACE_RECENT_WORKSPACES);
+        cx.notify();
+    }
     pub(crate) fn folder_roots(&self) -> &[PathBuf] {
         &self.roots
     }
@@ -171,6 +185,7 @@ impl Workspace {
             sidebar_window_width: 0.,
             sidebar_layout: cx.new(|_| gpui_kit::component::resizable::ResizableState::default()),
             page: Page::Start,
+            file_fullscreen: false,
             sidebar_selection: Some("start"),
             word_wrap: cx
                 .try_global::<crate::app::ReaderPreferences>()
@@ -179,6 +194,9 @@ impl Workspace {
             repository_task: None,
             search,
             results: Vec::new(),
+            search_offset: 0,
+            search_more: false,
+            recent_visible: glim_services::limits::WORKSPACE_RECENT_WORKSPACES,
             pending_anchor: None,
             search_task: None,
             _search_subscription: subscription,

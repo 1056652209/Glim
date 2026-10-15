@@ -18,7 +18,16 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
     private var more = false
     private var busy = false
     private var closed = false
-    private let pageSize = 500
+    private let moreTables = NSButton(title: L("Show more tables"), target: nil, action: nil)
+    private let previousColumns = NSButton(title: L("Previous columns"), target: nil, action: nil)
+    private let nextColumns = NSButton(title: L("Next columns"), target: nil, action: nil)
+    private let retry = NSButton(title: L("Retry with more time"), target: nil, action: nil)
+    private var catalogMore = false
+    private var columnOffset = 0
+    private var columnCount = 0
+    private var rowOrder = ""
+    private var querySeconds = Double(ReaderLimits.SQLITE_QUERY_SECONDS)
+    private let pageSize = ReaderLimits.SQLITE_PAGE_ROWS
 
     init(path: String?, information: String) {
         super.init()
@@ -32,7 +41,12 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
         next.target = self; next.action = #selector(nextPage)
         structure.target = self; structure.action = #selector(selectTable)
         schemaButton.target = self; schemaButton.action = #selector(showSQL)
-        [picker, structure, schemaButton, previous, next].forEach { toolbar.addArrangedSubview($0) }; stack.addArrangedSubview(toolbar)
+        moreTables.target = self; moreTables.action = #selector(loadMoreTables)
+        previousColumns.target = self; previousColumns.action = #selector(previousColumnPage)
+        nextColumns.target = self; nextColumns.action = #selector(nextColumnPage)
+        retry.target = self; retry.action = #selector(retryPage)
+        grid.target = self; grid.doubleAction = #selector(showFullValue)
+        [picker, structure, schemaButton, previous, next, previousColumns, nextColumns, moreTables, retry].forEach { toolbar.addArrangedSubview($0) }; stack.addArrangedSubview(toolbar)
         grid.delegate = self; grid.dataSource = self; grid.usesAlternatingRowBackgroundColors = true; grid.rowHeight = 26; grid.columnAutoresizingStyle = .noColumnAutoresizing
         let scroll = NSScrollView(); scroll.documentView = grid; scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true
         stack.addArrangedSubview(scroll); scroll.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
@@ -43,28 +57,41 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
             // Only the private snapshot is writable, to allow journal/WAL recovery.
             let code = sqlite3_open_v2(path, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_PRIVATECACHE, nil)
             guard code == SQLITE_OK, let database = database else { fail(L("Cannot open SQLite snapshot.")); return }
-            sqlite3_busy_timeout(database, 1000)
-            sqlite3_limit(database, SQLITE_LIMIT_LENGTH, 32 * 1024 * 1024)
-            sqlite3_limit(database, SQLITE_LIMIT_COLUMN, 256)
+            sqlite3_busy_timeout(database, Int32(ReaderLimits.SQLITE_BUSY_MILLISECONDS))
             // macOS system SQLite omits the extension-loading API.
-            sqlite3_exec(database, "PRAGMA trusted_schema=OFF; PRAGMA query_only=ON; PRAGMA cache_size=-8192; PRAGMA temp_store=FILE;", nil, nil, nil)
-            do {
-                let result = try query("SELECT name, COALESCE(sql, '') FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name LIMIT 5001", limit: 5001, textLimit: 16384)
-                let values = result.rows.prefix(5000).map { (name: $0[0], sql: $0[1]) }
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self, !self.closed else { return }
-                    self.tables = values
-                    self.picker.addItems(withTitles: values.map { $0.name })
-                    self.status.stringValue = values.isEmpty ? L("No user tables or views.") : L("%d tables / views").replacingOccurrences(of: "%d", with: String(values.count))
-                    if result.rows.count > 5000 { self.status.stringValue += L(" (first 5,000 shown)") }
-                    self.controls()
-                    if !values.isEmpty { self.loadPage() }
-                }
-            } catch { fail(error.localizedDescription) }
+            sqlite3_exec(database, "PRAGMA trusted_schema=OFF; PRAGMA query_only=ON; PRAGMA cache_size=-\(ReaderLimits.SQLITE_CACHE_KIB); PRAGMA temp_store=FILE;", nil, nil, nil)
+            loadCatalog(offset: 0)
+
         }
     }
+    // Called on the serial database queue; fetch definitions only when requested.
+    private func loadCatalog(offset: Int) {
+        do {
+            let result = try query("SELECT name, type FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name LIMIT \(ReaderLimits.SQLITE_TABLES + 1) OFFSET \(offset)", limit: ReaderLimits.SQLITE_TABLES + 1, textLimit: nil)
+            let values = result.rows.prefix(ReaderLimits.SQLITE_TABLES).map { (name: $0[0], sql: $0[1]) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !self.closed else { return }
+                self.tables.append(contentsOf: values)
+                self.picker.addItems(withTitles: values.map { $0.name })
+                self.catalogMore = result.rows.count > ReaderLimits.SQLITE_TABLES
+                self.status.stringValue = L("%d tables / views").replacingOccurrences(of: "%d", with: String(self.tables.count))
+                self.busy = false; self.controls()
+                if offset == 0 && !values.isEmpty { self.loadPage() }
+            }
+        } catch { fail(error.localizedDescription) }
+    }
+    @objc private func loadMoreTables() {
+        guard !busy, catalogMore else { return }
+        let offset = tables.count
+        busy = true; controls()
+        queue.async { [self] in loadCatalog(offset: offset) }
+    }
+    @objc private func previousColumnPage() { columnOffset = max(0, columnOffset - ReaderLimits.SQLITE_COLUMNS); loadPage() }
+    @objc private func nextColumnPage() { columnOffset += ReaderLimits.SQLITE_COLUMNS; loadPage() }
+    @objc private func retryPage() { querySeconds += Double(ReaderLimits.SQLITE_QUERY_SECONDS); loadPage() }
     func close() {
         closed = true
+        if let database = database { sqlite3_interrupt(database) }
         // Drain the bounded queries before Rust removes the private snapshot.
         queue.sync {
             if let database = database { sqlite3_close(database); self.database = nil }
@@ -74,9 +101,9 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
     private func failure() -> NSError {
         NSError(domain: "SQLite", code: Int(sqlite3_errcode(database)), userInfo: [NSLocalizedDescriptionKey: database.map { String(cString: sqlite3_errmsg($0)) } ?? L("Database unavailable")])
     }
-    private func query(_ sql: String, limit: Int, textLimit: Int = 512) throws -> (columns: [String], rows: [[String]]) {
+    private func query(_ sql: String, limit: Int, textLimit: Int? = ReaderLimits.SQLITE_TEXT_BYTES, columnOffset: Int = 0) throws -> (columns: [String], rows: [[String]], totalColumns: Int) {
         guard let database = database else { throw failure() }
-        var deadline = CFAbsoluteTimeGetCurrent() + 5
+        var deadline = CFAbsoluteTimeGetCurrent() + querySeconds
         return try withUnsafeMutablePointer(to: &deadline) { pointer in
             sqlite3_progress_handler(database, 1000, { context in
                 guard let context = context else { return 1 }
@@ -87,72 +114,135 @@ final class SQLitePreview: NSObject, NSTableViewDataSource, NSTableViewDelegate 
             guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement = statement else { throw failure() }
             defer { sqlite3_finalize(statement) }
             guard sqlite3_stmt_readonly(statement) != 0 else { throw NSError(domain: "SQLite", code: 1, userInfo: [NSLocalizedDescriptionKey: "Only read-only queries are allowed."]) }
-            let count = min(Int(sqlite3_column_count(statement)), 256)
-            let columns = (0..<count).map { String(cString: sqlite3_column_name(statement, Int32($0))) }
+            let totalColumns = Int(sqlite3_column_count(statement))
+            let start = min(columnOffset, totalColumns)
+            let end = min(start + ReaderLimits.SQLITE_COLUMNS, totalColumns)
+            let columns = (start..<end).map { String(cString: sqlite3_column_name(statement, Int32($0))) }
             var result: [[String]] = []
             while result.count < limit {
                 let code = sqlite3_step(statement)
                 if code == SQLITE_DONE { break }
                 guard code == SQLITE_ROW else { throw failure() }
-                result.append((0..<count).map { column in
+                result.append((start..<end).map { column in
                     let index = Int32(column)
                     if sqlite3_column_type(statement, index) == SQLITE_NULL { return "NULL" }
-                    if sqlite3_column_type(statement, index) == SQLITE_BLOB {
+                    if sqlite3_column_type(statement, index) == SQLITE_BLOB && textLimit != nil {
                         let length = Int(sqlite3_column_bytes(statement, index))
                         guard let bytes = sqlite3_column_blob(statement, index)?.assumingMemoryBound(to: UInt8.self) else { return "BLOB · 0 bytes" }
-                        let prefix = UnsafeBufferPointer(start: bytes, count: min(length, 16)).map { String(format: "%02x", $0) }.joined(separator: " ")
-                        return "BLOB · \(length) bytes · \(prefix)" + (length > 16 ? " …" : "")
+                        let prefix = UnsafeBufferPointer(start: bytes, count: min(length, ReaderLimits.SQLITE_BLOB_BYTES)).map { String(format: "%02x", $0) }.joined(separator: " ")
+                        return "BLOB · \(length) bytes · \(prefix)" + (length > ReaderLimits.SQLITE_BLOB_BYTES ? " …" : "")
                     }
                     guard let bytes = sqlite3_column_text(statement, index) else { return "" }
                     let length = Int(sqlite3_column_bytes(statement, index))
-                    return String(decoding: UnsafeBufferPointer(start: bytes, count: min(length, textLimit)), as: UTF8.self) + (length > textLimit ? "…" : "")
+                    return String(decoding: UnsafeBufferPointer(start: bytes, count: min(length, textLimit ?? length)), as: UTF8.self) + (length > (textLimit ?? length) ? "…" : "")
                 })
             }
-            return (columns, result)
+            return (columns, result, totalColumns)
         }
     }
     private func controls() {
         picker.isEnabled = !busy && !tables.isEmpty
         structure.isEnabled = !busy && !tables.isEmpty
         schemaButton.isEnabled = !busy && !tables.isEmpty
-        previous.isEnabled = !busy && offset > 0 && structure.state == .off
-        next.isEnabled = !busy && more && structure.state == .off
+        previous.isEnabled = !busy && offset > 0
+        next.isEnabled = !busy && more
+        moreTables.isEnabled = !busy && catalogMore
+        previousColumns.isEnabled = !busy && columnOffset > 0
+        nextColumns.isEnabled = !busy && columnOffset + ReaderLimits.SQLITE_COLUMNS < columnCount
+        retry.isEnabled = !busy && !tables.isEmpty
     }
     private func fail(_ message: String) {
         DispatchQueue.main.async { [weak self] in self?.busy = false; self?.status.stringValue = message; self?.controls() }
     }
-    @objc func selectTable() { offset = 0; loadPage() }
+    @objc func selectTable() { offset = 0; columnOffset = 0; loadPage() }
     @objc func previousPage() { offset = max(0, offset - pageSize); loadPage() }
     @objc func nextPage() { offset += pageSize; loadPage() }
+    private func orderForTable(_ escapedName: String, isView: Bool) throws -> String {
+        guard let database = database else { throw failure() }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, "SELECT * FROM \"\(escapedName)\" LIMIT 0", -1, &statement, nil) == SQLITE_OK,
+              let columns = statement else { throw failure() }
+        let names = (0..<sqlite3_column_count(columns)).map { String(cString: sqlite3_column_name(columns, $0)).lowercased() }
+        sqlite3_finalize(columns)
+        if !isView {
+            for alias in ["_rowid_", "rowid", "oid"] where !names.contains(alias) {
+                statement = nil
+                let code = sqlite3_prepare_v2(database, "SELECT \(alias) FROM \"\(escapedName)\" LIMIT 0", -1, &statement, nil)
+                if let statement = statement { sqlite3_finalize(statement) }
+                if code == SQLITE_OK { return " ORDER BY \(alias)" }
+            }
+        }
+        return names.isEmpty ? "" : " ORDER BY " + (1...names.count).map(String.init).joined(separator: ",")
+    }
     private func loadPage() {
         guard !closed, !busy, tables.indices.contains(picker.indexOfSelectedItem) else { return }
-        let name = tables[picker.indexOfSelectedItem].name.replacingOccurrences(of: "\"", with: "\"\"")
+        let table = tables[picker.indexOfSelectedItem]
+        let name = table.name.replacingOccurrences(of: "\"", with: "\"\"")
+        let schemaName = table.name.replacingOccurrences(of: "'", with: "''")
         let schema = structure.state == .on
-        let queryText = schema ? "PRAGMA table_xinfo(\"\(name)\")" : "SELECT * FROM \"\(name)\" LIMIT \(pageSize + 1) OFFSET \(offset)"
         busy = true; status.stringValue = L("Loading…"); controls()
         queue.async { [self] in
             do {
-                let result = try query(queryText, limit: schema ? 256 : pageSize + 1)
+                let order = try orderForTable(name, isView: table.sql == "view")
+                let queryText = schema ? "SELECT * FROM pragma_table_xinfo('\(schemaName)') ORDER BY cid LIMIT \(pageSize + 1) OFFSET \(offset)" : "SELECT * FROM \"\(name)\"\(order) LIMIT \(pageSize + 1) OFFSET \(offset)"
+                let result = try query(queryText, limit: pageSize + 1, columnOffset: columnOffset)
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self, !self.closed else { return }
-                    self.more = !schema && result.rows.count > self.pageSize
-                    self.rows = Array(result.rows.prefix(schema ? 256 : self.pageSize))
+                    self.more = result.rows.count > self.pageSize
+                    self.columnCount = result.totalColumns
+                    self.rowOrder = order
+                    self.rows = Array(result.rows.prefix(self.pageSize))
                     for column in self.grid.tableColumns { self.grid.removeTableColumn(column) }
                     for (index, name) in result.columns.enumerated() {
                         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(String(index))); column.title = name; column.width = 180; self.grid.addTableColumn(column)
                     }
                     self.grid.reloadData(); self.busy = false; self.controls()
-                    self.status.stringValue = schema ? L("Table structure") : L("%rows rows · offset %offset · up to 256 columns · long values shown as summaries").replacingOccurrences(of: "%rows", with: String(self.rows.count)).replacingOccurrences(of: "%offset", with: String(self.offset))
+                    self.status.stringValue = schema ? L("Table structure") : L("%rows rows · offset %offset · up to %columns columns · long values shown as summaries").replacingOccurrences(of: "%rows", with: String(self.rows.count)).replacingOccurrences(of: "%offset", with: String(self.offset)).replacingOccurrences(of: "%columns", with: String(ReaderLimits.SQLITE_COLUMNS))
                 }
             } catch { fail(error.localizedDescription) }
         }
     }
+    private func displayText(_ title: String, _ content: String) {
+        let alert = NSAlert(); alert.messageText = title
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 320)); scroll.hasVerticalScroller = true
+        let text = NSTextView(frame: scroll.bounds); text.isEditable = false
+        text.font = .monospacedSystemFont(ofSize: 12, weight: .regular); text.string = content
+        scroll.documentView = text; alert.accessoryView = scroll
+        alert.addButton(withTitle: L("Close")); alert.runModal()
+    }
     @objc func showSQL() {
-        guard tables.indices.contains(picker.indexOfSelectedItem) else { return }
-        let alert = NSAlert(); alert.messageText = L("Table / View Definition")
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 240)); scroll.hasVerticalScroller = true
-        let text = NSTextView(frame: scroll.bounds); text.isEditable = false; text.font = .monospacedSystemFont(ofSize: 12, weight: .regular); text.string = tables[picker.indexOfSelectedItem].sql
-        scroll.documentView = text; alert.accessoryView = scroll; alert.addButton(withTitle: L("Close")); alert.runModal()
+        guard !busy, tables.indices.contains(picker.indexOfSelectedItem) else { return }
+        let name = tables[picker.indexOfSelectedItem].name.replacingOccurrences(of: "'", with: "''")
+        busy = true; controls()
+        queue.async { [self] in
+            do {
+                let result = try query("SELECT sql FROM sqlite_master WHERE name='\(name)'", limit: 1, textLimit: nil)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self, !self.closed else { return }
+                    self.busy = false; self.controls()
+                    self.displayText(L("Table / View Definition"), result.rows.first?.first ?? "")
+                }
+            } catch { fail(error.localizedDescription) }
+        }
+    }
+    @objc private func showFullValue() {
+        guard !busy, structure.state == .off, grid.clickedRow >= 0, grid.clickedColumn >= 0,
+              tables.indices.contains(picker.indexOfSelectedItem), grid.tableColumns.indices.contains(grid.clickedColumn) else { return }
+        let name = tables[picker.indexOfSelectedItem].name.replacingOccurrences(of: "\"", with: "\"\"")
+        let column = grid.tableColumns[grid.clickedColumn].title.replacingOccurrences(of: "\"", with: "\"\"")
+        let row = offset + grid.clickedRow
+        let order = rowOrder
+        busy = true; controls()
+        queue.async { [self] in
+            do {
+                let result = try query("SELECT CASE WHEN typeof(\"\(column)\")='blob' THEN hex(\"\(column)\") ELSE CAST(\"\(column)\" AS TEXT) END FROM (SELECT * FROM \"\(name)\"\(order) LIMIT 1 OFFSET \(row))", limit: 1, textLimit: nil)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self, !self.closed else { return }
+                    self.busy = false; self.controls()
+                    self.displayText(L("Full cell value"), result.rows.first?.first ?? "NULL")
+                }
+            } catch { fail(error.localizedDescription) }
+        }
     }
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {

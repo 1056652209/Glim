@@ -86,33 +86,51 @@ impl Workspace {
         let targets = self
             .tabs
             .iter()
-            .filter(|r| !r.historical && r.snapshot != "native-preview")
-            .map(|r| (r.path.clone(), r.diff.clone(), r.repository_root.clone()))
+            .filter(|r| {
+                !r.historical
+                    && (r.snapshot != "native-preview" || r.native_image_stamp(cx).is_some())
+            })
+            .map(|r| {
+                (
+                    r.path.clone(),
+                    r.diff.clone(),
+                    r.repository_root.clone(),
+                    r.native_image_stamp(cx),
+                )
+            })
             .collect::<Vec<_>>();
         if let Some(explorer) = &self.explorer {
             explorer.update(cx, |v, cx| v.refresh(cx));
         }
+        let (cancel, cancel_on_drop) = glim_services::work::Cancellation::task();
         let read = cx.background_executor().spawn(async move {
             let repos = repositories_for_roots(&roots);
             let contents = targets
                 .into_iter()
-                .map(|(path, diff, root)| {
+                .filter_map(|(path, diff, root, image_stamp)| {
+                    if let Some(expected) = image_stamp
+                        && std::fs::metadata(&path)
+                            .is_ok_and(|m| (m.len(), m.modified().ok()) == expected)
+                    {
+                        return None;
+                    }
                     let scope = diff.as_ref().map(|d| d.scope);
                     let content = if let (Some(change), Some(root)) = (diff, root) {
                         read_diff(&root, &change).map(|d| Content::Diff(d, root))
                     } else {
-                        super::loading::read_content(&path)
+                        super::loading::read_content_cancellable(&path, &cancel)
                     };
-                    (
+                    Some((
                         path.clone(),
                         scope,
                         content.unwrap_or_else(|e| Content::Unavailable(path, format!("{e:#}"))),
-                    )
+                    ))
                 })
                 .collect::<Vec<_>>();
             (repos, contents)
         });
         self.refresh_task = Some(cx.spawn_in(window, async move |view, cx| {
+            let _cancel_on_drop = cancel_on_drop;
             let (repos, contents) = read.await;
             let _ = view.update_in(cx, |view, window, cx| {
                 view.refresh_task = None;
@@ -136,11 +154,9 @@ impl Workspace {
                         Content::XMind(d) => view.tabs[index].snapshot == d.fingerprint,
                         Content::Book(d) => view.tabs[index].snapshot == d.fingerprint,
                         Content::Diff(d, _) => view.tabs[index].snapshot == d.patch,
-                        Content::Bytes(d) | Content::Commit(d, _) => {
-                            view.tabs[index].snapshot == d.text
-                        }
+                        Content::Commit(d, _) => view.tabs[index].snapshot == d.text,
                         Content::Page(d) => view.tabs[index].snapshot == d.fingerprint(),
-                        Content::Native(..) => view.tabs[index].snapshot == "native-preview",
+                        Content::Native(..) => false,
                         Content::Unavailable(_, _) => false,
                     };
                     if unchanged && !view.tabs[index].is_unavailable() {

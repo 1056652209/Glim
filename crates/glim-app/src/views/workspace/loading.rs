@@ -5,6 +5,7 @@ use crate::views::{
     reader::Reader,
 };
 use glim_core::{DiffDocument, Document, GitChange};
+use glim_services::limits as reader_limits;
 use glim_services::{
     files::read_document,
     git::read_diff,
@@ -20,7 +21,6 @@ enum Opened {
 pub(super) enum Content {
     File(Document),
     Page(glim_services::paged::TextPage),
-    Bytes(glim_services::binary::BytePreview),
     Commit(glim_services::binary::BytePreview, Option<PathBuf>),
     Image(glim_services::media::ImageDocument),
     XMind(glim_services::xmind::MindMap),
@@ -126,15 +126,17 @@ impl Workspace {
         let Some(path) = self.incoming_files.front().cloned() else {
             return;
         };
+        let (cancel, cancel_on_drop) = glim_services::work::Cancellation::task();
         let work = cx.background_executor().spawn(async move {
             if path.is_dir() && !glim_services::preview::is_iwork(&path) {
                 open_folder(&path).map(Opened::Folder)
             } else {
-                let result = read_content(&path).map(Box::new);
+                let result = read_content_cancellable(&path, &cancel).map(Box::new);
                 Ok(Opened::File(path, result))
             }
         });
         self.incoming_file_task = Some(cx.spawn_in(window, async move |view, cx| {
+            let _cancel_on_drop = cancel_on_drop;
             let result = work.await;
             let _ = view.update_in(cx, |view, window, cx| {
                 let path = view.incoming_files.pop_front();
@@ -186,15 +188,17 @@ impl Workspace {
         self.restoring_roots = None;
         self.loading = true;
         self.error = None;
+        let (cancel, cancel_on_drop) = glim_services::work::Cancellation::task();
         let read = cx.background_executor().spawn(async move {
             if path.is_dir() && !glim_services::preview::is_iwork(&path) {
                 open_folder(&path).map(Opened::Folder)
             } else {
-                let result = read_content(&path).map(Box::new);
+                let result = read_content_cancellable(&path, &cancel).map(Box::new);
                 Ok(Opened::File(path, result))
             }
         });
         self.load_task = Some(cx.spawn_in(window, async move |view, cx| {
+            let _cancel_on_drop = cancel_on_drop;
             let result = read.await;
             let _ = view.update_in(cx, |view, window, cx| {
                 view.loading = false;
@@ -271,6 +275,10 @@ impl Workspace {
                         cx.notify();
                     }
                     ExplorerEvent::OpenFile(path) => view.open_path(path.clone(), window, cx),
+                    ExplorerEvent::TrashEntry(path) => view.confirm_trash(path.clone(), window, cx),
+                    ExplorerEvent::RemoveFolder(root_id) => {
+                        view.remove_folder(*root_id, window, cx)
+                    }
                     ExplorerEvent::PlayFolder(path, shuffle) => {
                         view.install_content(
                             Content::Native(path.clone(), true, *shuffle),
@@ -331,6 +339,61 @@ impl Workspace {
             });
             self.changes = Some(changes);
         }
+        self.scan_workspace_roots(window, cx);
+    }
+
+    pub(super) fn remove_folder(
+        &mut self,
+        root_id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if crate::app::updates::busy(cx) || self.git_busy || self.has_running_git(cx) {
+            return;
+        }
+        let Some(explorer) = self.explorer.clone() else {
+            return;
+        };
+        let Some(index) = explorer.update(cx, |explorer, cx| explorer.remove_folder(root_id, cx))
+        else {
+            return;
+        };
+        self.roots.remove(index);
+        self.root = self.roots.first().cloned();
+        self.restoring_roots = None;
+        self.results.clear();
+        self.search_task = None;
+        self.pending_anchor = None;
+        self.last_scan_warning = None;
+        if cx.try_global::<crate::app::RecentWorkspaces>().is_some() {
+            crate::app::remember_workspace(self.recent_id.clone(), self.roots.clone(), cx);
+        }
+        let (roots, expanded) = explorer.read(cx).expansion_state();
+        crate::app::remember_explorer(roots, expanded, cx);
+        if let Some(changes) = &self.changes {
+            changes.update(cx, |changes, cx| changes.set_repositories(Vec::new(), cx));
+        }
+        self.scan_workspace_roots(window, cx);
+        cx.notify();
+    }
+
+    fn scan_workspace_roots(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.refresh_task = None;
+        self.repository_task = None;
+        self.watch_setup = None;
+        self.watch_task = None;
+        self.watch = None;
+        if let Some(changes) = &self.changes {
+            changes.update(cx, |changes, cx| {
+                changes.set_loading(!self.roots.is_empty(), cx)
+            });
+        }
+        if self.roots.is_empty() {
+            if !self.tabs.is_empty() {
+                self.watch_file_parent(window, cx);
+            }
+            return;
+        }
         let roots = self.roots.clone();
         let parents = self
             .tabs
@@ -374,8 +437,7 @@ impl Workspace {
     pub(super) fn make_reader(content: Content, window: &mut Window, cx: &mut App) -> Reader {
         match content {
             Content::File(d) => Reader::new(d, window, cx),
-            Content::Page(d) => Reader::from_page(d, cx),
-            Content::Bytes(d) => Reader::from_bytes(d, window, cx),
+            Content::Page(d) => Reader::from_page(d, window, cx),
             Content::Commit(d, file) => Reader::from_commit(d.path, d.text, file, window, cx),
             Content::Image(d) => Reader::from_image(d, window, cx),
             Content::XMind(d) => Reader::from_xmind(d, cx),
@@ -598,20 +660,42 @@ impl Workspace {
 }
 
 pub(super) fn read_content(path: &std::path::Path) -> anyhow::Result<Content> {
+    read_content_cancellable(path, &glim_services::work::Cancellation::default())
+}
+pub(super) fn read_content_cancellable(
+    path: &std::path::Path,
+    cancel: &glim_services::work::Cancellation,
+) -> anyhow::Result<Content> {
+    cancel.check()?;
     if glim_services::executables::supports(path) {
-        return glim_services::executables::read_preview(path).map(Content::Bytes);
+        return glim_services::executables::read_preview_cancellable(path, cancel)
+            .map(Content::Page);
     }
     if glim_services::books::supports(path) {
         return glim_services::books::read(path).map(Content::Book);
     }
     if glim_services::xmind::supports(path) {
-        return glim_services::xmind::read(path).map(Content::XMind);
+        return match glim_services::xmind::read(path) {
+            Ok(map) => Ok(Content::XMind(map)),
+            Err(error) if error.is::<reader_limits::PreviewBudgetExceeded>() => {
+                glim_services::xmind::read_source(path, cancel).map(Content::Page)
+            }
+            Err(error) => Err(error),
+        };
     }
     if glim_services::vector_formats::supports(path) {
-        return glim_services::vector_formats::read_preview(path).map(Content::Image);
+        return match glim_services::vector_formats::read_preview(path) {
+            Ok(image) => Ok(Content::Image(image)),
+            Err(error) if error.is::<reader_limits::PreviewBudgetExceeded>() => {
+                glim_services::paged::read_page(path, 0, false)
+                    .or_else(|_| glim_services::paged::read_binary_page(path, 0))
+                    .map(Content::Page)
+            }
+            Err(error) => Err(error),
+        };
     }
     if glim_services::formats::supports(path) {
-        return glim_services::formats::read_preview(path).map(Content::Bytes);
+        return glim_services::formats::read_preview_cancellable(path, cancel).map(Content::Page);
     }
     if glim_services::preview::can_open(path) {
         return Ok(Content::Native(path.to_path_buf(), false, false));
@@ -621,7 +705,8 @@ pub(super) fn read_content(path: &std::path::Path) -> anyhow::Result<Content> {
         .and_then(|s| s.to_str())
         .is_some_and(|s| s.eq_ignore_ascii_case("safetensors"))
     {
-        return glim_services::safetensors::read_preview(path).map(Content::Bytes);
+        return glim_services::safetensors::read_preview_cancellable(path, cancel)
+            .map(Content::Page);
     }
     let result = if glim_services::media::supports(path) {
         glim_services::media::read_image(path).map(Content::Image)
@@ -629,13 +714,23 @@ pub(super) fn read_content(path: &std::path::Path) -> anyhow::Result<Content> {
         (|| {
             let first = glim_services::paged::read_page(path, 0, false)?;
             if first.total > glim_services::files::MAX_DOCUMENT_BYTES
-                || first.text.lines().any(|line| line.len() > 64 * 1024)
+                || first
+                    .text
+                    .lines()
+                    .any(|line| line.len() > reader_limits::TEXT_LINE_BYTES)
             {
                 Ok(Content::Page(first))
             } else {
                 read_document(path).map(|d| {
-                    if d.text.lines().any(|line| line.len() > 64 * 1024)
-                        || d.text.bytes().filter(|b| *b == b'\n').take(400_001).count() > 400_000
+                    if d.text
+                        .lines()
+                        .any(|line| line.len() > reader_limits::TEXT_LINE_BYTES)
+                        || d.text
+                            .bytes()
+                            .filter(|b| *b == b'\n')
+                            .take(reader_limits::TEXT_EDITABLE_NEWLINES + 1)
+                            .count()
+                            > reader_limits::TEXT_EDITABLE_NEWLINES
                     {
                         Content::Page(first)
                     } else {
@@ -651,7 +746,7 @@ pub(super) fn read_content(path: &std::path::Path) -> anyhow::Result<Content> {
             .and_then(|n| n.to_str())
             .is_some_and(|n| n.starts_with('.'))
     {
-        glim_services::binary::read_preview(path).map(Content::Bytes)
+        glim_services::paged::read_binary_page(path, 0).map(Content::Page)
     } else {
         result
     }
@@ -670,7 +765,7 @@ mod format_tests {
         }
         let binary = dir.path().join(".DS_Store");
         std::fs::write(&binary, [0, 1, 2, 255]).unwrap();
-        assert!(matches!(read_content(&binary).unwrap(), Content::Bytes(_)));
+        assert!(matches!(read_content(&binary).unwrap(), Content::Page(_)));
     }
 }
 

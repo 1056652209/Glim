@@ -1,5 +1,6 @@
 //! Explicit branch/remote operations; never force, auto-stash or rewrite history.
 use super::{checked, run};
+use crate::limits as reader_limits;
 use anyhow::{Context, Result, ensure};
 use glim_core::{Branch, GitOperation, GitRequest, GitSnapshot, GraphRow};
 use std::{ffi::OsStr, path::Path};
@@ -44,7 +45,7 @@ pub fn snapshot(root: &Path) -> Result<GitSnapshot> {
         &[
             "for-each-ref",
             "--sort=-committerdate",
-            "--count=1000",
+            &format!("--count={}", reader_limits::GIT_REFS),
             "--format=%(refname)%00%(refname:short)%00%(HEAD)%00%(upstream:short)%00%(symref)",
             "refs/heads",
             "refs/remotes",
@@ -68,7 +69,16 @@ pub fn snapshot(root: &Path) -> Result<GitSnapshot> {
         .lines()
         .map(str::to_owned)
         .collect();
-    let stashes = checked(root, &["stash", "list", "-n", "100", "--format=%H%x00%gs"])?;
+    let stashes = checked(
+        root,
+        &[
+            "stash",
+            "list",
+            "-n",
+            &reader_limits::GIT_STASHES.to_string(),
+            "--format=%H%x00%gs",
+        ],
+    )?;
     for line in String::from_utf8_lossy(&stashes).lines() {
         if let Some((oid, subject)) = line.split_once('\0') {
             result.stashes.push((oid.into(), subject.into()));
@@ -272,8 +282,8 @@ pub fn execute(root: &Path, request: &GitRequest) -> Result<()> {
 }
 pub fn graph(root: &Path, limit: usize, all: bool) -> Result<Vec<GraphRow>> {
     ensure!(
-        (1..=1000).contains(&limit),
-        "Graph limit must be between 1 and 1000 commits"
+        (1..=reader_limits::GIT_HISTORY_COMMITS).contains(&limit),
+        "Graph request exceeds the history preview limit"
     );
     if checked(
         root,

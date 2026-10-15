@@ -1,18 +1,15 @@
-//! First-pass container previews. Never extract files or execute document code.
-use crate::binary::BytePreview;
+//! Disk-backed container reports, with bounded page display and cancellable streaming.
+use crate::{
+    limits as reader_limits,
+    paged::{self, TextPage},
+    work::Cancellation,
+};
 use anyhow::{Context, Result, ensure};
 use std::{
-    fmt::Write as _,
-    io::{Cursor, Read},
+    fs::File,
+    io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::Path,
 };
-const LIMIT: u64 = 32 * 1024 * 1024;
-fn bounded(reader: impl Read) -> Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    reader.take(LIMIT + 1).read_to_end(&mut bytes)?;
-    ensure!(bytes.len() as u64 <= LIMIT, "Preview exceeds 32 MiB limit");
-    Ok(bytes)
-}
 pub fn supports(path: &Path) -> bool {
     matches!(
         extension(path).as_str(),
@@ -25,92 +22,95 @@ fn extension(path: &Path) -> String {
         .unwrap_or_default()
         .to_ascii_lowercase()
 }
-pub fn read_preview(path: &Path) -> Result<BytePreview> {
-    let bytes = bounded(std::fs::File::open(path)?)?;
+
+pub fn read_preview(path: &Path) -> Result<TextPage> {
+    read_preview_cancellable(path, &Cancellation::default())
+}
+pub fn read_preview_cancellable(path: &Path, cancel: &Cancellation) -> Result<TextPage> {
     let ext = extension(path);
-    let mut text = format!(
-        "{} · {}\n\n",
-        ext.to_uppercase(),
-        crate::locale::tr("Read-only preview")
-    );
-    match ext.as_str() {
-        "zip" | "epub" | "odt" | "ods" | "odp" => {
-            let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
-                .context("Invalid or truncated ZIP container")?;
-            ensure!(archive.len() <= 10_000, "Archive exceeds 10,000 entries");
-            let mut total = 0;
-            for i in 0..archive.len() {
-                ensure!(text.len() as u64 <= LIMIT, "Archive listing exceeds 32 MiB");
-                let entry = archive.by_index(i)?;
-                let safe = entry.enclosed_name().is_some();
-                writeln!(
-                    text,
-                    "{} · {} bytes{}",
-                    entry.name(),
-                    entry.size(),
-                    if safe {
-                        String::new()
-                    } else {
-                        crate::locale::tr(" · Unsafe extraction path")
+    if let Some(compression) = match ext.as_str() {
+        "gz" => Some(crate::streamed::Compression::Gzip),
+        "bz2" => Some(crate::streamed::Compression::Bzip2),
+        "xz" => Some(crate::streamed::Compression::Xz),
+        _ => None,
+    } {
+        return paged::compressed(path, compression, cancel);
+    }
+    let mut output = tempfile::NamedTempFile::new()?;
+    {
+        let mut text = BufWriter::new(output.as_file_mut());
+        writeln!(
+            text,
+            "{} · {}\n",
+            ext.to_uppercase(),
+            crate::locale::tr("Read-only preview")
+        )?;
+        match ext.as_str() {
+            "zip" | "epub" | "odt" | "ods" | "odp" => {
+                let mut archive = zip::ZipArchive::new(File::open(path)?)
+                    .context("Invalid or truncated ZIP container")?;
+                for index in 0..archive.len() {
+                    cancel.check()?;
+                    let mut entry = archive.by_index(index)?;
+                    writeln!(
+                        text,
+                        "{} · {} bytes{}",
+                        entry.name(),
+                        entry.size(),
+                        if entry.enclosed_name().is_some() {
+                            String::new()
+                        } else {
+                            crate::locale::tr(" · Unsafe extraction path")
+                        }
+                    )?;
+                    if (matches!(ext.as_str(), "odt" | "ods" | "odp")
+                        && entry.name() == "content.xml")
+                        || (ext == "epub" && entry.name().ends_with(".xhtml"))
+                    {
+                        // Preserve large XML completely in source form rather than rejecting it.
+                        let mut prefix = Vec::new();
+                        (&mut entry)
+                            .take(reader_limits::ARCHIVE_BYTES + 1)
+                            .read_to_end(&mut prefix)?;
+                        if prefix.len() as u64 <= reader_limits::ARCHIVE_BYTES {
+                            text.write_all(xml_text(&prefix)?.as_bytes())?;
+                        } else {
+                            text.write_all(&prefix)?;
+                            cancel.copy(entry, &mut text)?;
+                        }
+                        writeln!(text)?;
                     }
-                )?;
-                let document =
-                    matches!(ext.as_str(), "odt" | "ods" | "odp") && entry.name() == "content.xml";
-                let chapter = ext == "epub" && entry.name().ends_with(".xhtml");
-                if document || chapter {
-                    let content = bounded(entry)?;
-                    total += content.len();
-                    ensure!(total as u64 <= LIMIT, "Document content exceeds 32 MiB");
-                    text.push_str(&xml_text(&content)?);
-                    text.push('\n');
                 }
             }
-        }
-        "tar" => {
-            for (i, entry) in tar::Archive::new(Cursor::new(bytes)).entries()?.enumerate() {
-                ensure!(i < 10_000, "Archive exceeds 10,000 entries");
-                ensure!(text.len() as u64 <= LIMIT, "Archive listing exceeds 32 MiB");
-                let entry = entry?;
-                let name = entry.path()?;
-                let safe = !name.is_absolute()
-                    && !name
-                        .components()
-                        .any(|c| matches!(c, std::path::Component::ParentDir));
-                writeln!(
-                    text,
-                    "{} · {} bytes{}",
-                    name.display(),
-                    entry.size(),
-                    if safe {
-                        String::new()
-                    } else {
-                        crate::locale::tr(" · Unsafe extraction path")
-                    }
-                )?;
+            "tar" => {
+                let mut archive = tar::Archive::new(BufReader::new(File::open(path)?));
+                for entry in archive.entries()? {
+                    cancel.check()?;
+                    let entry = entry?;
+                    let name = entry.path()?;
+                    let safe = !name.is_absolute()
+                        && !name
+                            .components()
+                            .any(|c| matches!(c, std::path::Component::ParentDir));
+                    writeln!(
+                        text,
+                        "{} · {} bytes{}",
+                        name.display(),
+                        entry.size(),
+                        if safe {
+                            String::new()
+                        } else {
+                            crate::locale::tr(" · Unsafe extraction path")
+                        }
+                    )?;
+                }
             }
+            "npy" => numpy_stream(path, &mut text, cancel)?,
+            _ => anyhow::bail!("Unsupported container"),
         }
-        "gz" | "bz2" | "xz" => {
-            let cursor = Cursor::new(bytes);
-            let content = match ext.as_str() {
-                "gz" => bounded(flate2::read::MultiGzDecoder::new(cursor))?,
-                "bz2" => bounded(bzip2::read::MultiBzDecoder::new(cursor))?,
-                _ => bounded(xz2::read::XzDecoder::new_multi_decoder(cursor))?,
-            };
-            text.push_str(
-                std::str::from_utf8(&content).context("Decompressed content is not UTF-8")?,
-            );
-        }
-        "npy" => text.push_str(&numpy(&bytes)?),
-        _ => anyhow::bail!("Unsupported container"),
+        text.flush()?;
     }
-    ensure!(
-        text.len() as u64 <= LIMIT,
-        "Rendered preview exceeds 32 MiB"
-    );
-    Ok(BytePreview {
-        path: std::path::absolute(path)?,
-        text,
-    })
+    paged::generated(path, output)
 }
 fn xml_text(bytes: &[u8]) -> Result<String> {
     use quick_xml::events::Event;
@@ -129,35 +129,54 @@ fn xml_text(bytes: &[u8]) -> Result<String> {
     }
     Ok(text)
 }
-fn numpy(bytes: &[u8]) -> Result<String> {
-    ensure!(bytes.starts_with(b"\x93NUMPY"), "Invalid NumPy signature");
-    let version = *bytes.get(6).context("Truncated NumPy header")?;
-    let (start, length) = match version {
-        1 => (
-            10,
-            u16::from_le_bytes(bytes.get(8..10).context("Truncated header")?.try_into()?) as usize,
-        ),
-        2 | 3 => (
-            12,
-            u32::from_le_bytes(bytes.get(8..12).context("Truncated header")?.try_into()?) as usize,
-        ),
+
+fn numpy_stream(path: &Path, output: &mut impl Write, cancel: &Cancellation) -> Result<()> {
+    let mut input = BufReader::new(File::open(path)?);
+    let total = input.get_ref().metadata()?.len();
+    let mut signature = [0; 8];
+    input.read_exact(&mut signature)?;
+    ensure!(
+        signature.starts_with(b"\x93NUMPY"),
+        "Invalid NumPy signature"
+    );
+    let version = signature[6];
+    let length = match version {
+        1 => {
+            let mut n = [0; 2];
+            input.read_exact(&mut n)?;
+            u64::from(u16::from_le_bytes(n))
+        }
+        2 | 3 => {
+            let mut n = [0; 4];
+            input.read_exact(&mut n)?;
+            u64::from(u32::from_le_bytes(n))
+        }
         _ => anyhow::bail!("Unsupported NumPy version"),
     };
-    ensure!(length <= 65536, "NumPy header exceeds 64 KiB");
-    let header = std::str::from_utf8(
-        bytes
-            .get(start..start + length)
-            .context("Truncated NumPy header")?,
+    let offset = input.stream_position()?;
+    let data_offset = offset
+        .checked_add(length)
+        .filter(|end| *end <= total)
+        .context("Truncated NumPy header")?;
+    let mut prefix = Vec::new();
+    (&mut input)
+        .take(length.min(reader_limits::NUMPY_HEADER_BYTES as u64))
+        .read_to_end(&mut prefix)?;
+    writeln!(output, "NumPy v{version}")?;
+    output.write_all(&prefix)?;
+    cancel.copy(
+        (&mut input).take(length - prefix.len() as u64),
+        &mut *output,
     )?;
+    writeln!(output)?;
+    let header = std::str::from_utf8(&prefix).context("Invalid NumPy header")?;
     ensure!(
         !header.contains("'O") && !header.contains("\"O"),
         "Object arrays are unsupported; pickle is never executed"
     );
-    let mut text = format!("NumPy v{version}\n{header}\n");
-    let data = &bytes[start + length..];
     let descriptor = ["<f8", "<f4", "<i8", "<i4", "|u1"]
         .into_iter()
-        .find(|s| header.contains(s));
+        .find(|d| header.contains(d));
     let size = match descriptor {
         Some("<f8" | "<i8") => 8,
         Some("<f4" | "<i4") => 4,
@@ -166,43 +185,42 @@ fn numpy(bytes: &[u8]) -> Result<String> {
     };
     if size == 0 {
         writeln!(
-            text,
+            output,
             "{} · {} bytes",
             crate::locale::tr("Numeric preview unavailable for this data type"),
-            data.len()
+            total - data_offset
         )?;
-    } else {
-        let shape = header
-            .split("shape")
-            .nth(1)
-            .context("Missing NumPy shape")?;
-        let shape = shape.split('(').nth(1).context("Invalid NumPy shape")?;
-        let shape = shape.split(')').next().context("Invalid NumPy shape")?;
-        let mut count = 1usize;
-        for dimension in shape.split(',').map(str::trim).filter(|v| !v.is_empty()) {
-            count = count
-                .checked_mul(dimension.parse::<usize>()?)
-                .context("NumPy dimensions overflow")?;
-        }
-        ensure!(
-            count.checked_mul(size) == Some(data.len()),
-            "NumPy data length does not match shape"
-        );
-        for (index, chunk) in data.chunks_exact(size).take(10_000).enumerate() {
-            let value = match descriptor {
-                Some("<f8") => f64::from_le_bytes(chunk.try_into()?).to_string(),
-                Some("<f4") => f32::from_le_bytes(chunk.try_into()?).to_string(),
-                Some("<i8") => i64::from_le_bytes(chunk.try_into()?).to_string(),
-                Some("<i4") => i32::from_le_bytes(chunk.try_into()?).to_string(),
-                _ => chunk[0].to_string(),
-            };
-            writeln!(text, "[{index}] {value}")?;
-        }
-        if data.len() / size > 10_000 {
-            text.push_str(&crate::locale::tr(
-                "Only the first 10,000 values are shown\n",
-            ));
-        }
+        return Ok(());
     }
-    Ok(text)
+    let shape = header
+        .split("shape")
+        .nth(1)
+        .and_then(|s| s.split('(').nth(1))
+        .and_then(|s| s.split(')').next())
+        .context("NumPy shape is unavailable")?;
+    let mut count = 1u64;
+    for dim in shape.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        count = count
+            .checked_mul(dim.parse()?)
+            .context("NumPy dimensions overflow")?;
+    }
+    ensure!(
+        count.checked_mul(size as u64) == Some(total - data_offset),
+        "NumPy data length does not match shape"
+    );
+    input.seek(SeekFrom::Start(data_offset))?;
+    let mut buffer = [0; 8];
+    for index in 0..count {
+        cancel.check()?;
+        input.read_exact(&mut buffer[..size])?;
+        let value = match descriptor {
+            Some("<f8") => f64::from_le_bytes(buffer).to_string(),
+            Some("<i8") => i64::from_le_bytes(buffer).to_string(),
+            Some("<f4") => f32::from_le_bytes(buffer[..4].try_into()?).to_string(),
+            Some("<i4") => i32::from_le_bytes(buffer[..4].try_into()?).to_string(),
+            _ => buffer[0].to_string(),
+        };
+        writeln!(output, "[{index}] {value}")?;
+    }
+    Ok(())
 }

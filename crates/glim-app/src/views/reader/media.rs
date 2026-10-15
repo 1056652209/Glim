@@ -1,3 +1,4 @@
+use glim_services::limits as reader_limits;
 use gpui_kit::base::Disableable;
 use gpui_kit::{
     component::{
@@ -125,13 +126,18 @@ impl InlineImageReader {
             return;
         }
         let url = self.url.clone();
+        let (cancel, guard) = glim_services::work::Cancellation::task();
         let work = cx.background_executor().spawn(async move {
             let mut frame = match url.scheme() {
-                "file" => glim_services::inline_images::from_file(
+                "file" => glim_services::inline_images::from_file_cancellable(
                     &url.to_file_path()
                         .map_err(|_| anyhow::anyhow!("Invalid inline image path"))?,
+                    &cancel,
                 ),
-                "http" | "https" => glim_services::markup_images::fetch_inline_image(url.as_str()),
+                "http" | "https" => glim_services::markup_images::fetch_inline_image_cancellable(
+                    url.as_str(),
+                    &cancel,
+                ),
                 _ => anyhow::bail!("Unsupported inline image URL"),
             }?;
             for pixel in frame.buffer_mut().as_chunks_mut::<4>().0 {
@@ -140,6 +146,7 @@ impl InlineImageReader {
             Ok::<_, anyhow::Error>(Arc::new(RenderImage::new(vec![frame])))
         });
         self.task = Some(cx.spawn(async move |view, cx| {
+            let _guard = guard;
             let result = work.await;
             let _ = view.update(cx, |view, cx| {
                 view.task = None;
@@ -171,42 +178,52 @@ impl InlineImageReader {
 pub(super) struct GifReader {
     frame: Option<Arc<RenderImage>>,
     error: Option<String>,
-    bytes: Option<Arc<[u8]>>,
+    input: Option<glim_services::media::GifInput>,
     active: bool,
     finished: bool,
     load_task: Option<Task<()>>,
     task: Option<Task<()>>,
 }
 impl GifReader {
-    pub fn new(bytes: Vec<u8>, cx: &mut Context<Self>) -> Self {
-        let data = cx.background_executor().spawn(async move { Ok(bytes) });
-        Self::with_data(data, cx)
+    pub fn from_file(path: std::path::PathBuf, cx: &mut Context<Self>) -> Self {
+        let data = cx
+            .background_executor()
+            .spawn(async move { Ok(glim_services::media::GifInput::File(path)) });
+        Self::with_data(data, None, cx)
     }
-
     pub fn from_url(url: url::Url, cx: &mut Context<Self>) -> Self {
+        let (cancel, guard) = glim_services::work::Cancellation::task();
         let data = cx.background_executor().spawn(async move {
             match url.scheme() {
-                "http" | "https" => glim_services::markup_images::fetch_image(url.as_str()),
+                "http" | "https" => {
+                    glim_services::markup_images::fetch_image_file(url.as_str(), &cancel)
+                        .map(|file| glim_services::media::GifInput::Temporary(Arc::new(file)))
+                }
                 "file" => {
                     let path = url
                         .to_file_path()
                         .map_err(|_| anyhow::anyhow!("Invalid image path"))?;
-                    Ok(glim_services::media::read_image(&path)?.png)
+                    Ok(glim_services::media::GifInput::File(path))
                 }
                 _ => anyhow::bail!("Unsupported GIF URL"),
             }
         });
-        Self::with_data(data, cx)
+        Self::with_data(data, Some(guard), cx)
     }
 
-    fn with_data(data: Task<anyhow::Result<Vec<u8>>>, cx: &mut Context<Self>) -> Self {
+    fn with_data(
+        data: Task<anyhow::Result<glim_services::media::GifInput>>,
+        guard: Option<glim_services::work::CancelOnDrop>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let load_task = cx.spawn(async move |view, cx| {
+            let _guard = guard;
             let result = data.await;
             let _ = view.update(cx, |view, cx| {
                 view.load_task = None;
                 match result {
                     Ok(bytes) => {
-                        view.bytes = Some(Arc::from(bytes));
+                        view.input = Some(bytes);
                         if view.active {
                             view.start_playback(cx);
                         }
@@ -227,7 +244,7 @@ impl GifReader {
         Self {
             frame: None,
             error: None,
-            bytes: None,
+            input: None,
             active: false,
             finished: false,
             load_task: Some(load_task),
@@ -236,20 +253,25 @@ impl GifReader {
     }
 
     fn start_playback(&mut self, cx: &mut Context<Self>) {
-        let Some(bytes) = self.bytes.clone() else {
+        let Some(input) = self.input.clone() else {
             return;
         };
         let executor = cx.background_executor().clone();
         self.error = None;
+        let (cancel, guard) = glim_services::work::Cancellation::task();
         self.task = Some(cx.spawn(async move |view, cx| {
+            let _guard = guard;
             let result = async {
                 let playback = executor
-                    .spawn(async move { glim_services::media::GifPlayback::new(bytes) })
+                    .spawn(async move {
+                        glim_services::media::GifPlayback::from_input_cancellable(input, cancel)
+                    })
                     .await?;
                 // Each batch is at most 16 MiB and three frames. Start preparing
                 // the next batch before displaying this one, keeping decode work
                 // independent from frame presentation without unbounded buffering.
-                let batch_size = (16 * 1024 * 1024 / playback.preview_frame_bytes()).clamp(1, 3);
+                let batch_size = (reader_limits::GIF_BATCH_BYTES / playback.preview_frame_bytes())
+                    .clamp(1, reader_limits::GIF_BATCH_FRAMES);
                 let prepare = |mut playback: glim_services::media::GifPlayback| {
                     executor.spawn(async move {
                         let mut frames = std::collections::VecDeque::new();
