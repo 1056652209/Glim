@@ -463,8 +463,7 @@ mod tests {
             read(&fixture(dir.path(), "content.json", &oversized))
                 .err()
                 .unwrap()
-                .to_string()
-                .contains("16 MiB")
+                .is::<reader_limits::PreviewBudgetExceeded>()
         );
     }
 }

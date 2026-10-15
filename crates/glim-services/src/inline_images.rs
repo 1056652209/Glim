@@ -64,6 +64,11 @@ pub(crate) fn thumbnail_png_cancellable(
         None
     };
     let path = converted.as_ref().map_or(path, |file| file.path());
+    let max_edge = image::ImageReader::open(path)
+        .ok()
+        .and_then(|reader| reader.with_guessed_format().ok())
+        .and_then(|reader| reader.into_dimensions().ok())
+        .map_or(max_edge, |(width, height)| max_edge.min(width.max(height)));
     // macOS ImageIO prepares the thumbnail outside the viewer's heap. The source is untouched.
     let mut command = Command::new("/usr/bin/sips");
     command
