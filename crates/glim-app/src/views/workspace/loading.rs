@@ -779,14 +779,18 @@ mod incoming_file_tests {
         let directory = tempfile::tempdir().unwrap();
         let first = directory.path().join("notes.txt");
         let second = directory.path().join("README.md");
-        let image = directory.path().join("picture.png");
+        let image = directory.path().join("picture.gif");
         let unsupported = directory.path().join("unknown.custom-format");
         std::fs::write(&first, "ordinary text").unwrap();
         std::fs::write(&second, "# Markdown").unwrap();
-        std::fs::copy(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../assets/file-icons/image.png"),
+        // The simulated GPUI window cannot host AppKit image controllers.
+        // Keep the queue's media case on the GPUI GIF reader.
+        std::fs::write(
             &image,
+            [
+                71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 255, 255, 255, 44, 0, 0, 0,
+                0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59,
+            ],
         )
         .unwrap();
         std::fs::write(&unsupported, [0, 255, 0, 255]).unwrap();
