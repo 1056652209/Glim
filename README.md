@@ -1,4 +1,6 @@
-<p align="center"><img src="assets/branding/repository-banner.svg" alt="Glim — A focused file viewer for macOS, on Apple Silicon and Intel" width="100%" /></p>
+# Glim — File viewer for macOS
+
+Glim is a free, open-source, all-purpose file viewer for Mac. Read Markdown, PDFs, images, JSON, CSV and source code in one workspace.
 
 <p align="center">Free and open source · macOS · Apple Silicon &amp; Intel · <b>English</b> / <a href="README.zh-CN.md">简体中文</a></p>
 
@@ -15,15 +17,21 @@
   <a href="https://github.com/NeoPanic/Glim/stargazers"><img src="https://img.shields.io/github/stars/NeoPanic/Glim?style=social" alt="GitHub stars" /></a>
 </p>
 
-## A new look for your files
-
-Glim is a free, open-source, all-purpose file viewer for Mac. Read Markdown, PDFs, images, JSON, CSV and source code in one workspace.
+## Documents, data and code in one workspace
 
 <p align="center"><img src="assets/readme/workspace.png" alt="Glim's redesigned macOS workspace showing a file tree, multiple document tabs, centered workspace search, and a rendered Markdown page with an embedded diagram from 12-factor-agents." width="100%" /></p>
 
 The compact interface puts document tabs beside a resizable file sidebar, with workspace search in the title bar. Preview and source controls stay close at hand. The screenshot shows the public [12-factor-agents](https://github.com/humanlayer/12-factor-agents) documentation; its text and illustration belong to that project.
 
 [Download Glim](https://github.com/NeoPanic/Glim/releases/latest) · [Request a file format](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml)
+
+| Looking for… | What Glim offers |
+| --- | --- |
+| A Markdown viewer | Read documents with Mermaid diagrams, tables and LaTeX formulas; switch to source for small edits |
+| A JSON viewer | Expand nested objects and arrays, then switch back to the original text |
+| A CSV / TSV viewer | Read a table, inspect multiline cell values, or check the source |
+| A PDF, image or Office viewer | Keep read-only previews in workspace tabs; Office layout depends on macOS |
+| An EPUB reader or SQLite viewer | Read books with bookmarks, or browse local database tables in a read-only snapshot |
 
 ## Supported file formats
 
@@ -56,7 +64,7 @@ The compact interface puts document tabs beside a resizable file sidebar, with w
 
 Markdown includes Mermaid (flowcharts, subgraphs, Journey, Radar, and ZenUML), Graphviz/DOT, PlantUML (including partial Salt and Chen ER support), flowchart.js, WaveDrom, LaTeX, GFM tables, task lists, footnotes, GitHub Alerts, and frontmatter. Failed diagram blocks retain their source.
 
-Text editing supports up to 32 MiB; larger files open in read-only pages. Optional full loading is limited to 256 MiB. Markdown supports 128 distinct diagram blocks per document. HTML preview is static and does not execute scripts. Archives support listings and selected text previews, rather than general extraction or full content rendering. Non-UTF-8 text is not currently decoded.
+Large or very long-line text opens in read-only pages. Reader budgets and their effects are listed in the [shared reader policy](docs/reader-limits.md). HTML preview is static and does not execute scripts. Archives support listings and selected text previews, rather than general extraction or full content rendering. Non-UTF-8 text is not currently decoded.
 
 Office layout and media codecs depend on macOS support. XLS/XLSX previews show local tables and stored formula values; use the default application for complete styles, charts, or complex documents.
 
