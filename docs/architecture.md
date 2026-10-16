@@ -126,3 +126,5 @@ See [update behavior and trust](auto-update-design.md), [release setup](releasin
 ### Recoverable file removal
 
 `workspace/file_operations` confirms moves to Trash and coordinates the existing cross-window filesystem mutation lock, keeping autosave and Git operations from racing deletion. After success it closes affected live tabs and removes matching workspace roots in every window. Explorer entries and ordinary file tabs expose the action; removing a folder from the workspace remains a separate non-filesystem operation. `glim-services::workspace::trash_entry` runs on the background executor under the save mutex and invokes the bundled native helper's `--trash` mode. Foundation `FileManager.trashItem` handles recoverable, volume-aware moves without following a selected symlink or falling back to permanent deletion.
+
+ImageIO previews defer their initial fit until the embedded view is attached and its scroll viewport has a valid size. Decoding and the first layout share a centered loading state; a zero-sized viewport never commits an almost-zero image scale.

@@ -125,3 +125,5 @@ macOS 的 `macos-updater` feature 通过 `app/updater_bridge` 接入 `native/Upd
 ### 可恢复的文件删除
 
 `workspace/file_operations` 负责移到废纸篓前的确认，并复用跨窗口文件变更锁，避免自动保存和 Git 操作与删除并发。成功后关闭各窗口中受影响的当前文件标签，移除对应工作区根目录。文件树和普通文件标签的右键菜单提供该操作；“从工作区移除文件夹”仍是独立的不修改文件操作。`glim-services::workspace::trash_entry` 在后台执行，持有保存互斥锁，调用内置原生辅助程序的 `--trash` 模式。Foundation 的 `FileManager.trashItem` 负责支持恢复及不同磁盘卷的移入废纸篓操作，不跟随选中的符号链接，也不回退到永久删除。
+
+ImageIO 图片预览等待嵌入视图挂载且滚动视口尺寸有效后才执行首次适应缩放。解码和首次布局期间共用居中加载提示，避免零尺寸视口将图片缩到几乎不可见。

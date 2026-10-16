@@ -2,12 +2,29 @@ import Cocoa
 import ImageIO
 import Quartz
 
+// Image decoding may finish before the embedded view receives its first layout.
+private final class ImagePreviewHost: NSView {
+    var didLayout: (() -> Void)?
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        needsLayout = true
+    }
+    override func layout() {
+        super.layout()
+        didLayout?()
+    }
+}
+
 // ImageIO retains a file-backed source; only the requested page is decoded.
 final class ImagePreview: NSObject {
-    let view = NSView()
+    let view: NSView = ImagePreviewHost()
     private let scroll = NSScrollView()
     private let imageView = NSImageView()
     private let status = NSTextField(labelWithString: "")
+    private let loading = NSStackView()
+    private let progress = NSProgressIndicator()
+    private let loadingLabel = NSTextField(labelWithString: L("Loading preview…"))
+    private var needsInitialFit = false
     private let previous = NSButton(title: L("Previous page"), target: nil, action: nil)
     private let next = NSButton(title: L("Next page"), target: nil, action: nil)
     private let resolution = NSButton(title: L("Original resolution"), target: nil, action: nil)
@@ -38,6 +55,16 @@ final class ImagePreview: NSObject {
         stack.addArrangedSubview(scroll)
         scroll.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
+        loading.orientation = .vertical; loading.alignment = .centerX; loading.spacing = 8
+        progress.style = .spinning; progress.controlSize = .small
+        loadingLabel.textColor = .secondaryLabelColor
+        loading.addArrangedSubview(progress); loading.addArrangedSubview(loadingLabel)
+        loading.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(loading)
+        NSLayoutConstraint.activate([
+            loading.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
+            loading.centerYAnchor.constraint(equalTo: scroll.centerYAnchor)
+        ])
+        (view as? ImagePreviewHost)?.didLayout = { [weak self] in self?.fitWhenReady() }
         load()
     }
     @objc private func previousPage() { if page > 0 { page -= 1; load() } }
@@ -48,9 +75,23 @@ final class ImagePreview: NSObject {
         resolution.isEnabled = !busy && quickLook == nil
         resolution.title = original ? L("Fit image") : L("Original resolution")
     }
+    private func fitWhenReady() {
+        guard needsInitialFit, view.window != nil, imageView.image != nil else { return }
+        let viewport = scroll.contentSize
+        let size = imageView.frame.size
+        guard viewport.width > 0, viewport.height > 0, size.width > 0, size.height > 0 else { return }
+        // Never commit an almost-zero fit for an unattached/unlaid-out native view.
+        needsInitialFit = false
+        let fit = min(viewport.width / size.width, viewport.height / size.height, 1)
+        scroll.magnification = original ? 1 : max(scroll.minMagnification, fit)
+        loading.isHidden = true; progress.stopAnimation(nil)
+    }
     private func load() {
         task?.cancel(); generation += 1
         let generation = generation, page = page, original = original, url = url
+        needsInitialFit = false; imageView.image = nil
+        loadingLabel.stringValue = L("Loading preview…")
+        loading.isHidden = false; progress.startAnimation(nil)
         status.stringValue = L("Loading preview…"); controls(true)
         let work = DispatchWorkItem { [weak self] in
             let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
@@ -58,7 +99,7 @@ final class ImagePreview: NSObject {
             let props = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, page, nil) as? [CFString: Any] }
             let width = (props?[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue ?? 1
             let height = (props?[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? 1
-            let edge = original ? max(width, height) : Double(ReaderLimits.IMAGE_PREVIEW_EDGE)
+            let edge = original ? max(width, height) : min(max(width, height), Double(ReaderLimits.IMAGE_PREVIEW_EDGE))
             let image = source.flatMap { CGImageSourceCreateThumbnailAtIndex($0, page, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: edge, kCGImageSourceShouldCacheImmediately: true] as CFDictionary) }
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, !self.closed, self.generation == generation else { return }
@@ -69,7 +110,12 @@ final class ImagePreview: NSObject {
                         preview.previewItem = url as NSURL
                         self.quickLook = preview; self.scroll.contentView.addSubview(preview)
                         self.status.stringValue = L("Read-only preview")
-                    } else { self.status.stringValue = L("Cannot open image") }
+                        self.loading.isHidden = true
+                    } else {
+                        self.status.stringValue = L("Cannot open image")
+                        self.loadingLabel.stringValue = L("Cannot open image")
+                    }
+                    self.progress.stopAnimation(nil)
                     self.controls(false); return
                 }
                 self.count = count
@@ -77,16 +123,16 @@ final class ImagePreview: NSObject {
                 let size = NSSize(width: Double(image.width) * scale, height: Double(image.height) * scale)
                 self.imageView.image = NSImage(cgImage: image, size: size)
                 self.imageView.frame = NSRect(origin: .zero, size: size)
-                let viewport = self.scroll.contentView.bounds.size
-                let fit = min(viewport.width / max(1, size.width), viewport.height / max(1, size.height), 1)
-                self.scroll.magnification = original ? 1 : max(self.scroll.minMagnification, fit)
+                self.needsInitialFit = true
+                self.view.layoutSubtreeIfNeeded()
+                self.fitWhenReady()
                 self.status.stringValue = "\(page + 1) / \(count) · \(Int(width)) × \(Int(height))"
                 self.controls(false)
             }
         }
         task = work; DispatchQueue.global(qos: .userInitiated).async(execute: work)
     }
-    func pause() { task?.cancel(); task = nil; generation += 1; imageView.image = nil }
+    func pause() { task?.cancel(); task = nil; generation += 1; needsInitialFit = false; progress.stopAnimation(nil); imageView.image = nil }
     func resume() { if !closed && task == nil && imageView.image == nil && quickLook == nil { load() } }
     func close() { closed = true; pause(); quickLook?.previewItem = nil; quickLook?.close(); quickLook = nil }
 }
