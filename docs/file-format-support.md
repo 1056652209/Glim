@@ -15,7 +15,7 @@ Support means the behavior listed below, not full compatibility with every featu
 | Vue, XML/plist, SCSS/LESS, Cython, CUDA/Metal, GLSL/OSL | Reuse related language highlighting; no dedicated semantic validation |
 | Dockerfile/Containerfile, Makefile/CMake, Nix, INI, `.env`, ignore files and related configuration | Highlighted or lightly colored text; editing, not execution |
 | Markdown | Native reading layout, tables, task lists, footnotes, alerts, frontmatter, diagrams, formulas, relative images and local links; source editing |
-| HTML/HTM | Static reading preview and editable source; no JavaScript execution or full browser CSS layout |
+| HTML/HTM | WebKit browser preview with CSS/JavaScript and editable source; relative local assets within the enclosing Git project (otherwise the document directory) load in streamed chunks |
 | TXT, logs and other UTF-8 text | Basic editing; large or very long-line documents use read-only pages |
 | JSON/JSONC/JSON5, NDJSON/JSONL, GeoJSON, notebooks | Source and an on-demand read-only tree. JSONC accepts comments/trailing commas; NDJSON becomes a line-record array. GeoJSON is not a map and notebooks are not executed |
 | CSV/TSV | Virtualized read-only table and editable source; quoted/multiline fields, BOM and uneven rows supported |
@@ -85,7 +85,7 @@ MKV supports H.264/AAC-LC remuxing, including AVC configuration and Annex-B fram
 
 See [architecture](architecture.md), [build and release](releasing.md) and [roadmap](TODO.md).
 
-Markdown/HTML remote images load over HTTP(S) in the background, using the shared response and timeout budgets. Failed downloads or decoding show a visible placeholder. Common picture light/dark candidates follow the theme; unknown media conditions retain the img fallback. SVG does not run scripts or read external resources. Relative local images retain existing path resolution. System curl is required; this is not full browser HTML/CSS compatibility.
+Markdown remote images load over HTTP(S) in the background, using the shared response and timeout budgets. Failed downloads or decoding show a visible placeholder. Common picture light/dark candidates follow the theme; unknown media conditions retain the img fallback. SVG does not run scripts or read external resources. Relative local images retain existing path resolution. System curl is required for this Markdown image path. HTML previews use WebKit networking and layout instead.
 
 Mach-O (including universal), ELF and PE files are recognized by their headers and inspected read-only. The preview shows architecture, word size, byte order, entry point, segments/sections, available dependency names and a hexadecimal excerpt. Input and report limits use the shared policy. Programs are never executed or decompiled; malformed and oversized inputs report errors, and dependencies are shown only where the corresponding headers can be parsed.
 

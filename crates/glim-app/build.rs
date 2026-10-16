@@ -36,6 +36,7 @@ fn build_native_preview() {
     for source in [
         "Preview.swift",
         "ImagePreview.swift",
+        "HTMLPreview.swift",
         "SQLitePreview.swift",
         "EmbeddedPreview.swift",
     ] {
@@ -61,6 +62,7 @@ fn build_native_preview() {
             &format!("{arch}-apple-macos11.0"),
             "../../native/Preview.swift",
             "../../native/ImagePreview.swift",
+            "../../native/HTMLPreview.swift",
             "../../native/SQLitePreview.swift",
             "../../native/EmbeddedPreview.swift",
         ])

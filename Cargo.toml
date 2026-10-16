@@ -39,6 +39,11 @@ todo = "deny"
 debug = "limited"
 
 [profile.release]
+panic = "unwind"
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
+
+# Keep GPUI pinned; local patch adds opt-in frame panic recovery.
+[patch.crates-io]
+gpui-pre = { path = "vendor/gpui-pre" }

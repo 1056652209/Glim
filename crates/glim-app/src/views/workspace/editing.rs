@@ -90,11 +90,17 @@ impl Workspace {
         // A pre-save read must not arrive later and replace the just-saved buffer.
         self.refresh_task = None;
         let work = cx.background_executor().spawn(async move {
+            let _scope = glim_services::diagnostics::FileScope::enter(&path, "save");
+            log::info!("save begin file={}", path.display());
             let result = if let Some(page) = page {
                 glim_services::paged::save_page(&page, &text).map(Some)
             } else {
                 glim_services::files::save_document(&path, &expected, &text).map(|()| None)
             };
+            match &result {
+                Ok(_) => log::info!("save complete file={}", path.display()),
+                Err(error) => log::error!("save failed file={} error={error:#}", path.display()),
+            }
             (text, result)
         });
         self.save_task = Some(cx.spawn_in(window, async move |view, cx| {

@@ -36,6 +36,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if self.tabs.get(index).is_some() {
+            log::info!("tab activate file={}", self.tabs[index].path.display());
             self.page = super::Page::Document;
             self.load_task = None;
             self.loading = false;

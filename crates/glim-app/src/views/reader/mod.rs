@@ -1,4 +1,5 @@
 mod books;
+mod boundary;
 mod csv;
 mod diagrams;
 mod diff;
@@ -647,6 +648,7 @@ impl Reader {
         }
         match &self.renderer {
             Renderer::Paged { .. } => None,
+            Renderer::Markup(m) if m.preview && m.html => None,
             Renderer::Markup(m) if m.preview => Some(vec![m.scroll.offset().x]),
             Renderer::Diff(d) if d.side_by_side => {
                 d.split.as_ref().map(|s| s.read(cx).horizontal_offsets(cx))
@@ -716,6 +718,9 @@ impl Reader {
         self.csv.is_some() || self.json.is_some() || matches!(self.renderer, Renderer::Markup(_))
     }
     pub fn set_preview(&mut self, preview: bool, cx: &mut App) {
+        if !preview && glim_services::diagnostics::failure(&self.path).is_some() {
+            glim_services::diagnostics::retry(&self.path);
+        }
         if preview
             && self.is_dirty()
             && let Renderer::Paged { view, .. } = &self.renderer
@@ -770,6 +775,9 @@ impl Reader {
                 m.sync_preview(cx);
             }
             m.preview = preview;
+            if !preview {
+                m.set_images_active(false, cx);
+            }
         }
     }
     pub fn toggle_label(&self) -> &'static str {
@@ -796,7 +804,7 @@ impl Reader {
     pub fn reveal_anchor(&mut self, anchor: &str, cx: &mut App) {
         if let Renderer::Markup(m) = &mut self.renderer {
             m.sync_preview(cx);
-            m.reveal(anchor);
+            m.reveal(anchor, cx);
         } else if let Some(source) = self.source()
             && let Some(line) = anchor
                 .strip_prefix('L')
@@ -810,6 +818,19 @@ impl Reader {
         }
     }
     pub fn render(&mut self, open: OpenLink, cx: &mut App) -> AnyElement {
+        if let Some(error) = glim_services::diagnostics::failure(&self.path) {
+            self.hide_native(cx);
+            return boundary::failed(&self.path, error, cx);
+        }
+        let _scope = glim_services::diagnostics::FileScope::enter(&self.path, "render");
+        let content = self.render_content(open, cx);
+        boundary::FileBoundary {
+            path: self.path.clone(),
+            content,
+        }
+        .into_any_element()
+    }
+    fn render_content(&mut self, open: OpenLink, cx: &mut App) -> AnyElement {
         if let Some((table, true)) = &self.csv {
             return table.clone().into_any_element();
         }

@@ -15,7 +15,7 @@
 | Vue、XML/plist、SCSS/LESS、Cython、CUDA/Metal、GLSL/OSL | 复用相关语言高亮，不提供专用语义校验 |
 | Dockerfile/Containerfile、Makefile/CMake、Nix、INI、`.env`、忽略规则及相关配置 | 高亮或轻量着色的文本编辑，不执行内容 |
 | Markdown | 原生阅读排版、表格、任务列表、脚注、Alerts、frontmatter、图表、公式、相对图片、本地链接与源码编辑 |
-| HTML/HTM | 静态阅读预览与源码编辑，不执行 JavaScript，不提供完整浏览器 CSS 布局 |
+| HTML/HTM | WebKit 浏览器预览，支持 CSS/JavaScript 及源码编辑；所属 Git 项目内（无 Git 根目录时为文档目录）的相对本地资源分块加载 |
 | TXT、日志及其他 UTF-8 文本 | 基础编辑；大文件或超长行使用只读分页 |
 | JSON/JSONC/JSON5、NDJSON/JSONL、GeoJSON、Notebook | 原文与按需加载的只读树。JSONC 支持注释和尾逗号，NDJSON 转为逐行记录数组；GeoJSON 不绘制地图，Notebook 不执行 |
 | CSV/TSV | 虚拟化只读表格与原文编辑，支持引号、跨行字段、BOM 与不齐列 |

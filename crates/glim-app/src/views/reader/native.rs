@@ -20,8 +20,94 @@ pub(super) struct NativeReader {
     prepared: Option<glim_services::preview::PreparedPreview>,
     error: Option<String>,
     obscured: bool,
+    html: Option<String>,
+    html_open: Option<super::OpenLink>,
+    html_anchor: Option<String>,
+    _html_navigation: Option<Task<()>>,
 }
 impl NativeReader {
+    pub fn html(
+        path: PathBuf,
+        text: String,
+        active: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut view = Self {
+            path,
+            folder: false,
+            shuffle: false,
+            autoplay: false,
+            task: None,
+            preview: None,
+            prepared: None,
+            error: None,
+            obscured: false,
+            html: Some(text),
+            html_open: None,
+            html_anchor: None,
+            _html_navigation: None,
+        };
+        if active {
+            view.load_html();
+        }
+        view._html_navigation = Some(cx.spawn_in(window, async move |view, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(100))
+                    .await;
+                if view
+                    .update_in(cx, |view, window, cx| {
+                        let Some(preview) = &view.preview else {
+                            return;
+                        };
+                        if let Some(anchor) = view.html_anchor.take() {
+                            preview.reveal_anchor(&anchor);
+                        }
+                        if let Some(href) = preview.take_navigation()
+                            && let Some(open) = view.html_open.clone()
+                            && let Ok(base) = url::Url::from_file_path(&view.path)
+                        {
+                            // Let the child update finish before opening another reader.
+                            window.defer(cx, move |window, cx| {
+                                super::markup::follow_link(&base, &open, &href, window, cx)
+                            });
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }));
+        view
+    }
+    fn load_html(&mut self) {
+        let configuration = serde_json::json!({
+            "files": [&self.path], "shuffle": false, "htmlContent": &self.html,
+            "language": glim_services::locale::code(), "localizations": glim_services::locale::translations(),
+        });
+        self.preview = Some(super::native_bridge::NativePreview::new(
+            &serde_json::to_vec(&configuration).expect("HTML preview configuration"),
+        ));
+    }
+    pub fn update_html(&mut self, text: String, cx: &mut Context<Self>) {
+        if self.html.as_deref() == Some(text.as_str()) {
+            return;
+        }
+        self.html = Some(text);
+        if self.preview.is_some() {
+            self.load_html();
+        }
+        cx.notify();
+    }
+    pub fn set_html_open(&mut self, open: super::OpenLink) {
+        self.html_open = Some(open);
+    }
+    pub fn reveal_html_anchor(&mut self, anchor: &str) {
+        self.html_anchor = Some(anchor.to_owned());
+    }
+
     pub fn image_stamp(&self) -> Option<(u64, Option<std::time::SystemTime>)> {
         self.prepared
             .as_ref()
@@ -53,11 +139,22 @@ impl NativeReader {
             prepared: None,
             error: None,
             obscured: false,
+            html: None,
+            html_open: None,
+            html_anchor: None,
+            _html_navigation: None,
         };
         view.open(cx);
         view
     }
     pub(super) fn open(&mut self, cx: &mut Context<Self>) {
+        if self.html.is_some() {
+            if self.preview.is_none() {
+                self.load_html();
+                cx.notify();
+            }
+            return;
+        }
         if self.task.is_some() || self.prepared.is_some() {
             return;
         }

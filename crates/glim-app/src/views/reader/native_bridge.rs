@@ -17,6 +17,9 @@ unsafe extern "C" {
     );
     fn glim_preview_hide(handle: *mut c_void);
     fn glim_preview_release(handle: *mut c_void);
+    fn glim_preview_take_navigation(handle: *mut c_void) -> *mut std::ffi::c_char;
+    fn glim_preview_free_string(string: *mut std::ffi::c_char);
+    fn glim_preview_reveal_anchor(handle: *mut c_void, bytes: *const u8, length: usize);
 }
 
 pub(super) struct NativePreview {
@@ -53,6 +56,25 @@ impl NativePreview {
                 f32::from(bounds.size.height) as f64,
             )
         }
+    }
+    pub fn take_navigation(&self) -> Option<String> {
+        // SAFETY: called on the main thread with a retained handle. Swift returns
+        // an owned, NUL-terminated UTF-8 string, freed through its matching API.
+        unsafe {
+            let pointer = glim_preview_take_navigation(self.handle.as_ptr());
+            if pointer.is_null() {
+                return None;
+            }
+            let url = std::ffi::CStr::from_ptr(pointer)
+                .to_string_lossy()
+                .into_owned();
+            glim_preview_free_string(pointer);
+            Some(url)
+        }
+    }
+    pub fn reveal_anchor(&self, anchor: &str) {
+        // SAFETY: Swift copies this valid UTF-8 slice during the main-thread call.
+        unsafe { glim_preview_reveal_anchor(self.handle.as_ptr(), anchor.as_ptr(), anchor.len()) }
     }
     pub fn hide(&self) {
         // SAFETY: this owner retains the Swift controller, on the main thread.

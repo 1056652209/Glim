@@ -10,6 +10,7 @@ pub(super) struct MarkupReader {
     pub source: SourceReader,
     pub preview: bool,
     pub html: bool,
+    browser: Option<Entity<super::native::NativeReader>>,
     pub(super) state: Entity<TextViewState>,
     pub scroll: ScrollHandle,
     base: url::Url,
@@ -50,14 +51,24 @@ impl MarkupReader {
         let preview_content = normalized.as_deref().unwrap_or(preview_content);
         let state = cx.new(|cx| {
             if html {
-                TextViewState::html(text, cx)
+                TextViewState::html("", cx)
             } else {
                 TextViewState::markdown(preview_content, cx)
             }
         });
         let base = url::Url::from_file_path(path).expect("absolute document path");
-        let pictures =
-            cx.new(|cx| Pictures::new(preview_content.to_owned(), html, base.clone(), cx));
+        let pictures = cx.new(|cx| {
+            Pictures::new(
+                if html {
+                    String::new()
+                } else {
+                    preview_content.to_owned()
+                },
+                html,
+                base.clone(),
+                cx,
+            )
+        });
         let picture_subscription = cx.observe(&pictures, |_, cx| cx.refresh_windows());
         let reveal_pending = Rc::new(Cell::new(false));
         let pending = reveal_pending.clone();
@@ -71,7 +82,19 @@ impl MarkupReader {
         let diagram_subscription = diagrams
             .as_ref()
             .map(|diagrams| cx.observe(diagrams, |_, cx| cx.refresh_windows()));
+        let browser = html.then(|| {
+            cx.new(|cx| {
+                super::native::NativeReader::html(
+                    path.to_path_buf(),
+                    text.to_owned(),
+                    preview,
+                    window,
+                    cx,
+                )
+            })
+        });
         Self {
+            browser,
             pictures,
             _picture_subscription: picture_subscription,
             diagrams,
@@ -104,6 +127,10 @@ impl MarkupReader {
             return;
         }
         self.preview_text.clone_from(&text);
+        if let Some(browser) = &self.browser {
+            browser.update(cx, |browser, cx| browser.update_html(text, cx));
+            return;
+        }
         let text = self
             .format_path
             .as_ref()
@@ -123,11 +150,22 @@ impl MarkupReader {
             diagrams.update(cx, |diagrams, cx| diagrams.load(text, cx));
         }
     }
-    pub fn reveal(&mut self, anchor: &str) {
+    pub fn reveal(&mut self, anchor: &str, cx: &mut App) {
+        if let Some(browser) = &self.browser {
+            browser.update(cx, |browser, _| browser.reveal_html_anchor(anchor));
+            return;
+        }
         self.pending_anchor = Some(anchor.to_owned());
         self.reveal_pending.set(true);
     }
     pub fn set_images_active(&self, active: bool, cx: &mut App) {
+        if let Some(browser) = &self.browser {
+            if active {
+                browser.update(cx, |browser, cx| browser.open(cx));
+            } else {
+                browser.read(cx).hide();
+            }
+        }
         self.pictures
             .update(cx, |pictures, cx| pictures.set_active(active, cx));
     }
@@ -135,6 +173,10 @@ impl MarkupReader {
         self.set_images_active(self.preview, cx);
         if !self.preview {
             return self.source.render(cx);
+        }
+        if let Some(browser) = &self.browser {
+            browser.update(cx, |browser, _| browser.set_html_open(open));
+            return browser.clone().into_any_element();
         }
         if self
             .pending_anchor

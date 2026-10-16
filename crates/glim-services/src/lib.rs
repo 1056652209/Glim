@@ -2,6 +2,7 @@
 
 pub mod binary;
 pub mod csv;
+pub mod diagnostics;
 pub mod executables;
 pub mod files;
 pub mod formats;

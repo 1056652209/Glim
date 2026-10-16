@@ -69,7 +69,7 @@ pub(crate) fn remember_explorer(
                 })
                 .await;
         if let Err(error) = result {
-            eprintln!("Cannot remember file tree: {error:#}");
+            log::error!("Cannot remember file tree: {error:#}");
         }
     });
     cx.global_mut::<ExplorerSaveTask>().0 = Some(task);
@@ -90,7 +90,7 @@ fn load_recent_workspaces(cx: &mut App) {
                 cx.global_mut::<RecentWorkspaces>().0 = recent;
                 cx.refresh_windows();
             }),
-            Err(error) => eprintln!("Cannot load recent workspaces: {error:#}"),
+            Err(error) => log::error!("Cannot load recent workspaces: {error:#}"),
         }
     });
     cx.global_mut::<WorkspaceSaveTask>().0 = Some(task);
@@ -120,7 +120,7 @@ pub(crate) fn remember_workspace(id: String, folders: Vec<std::path::PathBuf>, c
                 cx.global_mut::<RecentWorkspaces>().0 = recent;
                 cx.refresh_windows();
             }),
-            Err(error) => eprintln!("Cannot remember workspace: {error:#}"),
+            Err(error) => log::error!("Cannot remember workspace: {error:#}"),
         }
     });
     cx.global_mut::<WorkspaceSaveTask>().0 = Some(task);
@@ -314,6 +314,7 @@ fn show_about(cx: &mut App) {
 }
 
 pub fn run() -> Result<()> {
+    glim_services::diagnostics::initialize()?;
     let mut arguments = std::env::args_os().skip(1);
     let path = arguments.next();
     if arguments.next().is_some() {
@@ -370,6 +371,8 @@ pub fn run() -> Result<()> {
         cx.set_global(WorkspaceSaveTask::default());
         cx.set_global(ExplorerSaveTask::default());
         cx.on_app_quit(|cx| {
+            log::info!("application quit requested");
+            log::logger().flush();
             let pending = cx.global_mut::<ExplorerSaveTask>().0.take();
             let workspace = cx.global_mut::<WorkspaceSaveTask>().0.take();
             async move {
@@ -537,6 +540,7 @@ fn open_workspace_with_session(
         ..gpui_kit::component::TitleBar::window_options()
     };
     match gpui_kit::open_window(options, cx, |window, cx| {
+        window.set_draw_panic_handler(glim_services::diagnostics::take_render_failure);
         let restore =
             session.is_none() && path.is_none() && cx.global::<OpenWorkspaces>().0.is_empty();
         let workspace = cx.new(|cx| Workspace::new(path, window, cx));
@@ -553,7 +557,7 @@ fn open_workspace_with_session(
         workspace
     }) {
         Ok(_) => cx.activate(true),
-        Err(error) => eprintln!("Cannot open Glim window: {error:#}"),
+        Err(error) => log::error!("Cannot open Glim window: {error:#}"),
     }
 }
 
@@ -677,7 +681,7 @@ pub(crate) fn change_language(language: &'static str, cx: &mut App) {
             .spawn(async move { glim_services::preferences::save_language(language) })
             .await;
         if let Err(error) = result {
-            eprintln!("Cannot remember language: {error:#}");
+            log::error!("Cannot remember language: {error:#}");
         }
     });
     cx.global_mut::<LanguageSaveTask>().0 = Some(task);

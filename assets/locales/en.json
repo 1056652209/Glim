@@ -375,5 +375,9 @@
   "Move to Trash": "Move to Trash",
   "This item and its contents will be moved to the macOS Trash. You can restore it from Finder.": "This item and its contents will be moved to the macOS Trash. You can restore it from Finder.",
   "Save your changes and wait for active operations before moving an item to Trash.": "Save your changes and wait for active operations before moving an item to Trash.",
-  "Could not move item to Trash": "Could not move item to Trash"
+  "Could not move item to Trash": "Could not move item to Trash",
+  "This file could not be rendered": "This file could not be rendered",
+  "Other files remain available. Details were saved to the log.": "Other files remain available. Details were saved to the log.",
+  "Retry rendering": "Retry rendering",
+  "Open logs": "Open logs"
 }

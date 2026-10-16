@@ -379,7 +379,7 @@ fn open_updates_window(cx: &mut App) {
             cx.set_global(UpdatesWindow(Some(handle)));
             cx.activate(true);
         }
-        Err(error) => eprintln!("Cannot open Software Update: {error:#}"),
+        Err(error) => log::error!("Cannot open Software Update: {error:#}"),
     }
 }
 pub(crate) fn show_from_menu(cx: &mut App) {

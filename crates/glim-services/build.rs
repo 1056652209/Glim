@@ -43,6 +43,7 @@ fn main() {
     .expect("embed locale catalogs");
     println!("cargo:rerun-if-changed=../../native/Preview.swift");
     println!("cargo:rerun-if-changed=../../native/ImagePreview.swift");
+    println!("cargo:rerun-if-changed=../../native/HTMLPreview.swift");
     println!("cargo:rerun-if-changed=../../native/SQLitePreview.swift");
     println!("cargo:rerun-if-changed=../../native/PreviewMain.swift");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
@@ -68,6 +69,7 @@ fn main() {
             "../../native/SQLitePreview.swift",
             "../../native/Preview.swift",
             "../../native/ImagePreview.swift",
+            "../../native/HTMLPreview.swift",
         ])
         .arg(output.with_file_name("ReaderLimits.swift"))
         .arg(main)

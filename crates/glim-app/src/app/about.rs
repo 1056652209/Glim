@@ -28,7 +28,7 @@ pub fn open(cx: &mut App) {
             cx.set_global(AboutWindow(Some(handle)));
             cx.activate(true);
         }
-        Err(error) => eprintln!("Cannot open About Glim: {error:#}"),
+        Err(error) => log::error!("Cannot open About Glim: {error:#}"),
     }
 }
 

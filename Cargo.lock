@@ -2608,6 +2608,7 @@ dependencies = [
  "glim-core",
  "glim-services",
  "gpui-kit",
+ "log",
  "raw-window-handle",
  "serde_json",
  "tao",
@@ -2631,6 +2632,7 @@ dependencies = [
  "base64 0.22.1",
  "bzip2",
  "calamine",
+ "chrono",
  "crc32fast",
  "csv",
  "encoding_rs",
@@ -2641,6 +2643,7 @@ dependencies = [
  "ignore",
  "image",
  "json5",
+ "log",
  "markdown",
  "markup5ever_rcdom",
  "matroska-demuxer",
@@ -2924,8 +2927,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre"
 version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7f0bc3ebba070f8981b3f8e905a12f47d27794a30d029e59cdb9edf7a4b3360"
 dependencies = [
  "accesskit",
  "anyhow",

@@ -176,6 +176,10 @@ impl Workspace {
     }
 
     pub(super) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        glim_services::diagnostics::event(
+            "INFO",
+            &format!("open requested file={}", path.display()),
+        );
         self.page = super::Page::Document;
         if crate::app::updates::busy(cx) {
             return;
@@ -446,6 +450,32 @@ impl Workspace {
         }));
     }
     pub(super) fn make_reader(content: Content, window: &mut Window, cx: &mut App) -> Reader {
+        let path = match &content {
+            Content::File(d) => d.path.clone(),
+            Content::Page(d) => d.path.clone(),
+            Content::Commit(d, _) => d.path.clone(),
+            Content::Image(d) => d.path.clone(),
+            Content::XMind(d) => d.path.clone(),
+            Content::Book(d) => d.path.clone(),
+            Content::Diff(d, root) => root.join(&d.change.path),
+            Content::Native(path, ..) | Content::Unavailable(path, _) => path.clone(),
+        };
+        let _scope = glim_services::diagnostics::FileScope::enter(&path, "initialize");
+        log::info!("reader initialize file={}", path.display());
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Self::make_reader_inner(content, window, cx)
+        })) {
+            Ok(reader) => reader,
+            Err(_) => Reader::unavailable(
+                path.clone(),
+                glim_services::diagnostics::failure(&path)
+                    .unwrap_or_else(|| "Reader initialization failed".into()),
+                window,
+                cx,
+            ),
+        }
+    }
+    fn make_reader_inner(content: Content, window: &mut Window, cx: &mut App) -> Reader {
         match content {
             Content::File(d) => Reader::new(d, window, cx),
             Content::Page(d) => Reader::from_page(d, window, cx),
@@ -676,6 +706,31 @@ pub(super) fn read_content(path: &std::path::Path) -> anyhow::Result<Content> {
     read_content_cancellable(path, &glim_services::work::Cancellation::default())
 }
 pub(super) fn read_content_cancellable(
+    path: &std::path::Path,
+    cancel: &glim_services::work::Cancellation,
+) -> anyhow::Result<Content> {
+    let _scope = glim_services::diagnostics::FileScope::enter(path, "read");
+    log::info!("read begin file={}", path.display());
+    let started = std::time::Instant::now();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        read_content_inner(path, cancel)
+    }))
+    .unwrap_or_else(|_| Err(anyhow::anyhow!("File reader panicked: {}", path.display())));
+    match &result {
+        Ok(_) => log::info!(
+            "read complete file={} elapsed_ms={}",
+            path.display(),
+            started.elapsed().as_millis()
+        ),
+        Err(error) => log::error!(
+            "read failed file={} elapsed_ms={} error={error:#}",
+            path.display(),
+            started.elapsed().as_millis()
+        ),
+    }
+    result
+}
+fn read_content_inner(
     path: &std::path::Path,
     cancel: &glim_services::work::Cancellation,
 ) -> anyhow::Result<Content> {

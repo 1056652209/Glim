@@ -130,6 +130,6 @@ pub fn open(cx: &mut App) {
             Shortcuts { focus }
         })
     }) {
-        eprintln!("Cannot open keyboard shortcuts: {error:#}");
+        log::error!("Cannot open keyboard shortcuts: {error:#}");
     }
 }

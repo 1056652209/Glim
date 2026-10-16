@@ -375,5 +375,9 @@
   "Move to Trash": "移到废纸篓",
   "This item and its contents will be moved to the macOS Trash. You can restore it from Finder.": "此项目及其内容将移到 macOS 废纸篓，可从访达恢复。",
   "Save your changes and wait for active operations before moving an item to Trash.": "请先保存更改，并等待当前操作完成，再移到废纸篓。",
-  "Could not move item to Trash": "无法将项目移到废纸篓"
+  "Could not move item to Trash": "无法将项目移到废纸篓",
+  "This file could not be rendered": "此文件渲染失败",
+  "Other files remain available. Details were saved to the log.": "其他文件仍可使用，详细信息已保存到日志。",
+  "Retry rendering": "重试渲染",
+  "Open logs": "打开日志"
 }

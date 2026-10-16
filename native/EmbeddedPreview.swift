@@ -74,3 +74,22 @@ func glimPreviewRelease(_ handle: UnsafeMutableRawPointer) {
     let preview = Unmanaged<NativePreviewController>.fromOpaque(handle).takeRetainedValue()
     preview.close()
 }
+
+@_cdecl("glim_preview_take_navigation")
+func glimPreviewTakeNavigation(_ handle: UnsafeMutableRawPointer) -> UnsafeMutablePointer<CChar>? {
+    precondition(Thread.isMainThread)
+    let preview = Unmanaged<NativePreviewController>.fromOpaque(handle).takeUnretainedValue()
+    guard let html = preview.htmlPreview, let url = html.pendingNavigation else { return nil }
+    html.pendingNavigation = nil
+    return url.withCString { strdup($0) }
+}
+@_cdecl("glim_preview_free_string")
+func glimPreviewFreeString(_ string: UnsafeMutablePointer<CChar>) { free(string) }
+@_cdecl("glim_preview_reveal_anchor")
+func glimPreviewRevealAnchor(_ handle: UnsafeMutableRawPointer, _ bytes: UnsafePointer<UInt8>, _ length: Int) {
+    precondition(Thread.isMainThread)
+    let preview = Unmanaged<NativePreviewController>.fromOpaque(handle).takeUnretainedValue()
+    if let anchor = String(data: Data(bytes: bytes, count: length), encoding: .utf8) {
+        preview.htmlAnchor = anchor; preview.htmlPreview?.reveal(anchor)
+    }
+}
