@@ -25,7 +25,7 @@ Glim 是免费开源的 Mac 全能文件内容查看器。Markdown、PDF、图�
 
 紧凑界面将文档标签与可调整宽度的文件侧栏放在一起，工作空间搜索位于标题栏，预览与源码切换按钮随手可用。截图展示的是公开的 [12-factor-agents](https://github.com/humanlayer/12-factor-agents) 文档；其中的正文与插图属于该项目。
 
-[下载 Glim](https://github.com/NeoPanic/Glim/releases/latest) · [提出格式需求](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml)
+[下载 Glim](https://github.com/NeoPanic/Glim/releases/latest) · [投票：下一步加什么格式](https://github.com/NeoPanic/Glim/discussions/28) · [提出格式需求](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml)
 
 | 想查看什么 | Glim 提供什么 |
 | --- | --- |
