@@ -1,4 +1,6 @@
-<p align="center"><img src="assets/branding/repository-banner.svg" alt="Glim — 专注于 macOS 的文件查看器，支持 Apple Silicon 与 Intel" width="100%" /></p>
+# Glim — Mac 全能文件内容查看器
+
+Glim 是免费开源的 Mac 全能文件内容查看器。Markdown、PDF、图片、JSON、CSV 和源代码，都可以放在同一个工作空间里阅读。
 
 <p align="center">免费开源 · macOS · Apple Silicon 与 Intel · <a href="README.md">English</a> / <b>简体中文</b></p>
 
@@ -15,15 +17,21 @@
   <a href="https://github.com/NeoPanic/Glim/stargazers"><img src="https://img.shields.io/github/stars/NeoPanic/Glim?style=social" alt="GitHub Star 数量" /></a>
 </p>
 
-## 文件查看器，新的界面
-
-Glim 是免费开源的 Mac 全能文件内容查看器。Markdown、PDF、图片、JSON、CSV 和源代码，都可以放在同一个工作空间里阅读。
+## 文档、数据和代码，一个工作空间
 
 <p align="center"><img src="assets/readme/workspace.png" alt="Glim 重新设计的 macOS 工作空间：左侧文件树、多个文档标签、居中的工作空间搜索，以及包含内嵌图示的 12-factor-agents Markdown 文档。" width="100%" /></p>
 
 紧凑界面将文档标签与可调整宽度的文件侧栏放在一起，工作空间搜索位于标题栏，预览与源码切换按钮随手可用。截图展示的是公开的 [12-factor-agents](https://github.com/humanlayer/12-factor-agents) 文档；其中的正文与插图属于该项目。
 
 [下载 Glim](https://github.com/NeoPanic/Glim/releases/latest) · [提出格式需求](https://github.com/NeoPanic/Glim/issues/new?template=feature_request.yml)
+
+| 想查看什么 | Glim 提供什么 |
+| --- | --- |
+| Markdown 文档 | 阅读 Mermaid 图表、表格和 LaTeX 公式，也可切回源码做小修改 |
+| JSON 数据 | 逐层展开对象和数组，随时切回原文核对 |
+| CSV / TSV 表格 | 按表格阅读，查看多行单元格完整内容，或切回源码 |
+| PDF、图片与 Office 文档 | 在工作空间标签中只读预览；Office 排版取决于 macOS |
+| EPUB 电子书与 SQLite 数据库 | 带书签阅读电子书，或通过只读快照浏览本地数据库表 |
 
 ## 支持的文件格式
 
@@ -56,7 +64,7 @@ Glim 是免费开源的 Mac 全能文件内容查看器。Markdown、PDF、图�
 
 Markdown 提供 Mermaid（含流程图、子图、Journey、Radar、ZenUML）、Graphviz/DOT、PlantUML（含部分 Salt 与 Chen ER 语法）、flowchart.js、WaveDrom、LaTeX，以及 GFM 表格、任务列表、脚注、GitHub Alerts 和 frontmatter。图表失败时保留源码。
 
-普通文本编辑预算为 32 MiB，更大文件使用只读分页；可选完整加载上限 256 MiB。每篇 Markdown 支持 128 个不同图表块。HTML 为静态预览，不执行脚本。归档支持目录及选定格式的文本预览，不提供通用解压或完整内容渲染；非 UTF-8 文本暂不提供文字解码。
+较大或单行很长的文本使用只读分页。阅读器预算及具体影响见[共享阅读器边界](docs/reader-limits.zh-CN.md)。HTML 为静态预览，不执行脚本。归档支持目录及选定格式的文本预览，不提供通用解压或完整内容渲染；非 UTF-8 文本暂不提供文字解码。
 
 Office 排版和音视频编码支持取决于 macOS。XLS/XLSX 显示本地表格及缓存公式值；完整样式、图表和复杂文档可通过默认应用查看。
 
