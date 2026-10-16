@@ -30,8 +30,17 @@ pub(super) enum Content {
     Unavailable(PathBuf, String),
 }
 impl Workspace {
+    pub(super) fn csv_preview_for_path(path: &std::path::Path, cx: &App) -> bool {
+        path.extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("csv") || ext.eq_ignore_ascii_case("tsv"))
+            && cx
+                .try_global::<crate::app::ReaderPreferences>()
+                .is_some_and(|prefs| prefs.csv_preview)
+    }
+
     pub(crate) fn restore_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.loading = true;
+        self.loading_preview = false;
         let work = cx.background_executor().spawn(async {
             let paths = glim_services::preferences::workspace_folders()?;
             let expanded = glim_services::preferences::explorer_expansion(&paths);
@@ -163,6 +172,7 @@ impl Workspace {
                 cx.notify();
             });
         }));
+        cx.notify();
     }
 
     pub(super) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -187,6 +197,7 @@ impl Workspace {
         }
         self.restoring_roots = None;
         self.loading = true;
+        self.loading_preview = Self::csv_preview_for_path(&path, cx);
         self.error = None;
         let (cancel, cancel_on_drop) = glim_services::work::Cancellation::task();
         let read = cx.background_executor().spawn(async move {
@@ -510,6 +521,7 @@ impl Workspace {
             return;
         }
         self.loading = true;
+        self.loading_preview = false;
         let requested_file = file.clone();
         let work = cx.background_executor().spawn(async move {
             let text = match requested_file {
@@ -554,6 +566,7 @@ impl Workspace {
             return;
         }
         self.loading = true;
+        self.loading_preview = false;
         self.error = None;
         let path = root.join(&change.path);
         let read = cx.background_executor().spawn(async move {

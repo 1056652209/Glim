@@ -43,6 +43,19 @@ pub(super) fn editor_menu(
     .menu(glim_services::locale::tr("Select All"), Box::new(SelectAll))
 }
 
+pub(super) fn preview_loading(cx: &App) -> AnyElement {
+    use gpui_kit::component::ActiveTheme;
+    div()
+        .size_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_sm()
+        .text_color(cx.theme().muted_foreground)
+        .child(glim_services::locale::tr("Loading preview…"))
+        .into_any_element()
+}
+
 pub type OpenLink = Arc<dyn Fn(PathBuf, Option<String>, &mut Window, &mut App) + Send + Sync>;
 
 /// Tab identity is separate from the concrete renderer and its persistent state.
@@ -131,7 +144,7 @@ impl Reader {
             .and_then(|s| s.to_str())
             .is_some_and(|s| s.eq_ignore_ascii_case("csv") || s.eq_ignore_ascii_case("tsv"))
             .then(|| (cx.new(|_| csv::CsvTable::new()), false));
-        Self {
+        let mut reader = Self {
             title: document.path.display().to_string().into(),
             path: document.path,
             snapshot: document.text,
@@ -143,7 +156,9 @@ impl Reader {
             json,
             csv,
             renderer,
-        }
+        };
+        reader.restore_csv_preview(cx);
+        reader
     }
     pub fn from_native(path: PathBuf, folder: bool, shuffle: bool, cx: &mut App) -> Self {
         Self::from_native_playback(path, folder, shuffle, true, cx)
@@ -244,7 +259,7 @@ impl Reader {
                     false,
                 )
             });
-        Self {
+        let mut reader = Self {
             title: path.display().to_string().into(),
             path,
             snapshot,
@@ -261,7 +276,9 @@ impl Reader {
                 dirty,
                 saving,
             },
-        }
+        };
+        reader.restore_csv_preview(cx);
+        reader
     }
     pub fn from_commit(
         path: PathBuf,
@@ -582,9 +599,9 @@ impl Reader {
         }
     }
     pub fn inherit_view(&mut self, old: &Self, cx: &mut App) {
-        if old.csv.as_ref().is_some_and(|(_, visible)| *visible)
-            || old.json.as_ref().is_some_and(|(_, visible)| *visible)
-        {
+        if let Some((_, visible)) = &old.csv {
+            self.set_preview(*visible, cx);
+        } else if old.json.as_ref().is_some_and(|(_, visible)| *visible) {
             self.set_preview(true, cx);
         }
         match (&mut self.renderer, &old.renderer) {
@@ -677,7 +694,19 @@ impl Reader {
     pub fn is_json(&self) -> bool {
         self.json.is_some()
     }
+    fn restore_csv_preview(&mut self, cx: &mut App) {
+        if self.csv.is_some()
+            && cx
+                .try_global::<crate::app::ReaderPreferences>()
+                .is_some_and(|prefs| prefs.csv_preview)
+        {
+            self.set_preview(true, cx);
+        }
+    }
     pub fn preview_preference(&self) -> Option<&'static str> {
+        if self.csv.is_some() {
+            return Some("csv");
+        }
         match &self.renderer {
             Renderer::Markup(m) => Some(if m.html { "html" } else { "markdown" }),
             _ => None,

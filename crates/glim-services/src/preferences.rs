@@ -194,11 +194,11 @@ pub fn preview_mode(kind: &str) -> bool {
     preview_path(kind)
         .ok()
         .and_then(|path| std::fs::read_to_string(path).ok())
-        .is_none_or(|value| value.trim() != "source")
+        .map_or(kind != "csv", |value| value.trim() != "source")
 }
 fn preview_path(kind: &str) -> Result<PathBuf> {
     anyhow::ensure!(
-        matches!(kind, "html" | "markdown"),
+        matches!(kind, "html" | "markdown" | "csv"),
         "Unknown preview preference"
     );
     Ok(wrap_path()?.with_file_name(format!("{kind}-view")))

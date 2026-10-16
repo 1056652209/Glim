@@ -13,6 +13,131 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Accept blank lines between explicit, matching pipe-table rows in preview only.
+/// AST block ranges keep code, HTML, math and frontmatter examples untouched.
+pub fn normalize_tables(text: &str) -> std::borrow::Cow<'_, str> {
+    use std::{borrow::Cow, ops::Range};
+    if !text.contains('|') {
+        return Cow::Borrowed(text);
+    }
+    let mut options = ParseOptions::gfm();
+    options.constructs.math_flow = true;
+    options.constructs.math_text = true;
+    options.constructs.frontmatter = true;
+    let Ok(Node::Root(root)) = markdown::to_mdast(text, &options) else {
+        return Cow::Borrowed(text);
+    };
+    let mut blocks = root
+        .children
+        .iter()
+        .filter_map(|node| {
+            if matches!(node, Node::Paragraph(_) | Node::Table(_)) {
+                node.position().map(|p| p.start.offset..p.end.offset)
+            } else {
+                None
+            }
+        })
+        .peekable();
+    let mut offset = 0;
+    let lines = text
+        .split_inclusive('\n')
+        .map(|line| {
+            let start = offset;
+            offset += line.len();
+            let content = line.trim_end_matches(['\r', '\n']);
+            let first = start + content.len() - content.trim_start().len();
+            while blocks.peek().is_some_and(|block| block.end <= first) {
+                blocks.next();
+            }
+            let eligible = blocks.peek().is_some_and(|block| block.contains(&first));
+            (start..offset, content, eligible)
+        })
+        .collect::<Vec<_>>();
+    let next_row = |index: usize| (index..lines.len()).find(|&i| !lines[i].1.trim().is_empty());
+    let mut removed = Vec::<Range<usize>>::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let (_, header, eligible) = &lines[index];
+        let Some(columns) = eligible.then(|| pipe_cells(header)).flatten() else {
+            index += 1;
+            continue;
+        };
+        let Some(separator) = next_row(index + 1) else {
+            break;
+        };
+        if !lines[separator].2 || !table_separator(lines[separator].1, columns.len()) {
+            index += 1;
+            continue;
+        }
+        if separator > index + 1 {
+            removed.push(lines[index + 1].0.start..lines[separator].0.start);
+        }
+        let mut previous = separator;
+        while let Some(row) = next_row(previous + 1) {
+            if !lines[row].2
+                || pipe_cells(lines[row].1).is_none_or(|cells| cells.len() != columns.len())
+            {
+                break;
+            }
+            // A second explicit header starts another table, rather than becoming data.
+            if row > previous + 1
+                && next_row(row + 1).is_some_and(|next| {
+                    lines[next].2 && table_separator(lines[next].1, columns.len())
+                })
+            {
+                break;
+            }
+            if row > previous + 1 {
+                removed.push(lines[previous + 1].0.start..lines[row].0.start);
+            }
+            previous = row;
+        }
+        index = previous + 1;
+    }
+    if removed.is_empty() {
+        return Cow::Borrowed(text);
+    }
+    let mut output = String::with_capacity(text.len());
+    let mut start = 0;
+    for range in removed {
+        output.push_str(&text[start..range.start]);
+        start = range.end;
+    }
+    output.push_str(&text[start..]);
+    Cow::Owned(output)
+}
+
+fn pipe_cells(line: &str) -> Option<Vec<&str>> {
+    // Explicit outer pipes avoid reinterpreting ordinary prose containing a pipe.
+    if line.starts_with('\t') || line.starts_with("    ") {
+        return None;
+    }
+    let row = line.trim().strip_prefix('|')?.strip_suffix('|')?;
+    let mut cells = Vec::new();
+    let mut start = 0;
+    let mut escaped = false;
+    for (offset, ch) in row.char_indices() {
+        if ch == '|' && !escaped {
+            cells.push(row[start..offset].trim());
+            start = offset + 1;
+        }
+        escaped = ch == '\\' && !escaped;
+    }
+    cells.push(row[start..].trim());
+    (cells.len() >= 2).then_some(cells)
+}
+
+fn table_separator(line: &str, columns: usize) -> bool {
+    pipe_cells(line).is_some_and(|cells| {
+        cells.len() == columns
+            && cells.iter().all(|cell| {
+                let dashes = cell.strip_prefix(':').unwrap_or(cell);
+                let dashes = dashes.strip_suffix(':').unwrap_or(dashes);
+                !dashes.is_empty() && dashes.bytes().all(|byte| byte == b'-')
+            })
+    })
+}
+
 pub const MAX_DIAGRAMS: usize = reader_limits::DIAGRAM_BLOCKS;
 pub const MAX_SOURCE: usize = reader_limits::DIAGRAM_SOURCE_BYTES;
 

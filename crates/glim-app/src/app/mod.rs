@@ -27,6 +27,7 @@ pub struct ReaderPreferences {
     pub word_wrap: bool,
     pub html_preview: bool,
     pub markdown_preview: bool,
+    pub csv_preview: bool,
     pub diff_side_by_side: Option<bool>,
     pub preview_save_task: Option<Task<()>>,
 }
@@ -331,6 +332,7 @@ pub fn run() -> Result<()> {
     let appearance = glim_services::preferences::appearance();
     let html_preview = glim_services::preferences::preview_mode("html");
     let markdown_preview = glim_services::preferences::preview_mode("markdown");
+    let csv_preview = glim_services::preferences::preview_mode("csv");
     let diff_side_by_side = glim_services::preferences::diff_side_by_side();
     let application = gpui_kit::application().with_assets(assets::Assets);
     let image_client = image_http::ImageHttpClient::new(application.background_executor());
@@ -387,6 +389,7 @@ pub fn run() -> Result<()> {
             word_wrap,
             html_preview,
             markdown_preview,
+            csv_preview,
             diff_side_by_side,
             preview_save_task: None,
         });

@@ -45,6 +45,9 @@ impl MarkupReader {
             .as_ref()
             .map(|path| glim_services::text_formats::markdown(path, text));
         let preview_content = projected.as_deref().unwrap_or(text);
+        let normalized =
+            (!html).then(|| glim_services::markdown_preview::normalize_tables(preview_content));
+        let preview_content = normalized.as_deref().unwrap_or(preview_content);
         let state = cx.new(|cx| {
             if html {
                 TextViewState::html(text, cx)
@@ -106,6 +109,11 @@ impl MarkupReader {
             .as_ref()
             .map(|path| glim_services::text_formats::markdown(path, &text))
             .unwrap_or(text);
+        let text = if self.html {
+            text
+        } else {
+            glim_services::markdown_preview::normalize_tables(&text).into_owned()
+        };
         self.headings = headings(&text);
         self.state.update(cx, |s, cx| s.set_text(&text, cx));
         self.pictures.update(cx, |pictures, cx| {

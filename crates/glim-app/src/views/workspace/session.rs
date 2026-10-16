@@ -64,6 +64,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.loading = true;
+        self.loading_preview = false;
         self.restoring_roots = Some(session.roots.clone());
         let folders = session.roots.clone();
         let work = cx.background_executor().spawn(async move {

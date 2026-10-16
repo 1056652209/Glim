@@ -4,7 +4,9 @@ use gpui_kit::{
     component::{
         ActiveTheme, Disableable,
         button::{Button, ButtonVariants},
-        h_flex, v_flex,
+        h_flex,
+        scroll::Scrollbar,
+        v_flex,
     },
     *,
 };
@@ -28,6 +30,7 @@ pub(super) struct CsvTable {
     task: Option<Task<()>>,
     error: Option<String>,
     scroll: UniformListScrollHandle,
+    horizontal_scroll: ScrollHandle,
 }
 impl CsvTable {
     pub fn new() -> Self {
@@ -44,6 +47,7 @@ impl CsvTable {
             task: None,
             error: None,
             scroll: UniformListScrollHandle::new(),
+            horizontal_scroll: ScrollHandle::new(),
         }
     }
     pub fn from_file(path: PathBuf, delimiter: u8) -> Self {
@@ -108,6 +112,7 @@ impl CsvTable {
                     }
                 }
                 view.scroll = UniformListScrollHandle::new();
+                view.horizontal_scroll.set_offset(point(px(0.), px(0.)));
                 cx.notify();
             });
         }));
@@ -128,12 +133,51 @@ impl CsvTable {
 impl Render for CsvTable {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let busy = self.task.is_some();
+        if busy {
+            return super::preview_loading(cx);
+        }
         let columns = self
             .columns
             .saturating_sub(self.column_start)
             .min(reader_limits::CSV_COLUMNS);
         let width = 64. + columns as f32 * 200.;
-        v_flex().size_full().min_h_0()
+        let horizontal = self.horizontal_scroll.clone();
+        let vertical = self.scroll.0.borrow().base_handle.clone();
+        let view = cx.entity().downgrade();
+        v_flex().relative().size_full().min_h_0()
+            .child(canvas(
+                |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+                move |_, hitbox, window, _| {
+                    let horizontal = horizontal.clone();
+                    let vertical = vertical.clone();
+                    let view = view.clone();
+                    window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+                        if phase != DispatchPhase::Capture
+                            || !hitbox.should_handle_scroll(window)
+                            || !horizontal.bounds().contains(&event.position) {
+                            return;
+                        }
+                        let delta = event.delta.pixel_delta(window.line_height());
+                        if event.modifiers.shift {
+                            // macOS may already map Shift-wheel's vertical delta to x.
+                            let distance = if delta.x.abs() > delta.y.abs() { delta.x } else { delta.y };
+                            let offset = horizontal.offset();
+                            horizontal.set_offset(point(
+                                (offset.x + distance).clamp(-horizontal.max_offset().x.max(px(0.)), px(0.)),
+                                px(0.),
+                            ));
+                        } else {
+                            let offset = vertical.offset();
+                            vertical.set_offset(point(px(0.),
+                                (offset.y + delta.y).clamp(-vertical.max_offset().y.max(px(0.)), px(0.))));
+                        }
+                        // Consume even at an edge: the nested scrollers must not
+                        // reinterpret a remaining delta as movement on the other axis.
+                        cx.stop_propagation();
+                        let _ = view.update(cx, |_, cx| cx.notify());
+                    });
+                },
+            ).absolute().size_full())
             .child(h_flex().p_2().gap_2().text_xs()
                 .child(div().flex_1().min_w_0().truncate().child(if busy { glim_services::locale::tr("Loading table…") } else {
                     self.error.clone().unwrap_or_else(|| format!("{} · rows {}–{} · columns {}–{}", self.format,
@@ -155,23 +199,33 @@ impl Render for CsvTable {
                     .disabled(busy || self.column_start + columns >= self.columns).on_click(cx.listener(|view, _, _, cx| {
                         view.column_start += reader_limits::CSV_COLUMNS; view.load_page(cx);
                     }))))
-            .child(div().id("csv-horizontal").flex_1().min_h_0().overflow_x_scroll().child(
+            .child(div().id("csv-horizontal").flex_1().min_h_0().overflow_x_scroll().track_scroll(&self.horizontal_scroll).child(
                 v_flex().w(px(width)).h_full()
                     .child(h_flex().h(px(32.)).child(div().w(px(64.)).child(glim_services::locale::tr("Row")))
                         .children((0..columns).map(|column| div().w(px(200.)).px_3().child((self.column_start + column + 1).to_string()))))
                     .child(uniform_list("csv-rows", self.rows.len(), cx.processor(move |view, range: std::ops::Range<usize>, _, cx| {
                         range.map(|row| {
-                            h_flex().h(px(32.)).w_full().border_b_1().border_color(cx.theme().border)
+                            h_flex().h(px(32.)).w_full().overflow_hidden().border_b_1().border_color(cx.theme().border)
                                 .child(div().w(px(64.)).flex_shrink_0().px_2().text_color(cx.theme().muted_foreground)
                                     .child((view.row_start + row + 1).to_string()))
                                 .children((0..columns).map(|column| {
                                     let value = view.rows[row].get(column).map(String::as_str).unwrap_or("");
-                                    div().id(("csv-cell", row * columns + column)).w(px(200.)).flex_shrink_0().px_3().truncate()
-                                        .child(value.chars().take(reader_limits::CSV_CELL_CHARS).collect::<String>())
+                                    div().id(("csv-cell", row * columns + column)).w(px(200.)).h_full().flex_shrink_0().px_3()
+                                        .flex().items_center().overflow_hidden()
+                                        .child(div().w_full().min_w_0().truncate().child(
+                                            // Hard line breaks are not suppressed by nowrap.
+                                            // Flatten only the visible excerpt; show_cell keeps the original value.
+                                            value.chars().take(reader_limits::CSV_CELL_CHARS)
+                                                .map(|ch| if matches!(ch, '\n' | '\r' | '\t' | '\u{0085}' | '\u{2028}' | '\u{2029}') { ' ' } else { ch })
+                                                .collect::<String>()
+                                        ))
                                         .on_double_click(cx.listener(move |view, _, window, cx| view.show_cell(row, column, window, cx)))
                                 })).into_any_element()
                         }).collect()
                     })).track_scroll(&self.scroll).flex_1().min_h_0())
             ))
+            .child(div().h(Scrollbar::width()).flex_shrink_0().child(
+                Scrollbar::horizontal(&self.horizontal_scroll).viewport_from_layout(),
+            )).into_any_element()
     }
 }

@@ -148,15 +148,19 @@ impl Workspace {
         };
         let preference = self.tabs[index].preview_preference();
         self.tabs[index].set_preview(preview, cx);
+        if (self.tabs[index].toggle_label() == "Source") != preview {
+            cx.notify();
+            return;
+        }
         if !preview {
             self.tabs[index].focus_source(window, cx);
         }
         if let Some(kind) = preference {
             let prefs = cx.global_mut::<crate::app::ReaderPreferences>();
-            if kind == "html" {
-                prefs.html_preview = preview;
-            } else {
-                prefs.markdown_preview = preview;
+            match kind {
+                "html" => prefs.html_preview = preview,
+                "csv" => prefs.csv_preview = preview,
+                _ => prefs.markdown_preview = preview,
             }
             let previous = prefs.preview_save_task.take();
             let task = cx.spawn(async move |view, cx| {
