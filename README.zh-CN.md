@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/branding/repository-banner.svg" alt="Glim — Mac 全能文件内容查看器。文档、数据、图片和代码，一个工作空间。免费开源，支持 Apple Silicon 与 Intel。" width="100%" /></p>
+
 # Glim — Mac 全能文件内容查看器
 
 Glim 是免费开源的 Mac 全能文件内容查看器。Markdown、PDF、图片、JSON、CSV 和源代码，都可以放在同一个工作空间里阅读。

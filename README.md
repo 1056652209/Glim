@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/branding/repository-banner.svg" alt="Glim — All-purpose file viewer for Mac. Documents, data, images and code in one workspace. Free and open source; Apple Silicon and Intel." width="100%" /></p>
+
 # Glim — File viewer for macOS
 
 Glim is a free, open-source, all-purpose file viewer for Mac. Read Markdown, PDFs, images, JSON, CSV and source code in one workspace.
